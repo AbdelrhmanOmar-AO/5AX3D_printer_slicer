@@ -1,4 +1,64 @@
+# 5-Axis 3D Printer — Slicer
+
+Software workstream for a graduation project building a 5-axis 3D printer: CoreXY head + a
+3-point tilting bed (ball bearings, 3 lead screws, inverse kinematics) for two-axis tilt.
+
+Planning lives in Claude Docs, not here:
+- **Implementation plan** (phases, dependencies, exact code work, timeline): see the team's
+  "5-Axis Slicer: Implementation Plan" doc.
+- **Landscape / build-vs-reuse analysis** (why Atomizer, alternatives considered): see the
+  "5-Axis Slicer: Build vs Reuse Analysis & Working Plan" doc.
+
+## What's in this repository
+
+We build on **Atomizer** (BSD-3-Clause, see `NOTICE.md` for full attribution), vendored directly
+into this repo because our work modifies its internals rather than just calling it as a library.
+
+```
+src/atom/          Atomizer's core library (vendored + our new modules)
+  reorient.py               NEW — Phase 3: candidate bed-tilt pose sampling
+  pose_assign.py            NEW — Phase 3: region-to-pose assignment
+  multi_pose_pipeline.py    NEW — Phase 3: runs the stock pipeline per pose group
+  tilt_motion_check.py      NEW — Phase 5: collision checking for tilt transitions
+  kinematics3z.py           vendored — triple-Z inverse/forward kinematics (we edit its constants)
+  fff3.py                   vendored — infill, printability thresholds, (unused) lattice supports
+  toolpath3.py              vendored — collision-free atom ordering
+  ...                       vendored — the rest of Atomizer's pipeline stages
+tools/             Command-line entry points
+  atomize.py                vendored — the stock single-pose pipeline driver
+  atomize_multi_pose.py     NEW — Phase 4: driver for parts needing more than one bed pose
+  toolpath_to_gcode.py      vendored — G-code emission (we edit it for pose transitions)
+  ...                       vendored — the rest of the pipeline's CLI stages
+tests/             New tests for our own additions
+data/param/        JSON parameter files (one per part) — the stock pipeline's input format
+```
+
+Anything not listed as "NEW" is vendored from upstream Atomizer and only gets edited where the
+implementation plan says so — see that doc's "Code module inventory" table for the exact list of
+files and functions.
+
+## Status
+
+Early setup. Nothing here runs yet — see the implementation plan's Phase 0 for what "running" means
+(our machine's constants aren't filled into `kinematics3z.py` yet) and Phase 3+ for the new modules
+above, which are currently placeholders that raise `NotImplementedError`.
+
+## Setup
+
+Requires Python 3.10 specifically (Taichi pins `>=3.7, <3.11`), and Blender 4.4/4.5 on `PATH` for
+mesh remeshing.
+
+```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+---
+
 # Atomizer: Beyond Non-Planar Slicing for Fused Filament Fabrication
+
+*(vendored upstream README below — see `NOTICE.md` for full provenance)*
 
 ![Representative toolpath visualization](data/image/doc/representative_image.png)
 

@@ -4,3 +4,30 @@ __pycache__
 *.egg-info
 imgui.ini
 .DS_Store
+
+# --- 5-Axis Slicer additions (this project, on top of vendored Atomizer) ---
+
+# Python
+*.pyc
+.venv/
+venv/
+
+# Taichi
+.taichi_cache/
+*.tcb
+
+# Atomizer generated pipeline outputs (regenerate from data/param/*.json + data/mesh/*.stl)
+data/log/
+data/point_normal/
+data/sdf/
+data/direction/
+data/basis/
+data/phasor/
+data/triphasor/
+data/frame/
+data/toolpath/
+data/gcode/
+data/mesh/*.obj
+
+# OS
+Thumbs.db
