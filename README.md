@@ -101,6 +101,25 @@ reports the Python / Blender / CUDA versions that later tasks depend on:
 .\scripts\setup_laptop.ps1
 ```
 
+#### "Terms of Service have not been accepted" from conda
+
+Recent Miniconda releases refuse to install from Anaconda's own channels
+(`pkgs/main`, `pkgs/r`, `pkgs/msys2`) until their Terms of Service are accepted,
+failing with `CondaToSNonInteractiveError`. `setup_laptop.ps1` avoids this by
+creating the environment from **conda-forge**, which has no such prompt and no
+licence restriction for larger organisations. It provides the same Python 3.10,
+and every other dependency is installed by pip afterwards, so the slicer is
+unaffected.
+
+To use Anaconda's channels instead, accept their terms first:
+
+```powershell
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2
+.\scripts\setup_laptop.ps1 -Channel defaults
+```
+
 #### "conda"/"blender" is not recognized
 
 Neither the Miniconda nor the Blender installer puts itself on `PATH`, so both

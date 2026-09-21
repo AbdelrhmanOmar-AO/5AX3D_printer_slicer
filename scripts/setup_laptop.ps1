@@ -18,8 +18,15 @@
 .PARAMETER EnvName
     Name of the conda environment. Defaults to `atomizer`, matching README.md.
 
+.PARAMETER Channel
+    Conda channel used to create the environment. Defaults to `conda-forge`.
+
 .EXAMPLE
     .\scripts\setup_laptop.ps1
+
+.EXAMPLE
+    # Use Anaconda's default channels instead (requires accepting their ToS).
+    .\scripts\setup_laptop.ps1 -Channel defaults
 
 .NOTES
     Prerequisite: Git, Blender and Miniconda installed and on PATH. The repo's
@@ -39,7 +46,16 @@
 [CmdletBinding()]
 param(
     [string]$EnvName = "atomizer",
-    [string]$PythonVersion = "3.10"
+    [string]$PythonVersion = "3.10",
+
+    # Package channel used to create the environment. conda-forge is the
+    # default because Anaconda's own channels (pkgs/main, pkgs/r, pkgs/msys2)
+    # refuse to install anything until their Terms of Service are accepted
+    # interactively, and require a paid licence for larger organisations.
+    # conda-forge has neither restriction and provides the same Python. Every
+    # other dependency comes from pip afterwards, so this choice does not
+    # affect the slicer itself.
+    [string]$Channel = "conda-forge"
 )
 
 $ErrorActionPreference = "Stop"
@@ -70,8 +86,20 @@ if ($existing) {
     Write-Host "Environment '$EnvName' already exists. Reusing it." -ForegroundColor Yellow
 }
 else {
-    & conda create --name $EnvName "python=$PythonVersion" --yes
-    if ($LASTEXITCODE -ne 0) { throw "conda create failed with exit code $LASTEXITCODE" }
+    & conda create --name $EnvName "python=$PythonVersion" --yes `
+                   --channel $Channel --override-channels
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "conda create failed (exit code $LASTEXITCODE). Read the error above." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "If it mentions Terms of Service, you are on Anaconda's default"
+        Write-Host "channels. Either accept them:"
+        Write-Host "    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main"
+        Write-Host "    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r"
+        Write-Host "    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2"
+        Write-Host "or stay on the conda-forge default, which has no such prompt."
+        throw "conda create failed with exit code $LASTEXITCODE"
+    }
 }
 
 Write-Section "Installing the 'atom' package and dev dependencies"
