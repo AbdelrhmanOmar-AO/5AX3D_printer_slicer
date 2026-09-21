@@ -148,8 +148,12 @@ def test_golden_data_files_are_committed(repo_root):
     """
     import subprocess
 
+    # `git ls-tree HEAD`, not `git ls-files`: the latter lists the index, so a
+    # file that was staged with `git add` but never committed would pass. That
+    # is precisely the state this test exists to catch, and it did pass on it
+    # once.
     result = subprocess.run(
-        ["git", "ls-files", "tests/golden/"],
+        ["git", "ls-tree", "-r", "--name-only", "HEAD", "tests/golden/"],
         cwd=repo_root,
         capture_output=True,
         text=True,

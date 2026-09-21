@@ -196,11 +196,18 @@ def test_triangulation_handles_a_non_convex_profile():
 # --------------------------------------------------------------------------
 
 
-def _tracked_files(repo_root, pattern: str) -> set[str]:
+def _committed_files(repo_root, path_prefix: str) -> set[str]:
+    """Paths committed at HEAD under `path_prefix`.
+
+    Deliberately `git ls-tree HEAD` rather than `git ls-files`: the latter
+    reports the index, so a file staged with `git add` but never committed
+    would look tracked. Only a commit survives a push, a clone, or a new
+    machine.
+    """
     import subprocess
 
     result = subprocess.run(
-        ["git", "ls-files", pattern],
+        ["git", "ls-tree", "-r", "--name-only", "HEAD", path_prefix],
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -214,17 +221,17 @@ def test_every_parameter_file_has_a_committed_mesh(repo_root):
     """A committed param JSON whose mesh is not committed breaks the pipeline."""
     import json
 
-    tracked_meshes = _tracked_files(repo_root, "data/mesh/*.stl")
+    committed_meshes = _committed_files(repo_root, "data/mesh/")
     missing = []
 
     for param_path in sorted((repo_root / "data" / "param").glob("*.json")):
         solid_name = json.loads(param_path.read_text(encoding="utf-8"))["solid_name"]
         expected = f"data/mesh/{solid_name}.stl"
-        if expected not in tracked_meshes:
+        if expected not in committed_meshes:
             missing.append(f"{param_path.name} -> {expected}")
 
     assert not missing, (
-        "These parameter files name a mesh that is not committed:\n  "
+        "These parameter files name a mesh that is not committed at HEAD:\n  "
         + "\n  ".join(missing)
         + "\n\ndata/mesh/.gitignore ignores *.stl and whitelists by name; add a "
         "matching '!' rule for any new mesh."
