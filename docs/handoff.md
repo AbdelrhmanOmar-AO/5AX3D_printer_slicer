@@ -95,7 +95,7 @@ Setup pain already solved, all documented in `README.md`:
 | P0.3 Test harness and CI | **Done**, verified on the laptop |
 | P0.4 Taichi arch helper (`ti_env`) | **Done**. All 23 `ti.init` calls route through `ATOM_TI_ARCH` |
 | P0.5 Machine profiles | **Done and verified** — golden test passed on the laptop, G-code byte-identical |
-| P0.6 Tilt contracts and conventions | **Not started** — ★ this unblocks lanes B and C |
+| P0.6 Tilt contracts and conventions | **Done** — `atom.tilt`, `atom.contracts`, `docs/conventions.md`. Lanes B and C are unblocked |
 | P0.7 Benchmark meshes | **Done**, 36 meshes committed |
 | P0.8 Overhang metrics | **Core done**; `tools/overhang_report.py` and the 24-run matrix remain |
 
@@ -116,12 +116,9 @@ the golden net is therefore proven, not merely assumed.
 
 ### Suggested next steps
 
-1. **P0.6** — tilt contracts and `docs/conventions.md`. Marked ★ in the plan
-   because lanes B and C both wait on it. Note correction 1.1: the tilt
-   contract must handle the spherical `(N, 2)` form.
-2. Finish **P0.8** — `tools/overhang_report.py`, then the 24-run matrix, which
+1. Finish **P0.8** — `tools/overhang_report.py`, then the 24-run matrix, which
    produces the "before" numbers the whole contribution is measured against.
-3. **Open experiment: can `order_atoms` use the GPU?** It is 86 % of runtime
+2. **Open experiment: can `order_atoms` use the GPU?** It is 86 % of runtime
    and runs on the CPU. `ATOM_TI_ARCH=cuda` now makes this a one-command test
    (see "The order_atoms question" below). Worth settling before the P0.8
    matrix, since it could change the cost of everything downstream.
@@ -137,6 +134,9 @@ the golden net is therefore proven, not merely assumed.
 | `machine_profile.py` | Loads machine constants from `config/machines/*.json`, selected by `ATOM_MACHINE` (default `reference`). Frozen dataclass, validated, warns loudly on a PLACEHOLDER profile. |
 | `benchmark_meshes.py` | Parametric box / ramp / T-shape / twin-dome generators. Self-contained geometry (ear-clipping triangulation, height-field solid) so trimesh's optional extras are not needed. |
 | `overhang_metrics.py` | The three measurements the contribution is judged by: effective overhang angle, unsupported deposition, maximum tilt used. numpy + scipy only. |
+| `tilt.py` | Tilt angles, rotations and limits. Pure numpy. `rotate_toward` is the operation P2.2 performs. |
+| `contracts.py` | `MachineToolpath`: a toolpath plus the machine state it implies. Runs the IK over every point and marks failures rather than aborting, which is what P3.3, P4 and P5.4 are built on. |
+| `ti_env.py` | One switch for the Taichi backend across every stage. |
 
 ### New tools (`tools/`)
 
@@ -156,6 +156,9 @@ the golden net is therefore proven, not merely assumed.
 - `tests/golden/baseline.md` — baseline commit, environment, stage timings, determinism.
 - `tests/golden/README.md` — how to re-capture the baseline.
 - `docs/plan_corrections.md` — **read this before trusting the build plan.**
+- `docs/conventions.md` — frames, what `normal` means, the three screws, how the
+  IK signals failure, and a worked numeric example. Derived from the code by
+  running it.
 
 ---
 
