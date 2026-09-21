@@ -93,7 +93,7 @@ Setup pain already solved, all documented in `README.md`:
 | P0.1 Dev environment and packaging | **Done**, verified on the laptop |
 | P0.2 Golden baseline | **Done**; pipeline is deterministic, baseline captured |
 | P0.3 Test harness and CI | **Done**, verified on the laptop |
-| P0.4 Taichi arch helper (`ti_env`) | **Not started**. Its key question is already answered (corrections 3.1) |
+| P0.4 Taichi arch helper (`ti_env`) | **Done**. All 23 `ti.init` calls route through `ATOM_TI_ARCH` |
 | P0.5 Machine profiles | **Done and verified** — golden test passed on the laptop, G-code byte-identical |
 | P0.6 Tilt contracts and conventions | **Not started** — ★ this unblocks lanes B and C |
 | P0.7 Benchmark meshes | **Done**, 36 meshes committed |
@@ -119,8 +119,10 @@ the golden net is therefore proven, not merely assumed.
    contract must handle the spherical `(N, 2)` form.
 2. Finish **P0.8** — `tools/overhang_report.py`, then the 24-run matrix, which
    produces the "before" numbers the whole contribution is measured against.
-3. **P0.4** (`ti_env`) is small and would let `ATOM_TI_ARCH` actually work; CI
-   already sets it.
+3. **Open experiment: can `order_atoms` use the GPU?** It is 86 % of runtime
+   and runs on the CPU. `ATOM_TI_ARCH=cuda` now makes this a one-command test
+   (see "The order_atoms question" below). Worth settling before the P0.8
+   matrix, since it could change the cost of everything downstream.
 
 ---
 
@@ -179,6 +181,44 @@ twice. Treat them as a floor: ordering is a nearest-neighbour problem and may be
 worse than linear.
 
 ---
+
+## 7a. The `order_atoms` question
+
+`order_atoms` is 86 % of pipeline runtime and initialises Taichi on the CPU.
+Moving it to the GPU is now a one-command experiment via `ATOM_TI_ARCH`, but
+the structure argues against a large win:
+
+* The ordering loop is **inherently sequential** — one atom appended per
+  iteration (31 630 of them for the calibration cube), each choice depending on
+  every earlier one. No backend parallelises that.
+* The work **inside** each iteration is already Taichi kernels
+  (`src/atom/toolpath3.py` has 27), and the BVH is Taichi too, so both are
+  backend-agnostic and would run on the GPU unchanged.
+* But every iteration **synchronises back to the host**:
+  `compute_cost_and_find_best_next(...).to_numpy()` returns to Python, which
+  then branches on the result. On a GPU that is ~31 630 forced pipeline
+  flushes.
+
+So the per-iteration work would get faster while per-iteration overhead gets
+worse. At 10.5 ms per iteration on the CPU there is room to win, but it is an
+empirical question.
+
+**Risk to watch:** GPU reductions and atomics do not have a deterministic
+ordering, so `find_best_next` could break ties differently and produce a
+different toolpath. The golden test detects this immediately. If it fails on
+GPU, the backend is not a free switch and the CPU default must stand.
+
+The experiment, on the laptop:
+
+```powershell
+$env:ATOM_TI_ARCH = "cuda"
+pytest --run-pipeline tests/test_golden.py -v   # correctness, ~7.5 min on CPU
+Remove-Item Env:\ATOM_TI_ARCH
+```
+
+Compare the reported `order_atoms` time in `data/log/calibration_cube.log`
+against the 331.6 s baseline. Note `kernel_profiler=True` is set on that stage
+and is not free; worth measuring with it off too.
 
 ## 8. Gates (blocked on other people)
 
