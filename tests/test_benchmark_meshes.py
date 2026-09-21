@@ -183,3 +183,74 @@ def test_triangulation_handles_a_non_convex_profile():
         for a, b, c in triangles
     )
     assert area == pytest.approx(7.0)  # 3x3 square minus the 1x2 notch
+
+
+# --------------------------------------------------------------------------
+# Repository integrity
+#
+# data/mesh/.gitignore ignores *.stl and whitelists meshes by name, so a newly
+# generated mesh is skipped by `git add` without any warning. That leaves the
+# parameter file committed and the mesh it names missing for everyone else, and
+# the failure only surfaces when someone tries to run the pipeline. These tests
+# check the committed state rather than the working tree.
+# --------------------------------------------------------------------------
+
+
+def _tracked_files(repo_root, pattern: str) -> set[str]:
+    import subprocess
+
+    result = subprocess.run(
+        ["git", "ls-files", pattern],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        pytest.skip("not a git checkout, or git is unavailable")
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def test_every_parameter_file_has_a_committed_mesh(repo_root):
+    """A committed param JSON whose mesh is not committed breaks the pipeline."""
+    import json
+
+    tracked_meshes = _tracked_files(repo_root, "data/mesh/*.stl")
+    missing = []
+
+    for param_path in sorted((repo_root / "data" / "param").glob("*.json")):
+        solid_name = json.loads(param_path.read_text(encoding="utf-8"))["solid_name"]
+        expected = f"data/mesh/{solid_name}.stl"
+        if expected not in tracked_meshes:
+            missing.append(f"{param_path.name} -> {expected}")
+
+    assert not missing, (
+        "These parameter files name a mesh that is not committed:\n  "
+        + "\n  ".join(missing)
+        + "\n\ndata/mesh/.gitignore ignores *.stl and whitelists by name; add a "
+        "matching '!' rule for any new mesh."
+    )
+
+
+def test_generated_benchmark_meshes_are_not_gitignored(repo_root):
+    """Every part x size combination the generator produces must be committable."""
+    import subprocess
+
+    names = [
+        f"{part}_{size}.stl"
+        for part in ("box", "tshape", "twin_domes", *[f"ramp{a}" for a in bm.RAMP_ANGLES])
+        for size in bm.SIZE_PRESETS
+    ]
+    paths = [f"data/mesh/{name}" for name in names]
+
+    result = subprocess.run(
+        ["git", "check-ignore", "--no-index", *paths],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    # check-ignore exits 0 when at least one path IS ignored, 1 when none are.
+    ignored = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    assert not ignored, (
+        "These benchmark meshes would be silently skipped by `git add`:\n  "
+        + "\n  ".join(ignored)
+    )
