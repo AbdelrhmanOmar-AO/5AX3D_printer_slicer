@@ -325,3 +325,86 @@ def effective_overhang_angles(
         )
 
     return results
+
+
+def overhang_face_mask(
+    face_normals: np.ndarray,
+    face_centres: np.ndarray,
+    bed_contact_height: float = 0.5,
+) -> np.ndarray:
+    """Boolean mask of mesh faces that are genuine overhangs.
+
+    Downward-facing, actually sloped, and not resting on the bed. The bed
+    exclusion matters: a part's own footprint faces straight down but is fully
+    supported, and counting it would report every part as having a 90-degree
+    overhang.
+    """
+    face_normals = np.asarray(face_normals, dtype=np.float64)
+    face_centres = np.asarray(face_centres, dtype=np.float64)
+
+    return (
+        (face_normals[:, 2] < -1e-6)
+        & (geometric_overhang_angle_deg(face_normals) > 1e-6)
+        & (face_centres[:, 2] > bed_contact_height)
+    )
+
+
+def points_near_overhangs(
+    points: np.ndarray,
+    face_normals: np.ndarray,
+    face_centres: np.ndarray,
+    radius: float,
+    bed_contact_height: float = 0.5,
+) -> np.ndarray:
+    """Boolean mask of points lying within ``radius`` of an overhang face.
+
+    The overall unsupported fraction is dominated by whatever the part is
+    mostly made of, so it barely moves even when an overhang prints badly.
+    Restricting the measurement to the neighbourhood of the overhangs is what
+    makes it sensitive to the thing under study (build plan P0.8 step 2, which
+    uses two deposition widths).
+    """
+    points = np.asarray(points, dtype=np.float64)
+    if len(points) == 0:
+        return np.zeros(0, dtype=bool)
+
+    overhangs = overhang_face_mask(face_normals, face_centres, bed_contact_height)
+    if not np.any(overhangs):
+        return np.zeros(len(points), dtype=bool)
+
+    centres = np.asarray(face_centres, dtype=np.float64)[overhangs]
+    near = np.zeros(len(points), dtype=bool)
+    for index in cKDTree(points).query_ball_point(centres, radius):
+        near[index] = True
+    return near
+
+
+def unsupported_near_overhangs(
+    toolpath,
+    face_normals: np.ndarray,
+    face_centres: np.ndarray,
+    radius: float,
+    bed_contact_height: float = 0.5,
+    **kwargs,
+) -> tuple[UnsupportedResult, float, int]:
+    """Unsupported deposition overall, and restricted to overhang neighbourhoods.
+
+    Returns ``(overall_result, near_overhang_fraction, near_overhang_count)``.
+    The fraction is NaN when no deposition point lies near an overhang, which
+    is not the same as zero: it means nothing was measured.
+    """
+    overall = unsupported_deposition(toolpath, **kwargs)
+
+    count = int(np.asarray(toolpath.point_count).item())
+    mask = deposition_mask(toolpath)
+    points = np.asarray(toolpath.point[:count], dtype=np.float64)[mask]
+
+    near = points_near_overhangs(
+        points, face_normals, face_centres, radius, bed_contact_height
+    )
+    near_count = int(np.count_nonzero(near))
+    if near_count == 0:
+        return overall, float("nan"), 0
+
+    fraction = float(np.count_nonzero(overall.unsupported & near)) / near_count
+    return overall, fraction, near_count

@@ -97,7 +97,7 @@ Setup pain already solved, all documented in `README.md`:
 | P0.5 Machine profiles | **Done and verified** — golden test passed on the laptop, G-code byte-identical |
 | P0.6 Tilt contracts and conventions | **Done** — `atom.tilt`, `atom.contracts`, `docs/conventions.md`. Lanes B and C are unblocked |
 | P0.7 Benchmark meshes | **Done**, 36 meshes committed |
-| P0.8 Overhang metrics | **Core done**; `tools/overhang_report.py` and the 24-run matrix remain |
+| P0.8 Overhang metrics | **Tooling done**; the 24-run matrix has not been run |
 
 153 unit tests pass.
 
@@ -116,8 +116,11 @@ the golden net is therefore proven, not merely assumed.
 
 ### Suggested next steps
 
-1. Finish **P0.8** — `tools/overhang_report.py`, then the 24-run matrix, which
-   produces the "before" numbers the whole contribution is measured against.
+1. **Run the P0.8 matrix.** `.\scripts\run_baseline_matrix.ps1` (default size
+   `s`, about 7 hours). Produces `reports/baseline_overhang.md`, the "before"
+   numbers for the whole contribution, and gate D0 needs them. Everything is
+   built — `tools/overhang_report.py`, then the 24-run matrix, which
+   and tested; only the compute time remains.
 2. **Open experiment: can `order_atoms` use the GPU?** It is 86 % of runtime
    and runs on the CPU. `ATOM_TI_ARCH=cuda` now makes this a one-command test
    (see "The order_atoms question" below). Worth settling before the P0.8
@@ -144,12 +147,14 @@ the golden net is therefore proven, not merely assumed.
 |---|---|
 | `gcode_stats.py` | G-code to a stable JSON record (hash, counts, axis ranges, extrusion). The golden comparison. |
 | `make_benchmarks.py` | Generates the benchmark meshes and parameter files; prints estimated runtime before writing. |
+| `overhang_report.py` | Runs a part at a chosen `max_slope`, measures it, writes a JSON report. `--summarize` builds the comparison table. |
 
 ### Configuration and scripts
 
 - `config/machines/reference.json` — upstream values, `status: verified`.
 - `config/machines/ours.json` — **every number a placeholder**, `status: PLACEHOLDER`, gates M1/M2.
-- `scripts/setup_laptop.ps1`, `scripts/fix_tool_paths.ps1`, `scripts/run_pipeline_tests.ps1`.
+- `scripts/setup_laptop.ps1`, `scripts/fix_tool_paths.ps1`, `scripts/run_pipeline_tests.ps1`,
+  `scripts/run_baseline_matrix.ps1` (drives the whole P0.8 matrix).
 
 ### Key documents
 
