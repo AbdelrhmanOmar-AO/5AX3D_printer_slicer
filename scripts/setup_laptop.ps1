@@ -25,6 +25,15 @@
     Prerequisite: Git, Blender and Miniconda installed and on PATH. The repo's
     install_git_blender_miniconda.ps1 does that; run it from an Administrator
     PowerShell, then close and reopen PowerShell before running this script.
+
+    If running this script fails with "running scripts is disabled on this
+    system" (PSSecurityException), allow scripts for your own user account once:
+
+        Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+    That permits scripts stored on your own disk while still requiring a
+    signature on files downloaded from the internet, and does not need
+    Administrator. See the "Development setup" section of README.md.
 #>
 
 [CmdletBinding()]

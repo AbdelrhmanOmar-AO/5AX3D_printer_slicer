@@ -91,6 +91,53 @@ conda activate atomizer
 pip install -e .
 ```
 
+### Development setup (this fork)
+
+Contributors to the 5-axis work should install the dev dependencies as well and
+use the setup script, which creates the environment, installs everything, and
+reports the Python / Blender / CUDA versions that later tasks depend on:
+
+```powershell
+.\scripts\setup_laptop.ps1
+```
+
+#### "running scripts is disabled on this system"
+
+Windows blocks PowerShell scripts by default, so the first script you run fails
+with `UnauthorizedAccess` / `PSSecurityException`. Allow scripts for your own
+user account, once:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+`RemoteSigned` permits scripts stored on your own disk (anything from
+`git clone`) while still requiring a signature on files downloaded from the
+internet. It is per-user and does not need Administrator.
+
+For a script downloaded with a browser or `curl` — such as
+`install_git_blender_miniconda.ps1` — either unblock it with
+`Unblock-File .\install_git_blender_miniconda.ps1`, or allow scripts for just
+the current window:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+```
+
+`-Scope Process` lasts only until you close that PowerShell window.
+
+### Running the tests
+
+```powershell
+pytest -m unit                              # fast, CPU only, no GPU needed
+.\scripts\run_pipeline_tests.ps1           # real pipeline stages (GPU + Blender)
+.\scripts\run_pipeline_tests.ps1 -Benchmark  # full benchmark parts (slow)
+```
+
+The `pipeline` and `benchmark` tiers are skipped unless explicitly requested,
+so `pytest` on a machine without a GPU still gives a meaningful result. See
+[`tests/conftest.py`](tests/conftest.py) for the tiers and fixtures.
+
 ## Usage
 
 ### Atomize
