@@ -232,6 +232,24 @@ $env:ATOM_MACHINE = "reference"   # the default
 Fill in `ours.json` only once the mechanical team supplies real measurements
 (gates M1 and M2), then set its `status` to `verified`.
 
+#### "No module named ..." after a `git pull`
+
+Dependencies are added as the work progresses, and a `git pull` brings the new
+`pyproject.toml` without installing anything. If a test suddenly fails to import
+a module, refresh the environment:
+
+```powershell
+pip install -e ".[dev]"
+```
+
+Re-running `.\scripts\setup_laptop.ps1` does the same thing and re-checks
+Blender and CUDA as well; it reuses the existing conda environment rather than
+rebuilding it.
+
+Note that a missing dependency shows up as a *collection error* that stops the
+whole run (`Interrupted: 1 error during collection`), not as a single failing
+test, so one absent package hides the state of everything else.
+
 ### Running the tests
 
 ```powershell
