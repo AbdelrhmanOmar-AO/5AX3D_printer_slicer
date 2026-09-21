@@ -190,6 +190,14 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
 `-Scope Process` lasts only until you close that PowerShell window.
 
+### Project documents
+
+| Document | What it holds |
+|---|---|
+| [`docs/plan_corrections.md`](docs/plan_corrections.md) | Everything in the build plan that is wrong or deliberately departed from. **Read before trusting the plan on a specific fact.** |
+| [`docs/handoff.md`](docs/handoff.md) | State of the work, environment facts and conventions, written to be read with no prior context. |
+| [`tests/golden/baseline.md`](tests/golden/baseline.md) | The frozen "before" record: baseline commit, environment, stage timings, determinism result. |
+
 ### Choosing a machine
 
 Machine constants (bed geometry, travel limits, tilt limit, feed rates) live in
