@@ -133,3 +133,41 @@ def test_golden_baseline_record_exists(repo_root):
     text = record.read_text(encoding="utf-8")
     for expected in ("Baseline commit", "Determinism", "Environment"):
         assert expected in text, f"baseline.md has no '{expected}' section"
+
+
+def test_golden_data_files_are_committed(repo_root):
+    """The captured baseline must be in the repository, not just on one laptop.
+
+    `golden_stats` skips when the stats file is absent, which is right for a
+    fresh clone before the baseline has ever been captured. Once it has been,
+    a missing file means it was captured locally and never committed, and the
+    regression test then skips on every other machine while looking healthy.
+    That is exactly the failure this catches.
+
+    A `unit` test, so CI notices without needing to run the pipeline.
+    """
+    import subprocess
+
+    result = subprocess.run(
+        ["git", "ls-files", "tests/golden/"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        pytest.skip("not a git checkout, or git is unavailable")
+
+    tracked = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    record = repo_root / "tests" / "golden" / "baseline.md"
+
+    # The record documents a captured baseline, so the data must be there too.
+    if record.is_file() and "not yet captured" not in record.read_text(
+        encoding="utf-8"
+    ):
+        expected = f"tests/golden/{PART}.stats.json"
+        assert expected in tracked, (
+            f"{record.name} documents a captured baseline, but {expected} is not "
+            "committed. It was produced on the operator's laptop and never "
+            "pushed, so tests/test_golden.py silently skips everywhere else. "
+            "Commit it."
+        )
