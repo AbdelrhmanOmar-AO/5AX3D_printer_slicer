@@ -278,7 +278,72 @@ def summarize(reports):
         lines.append(f"| `{part}` | " + " | ".join(cells) + " |")
 
     lines += ["", "## Conclusion", ""] + _conclusion(reports, slopes)
+    lines += [""] + _timing_section(reports)
     return "\n".join(lines) + "\n"
+
+
+def _size_of(part):
+    """The size suffix of a generated benchmark part, or None."""
+    match = re.match(r".*_(xs|s|m|l)$", part)
+    return match.group(1) if match else None
+
+
+def _timing_section(reports):
+    """How pipeline cost scaled with part volume, from the runs themselves.
+
+    Nobody has published how Atomizer's ordering stage scales, so this is a
+    result in its own right rather than only a planning aid. It is built from
+    whatever has been run; a single size gives a single row.
+    """
+    timed = [r for r in reports if r.get("runtime", {}).get("total_s", 0) > 0]
+    if not timed:
+        return [
+            "## Runtime",
+            "",
+            "No run recorded a duration. Reports produced with `--skip-pipeline` "
+            "carry no timing.",
+        ]
+
+    order = {"xs": 0, "s": 1, "m": 2, "l": 3}
+    rows = []
+    for report in sorted(
+        timed,
+        key=lambda r: (order.get(_size_of(r["part"]), 9), r["part"], r["max_slope_deg"]),
+    ):
+        stages = report.get("runtime", {}).get("stages", {})
+        ordering = next(
+            (v for k, v in stages.items() if "planner" in k.lower()), float("nan")
+        )
+        volume = report["mesh"]["volume_mm3"]
+        points = report["toolpath"]["point_count"]
+        total = report["runtime"]["total_s"]
+
+        rows.append(
+            f"| `{report['part']}` | {report['max_slope_deg']:g}° | "
+            f"{volume:,.0f} | {points:,} | "
+            + ("n/a" if math.isnan(ordering) else f"{ordering / 60:.1f}")
+            + f" | {total / 60:.1f} |"
+        )
+
+    section = [
+        "## Runtime",
+        "",
+        "How the pipeline's cost scaled with part size. `order_atoms` is the "
+        "stage that dominates, and it runs on the CPU.",
+        "",
+        "| Part | max_slope | Volume mm³ | Toolpath points | order_atoms min | Total min |",
+        "|---|---|---|---|---|---|",
+        *rows,
+    ]
+
+    sizes = {_size_of(r["part"]) for r in timed} - {None}
+    if len(sizes) < 2:
+        section += [
+            "",
+            "Only one part size has been run, so this is a single point rather "
+            "than a scaling curve. Run another size to get the trend.",
+        ]
+    return section
 
 
 def _conclusion(reports, slopes):

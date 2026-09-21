@@ -121,9 +121,15 @@ The golden baseline is committed (`tests/golden/calibration_cube.stats.json`,
 ### The immediate next step
 
 ```powershell
-.\scripts\run_baseline_matrix.ps1            # size s, ~7.2 h, 24 runs
-.\scripts\run_baseline_matrix.ps1 -Size xs   # ~1.6 h, proves the flow first
+.\scripts\run_baseline_matrix.ps1                # size s, ~7.2 h, 24 runs
+.\scripts\run_baseline_matrix.ps1 -Sizes xs      # ~1.6 h, proves the flow first
+.\scripts\run_baseline_matrix.ps1 -Sizes xs,s    # ~8.8 h, adds the scaling curve
 ```
+
+Note that `-Sizes` is what turns the summary's runtime table from a single
+point into a scaling curve. The overhang baseline itself needs only one size;
+the sizes exist to measure how pipeline cost grows with part volume, which
+nobody has published for Atomizer.
 
 This produces `reports/baseline_overhang.md`: the "before" numbers the whole
 contribution is measured against, and what gate D0 is waiting on. Everything

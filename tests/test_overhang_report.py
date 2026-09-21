@@ -249,3 +249,72 @@ def test_summary_round_trips_through_the_report_schema(ti_cpu, tmp_path):
     loaded = json.loads(path.read_text(encoding="utf-8"))
 
     assert "`ramp45`" in overhang_report.summarize([loaded])
+
+
+# --------------------------------------------------------------------------
+# Runtime / scaling section
+# --------------------------------------------------------------------------
+
+
+def _timed_report(part, slope, total_s, ordering_s, volume, points):
+    report = _fake_report(part, slope, 40.0, 0.001, 5.5, True)
+    report["runtime"] = {
+        "total_s": total_s,
+        "stages": {"Toolpath planner": ordering_s, "Direction computation": 7.2},
+    }
+    report["mesh"] = {"volume_mm3": volume, "face_count": 12, "extents_mm": [1, 2, 3]}
+    report["toolpath"] = {"point_count": points, "deposition_count": points}
+    return report
+
+
+def test_runtime_table_reports_each_run():
+    summary = overhang_report.summarize(
+        [_timed_report("ramp60_s", 7.0, 1500.0, 1200.0, 29757.0, 112051)]
+    )
+
+    assert "## Runtime" in summary
+    assert "`ramp60_s`" in summary
+    assert "29,757" in summary          # volume
+    assert "112,051" in summary         # toolpath points
+    assert "20.0" in summary            # ordering minutes
+
+
+def test_runtime_table_says_when_it_is_a_single_point():
+    summary = overhang_report.summarize(
+        [_timed_report("ramp60_s", 7.0, 1500.0, 1200.0, 29757.0, 112051)]
+    )
+    assert "single point rather than a scaling curve" in summary
+
+
+def test_runtime_table_becomes_a_curve_with_more_than_one_size():
+    summary = overhang_report.summarize(
+        [
+            _timed_report("ramp60_xs", 7.0, 300.0, 240.0, 6428.0, 24203),
+            _timed_report("ramp60_s", 7.0, 1500.0, 1200.0, 29757.0, 112051),
+        ]
+    )
+    assert "single point rather than a scaling curve" not in summary
+
+    # Check the order inside the Runtime section only: the parts table above it
+    # is sorted alphabetically, which puts `ramp60_s` before `ramp60_xs`.
+    runtime = summary[summary.index("## Runtime") :]
+    assert runtime.index("`ramp60_xs`") < runtime.index("`ramp60_s`"), (
+        "the runtime table should read smallest size first, so the trend is "
+        "visible down the column"
+    )
+
+
+def test_runtime_section_is_honest_when_nothing_was_timed():
+    summary = overhang_report.summarize(
+        [_fake_report("ramp45", 7.0, 40.0, 0.001, 5.5, True)]
+    )
+    assert "No run recorded a duration" in summary
+
+
+@pytest.mark.parametrize(
+    "part,expected",
+    [("ramp60_xs", "xs"), ("twin_domes_l", "l"), ("tshape_m", "m"),
+     ("calibration_cube", None)],
+)
+def test_size_suffix_is_recognised(part, expected):
+    assert overhang_report._size_of(part) == expected

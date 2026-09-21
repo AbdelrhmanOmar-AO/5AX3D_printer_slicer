@@ -13,8 +13,11 @@
     Estimated total time by size, from tests/golden/baseline.md:
         xs   1.6 h     s    7.2 h     m   24.4 h     l   57.8 h
 
-.PARAMETER Size
-    Which generated size to use: xs, s, m or l. Default s.
+.PARAMETER Sizes
+    Which generated sizes to run: xs, s, m, l. Default just s. Give several to
+    sweep them, which turns the runtime column of the summary into a scaling
+    curve rather than a single point. Estimated totals per size:
+        xs   1.6 h     s    7.2 h     m   24.4 h     l   57.8 h
 
 .PARAMETER Slopes
     max_slope values in degrees. Default 7, 15, 30. 30 is the reference
@@ -29,13 +32,13 @@
 
 .EXAMPLE
     .\scripts\run_baseline_matrix.ps1
-    .\scripts\run_baseline_matrix.ps1 -Size xs
-    .\scripts\run_baseline_matrix.ps1 -Size s -Slopes 7,30
+    .\scripts\run_baseline_matrix.ps1 -Sizes xs
+    .\scripts\run_baseline_matrix.ps1 -Sizes xs,s -Slopes 7,30
 #>
 
 [CmdletBinding()]
 param(
-    [ValidateSet("xs", "s", "m", "l")][string]$Size = "s",
+    [ValidateSet("xs", "s", "m", "l")][string[]]$Sizes = @("s"),
     [double[]]$Slopes = @(7, 15, 30),
     [string[]]$Parts = @("ramp45", "ramp50", "ramp60", "ramp70", "ramp80", "ramp90",
                          "tshape", "twin_domes"),
@@ -51,19 +54,21 @@ $LogDir = Join-Path $RepoRoot "logs"
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out-Null }
 $LogFile = Join-Path $LogDir "baseline-matrix-$(Get-Date -Format 'yyyy-MM-dd_HHmmss').txt"
 
-$total = $Parts.Count * $Slopes.Count
+$total = $Parts.Count * $Slopes.Count * $Sizes.Count
 $index = 0
 $failures = @()
 $startedAll = Get-Date
 
-Write-Host "Baseline matrix: $($Parts.Count) parts x $($Slopes.Count) slopes = $total runs at size '$Size'" -ForegroundColor Cyan
+Write-Host "Baseline matrix: $($Parts.Count) parts x $($Slopes.Count) slopes x $($Sizes.Count) size(s) = $total runs" -ForegroundColor Cyan
+Write-Host "Sizes: $($Sizes -join ', ')  Slopes: $($Slopes -join ', ') deg"
 Write-Host "Log: $LogFile"
 Write-Host "Leave this running. A failed run is recorded and the matrix continues." -ForegroundColor Yellow
 
-foreach ($slope in $Slopes) {
+foreach ($size in $Sizes) {
+  foreach ($slope in $Slopes) {
     foreach ($part in $Parts) {
         $index++
-        $solid = "${part}_${Size}"
+        $solid = "${part}_${size}"
         $paramPath = "data/param/$solid.json"
 
         if (-not (Test-Path $paramPath)) {
@@ -90,6 +95,7 @@ foreach ($slope in $Slopes) {
             Write-Host "  done in $($took.ToString('hh\:mm\:ss'))" -ForegroundColor Green
         }
     }
+  }
 }
 
 Write-Host ""
