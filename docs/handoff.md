@@ -5,7 +5,7 @@ with no prior conversation.
 
 **Keep this file updated as the work progresses.**
 
-Last updated: 2026-09-21.
+Last updated: 2026-09-21. **Phase P0 is complete**; 344 unit tests pass.
 
 ---
 
@@ -88,45 +88,65 @@ Setup pain already solved, all documented in `README.md`:
 
 ## 5. Where the work stands
 
+**Phase P0 is complete.** Every foundation task is built, tested and verified
+on the operator's laptop. What remains in P0 is compute time, not code.
+
 | Task | Status |
 |---|---|
 | P0.1 Dev environment and packaging | **Done**, verified on the laptop |
-| P0.2 Golden baseline | **Done**; pipeline is deterministic, baseline captured |
+| P0.2 Golden baseline | **Done**. Deterministic; captured, committed and passing |
 | P0.3 Test harness and CI | **Done**, verified on the laptop |
 | P0.4 Taichi arch helper (`ti_env`) | **Done**. All 23 `ti.init` calls route through `ATOM_TI_ARCH` |
-| P0.5 Machine profiles | **Done and verified** — golden test passed on the laptop, G-code byte-identical |
-| P0.6 Tilt contracts and conventions | **Done** — `atom.tilt`, `atom.contracts`, `docs/conventions.md`. Lanes B and C are unblocked |
-| P0.7 Benchmark meshes | **Done**, 36 meshes committed |
-| P0.8 Overhang metrics | **Tooling done**; the 24-run matrix has not been run |
+| P0.5 Machine profiles | **Done**. Golden test passed after it: G-code byte-identical |
+| P0.6 Tilt contracts and conventions | **Done**. `atom.tilt`, `atom.contracts`, `docs/conventions.md` |
+| P0.7 Benchmark meshes | **Done**. 36 meshes, 9 parts x 4 sizes |
+| P0.8 Overhang metrics | **Tooling done.** The 24-run matrix has not been run |
 
-153 unit tests pass.
+344 unit tests pass; 6 skipped (the `pipeline` and `benchmark` tiers).
 
 ### Verification status
 
+Both laptop verifications have passed:
+
+| Check | Result |
+|---|---|
+| `pytest --run-pipeline tests/test_golden.py` | 3 passed in 457 s, after the P0.5 vendored edit |
+| `python tools/atomize.py data/param/ramp60_xs.json` | ran normally; the generated meshes are pipeline-valid |
+
 The golden baseline is committed (`tests/golden/calibration_cube.stats.json`,
-`calibration_cube.toolpath.npz`) and the golden test passes on the laptop as
-of 2026-09-21:
-`pytest --run-pipeline tests/test_golden.py -v` -> 3 passed in 457 s. P0.5 was
-the first edit to a vendored Atomizer file, and the G-code it produces is
-byte-identical to the baseline. The approach of editing vendored files behind
-the golden net is therefore proven, not merely assumed.
+`calibration_cube.toolpath.npz`), so it no longer lives on one machine.
 
-**Re-run that test after every subsequent vendored edit.** It takes about
-7.5 minutes.
+**Re-run the golden test after every vendored edit.** About 7.5 minutes.
 
-### Suggested next steps
+### The immediate next step
 
-1. **Run the P0.8 matrix.** `.\scripts\run_baseline_matrix.ps1` (default size
-   `s`, about 7 hours). Produces `reports/baseline_overhang.md`, the "before"
-   numbers for the whole contribution, and gate D0 needs them. Everything is
-   built — `tools/overhang_report.py`, then the 24-run matrix, which
-   and tested; only the compute time remains.
-2. **Open experiment: can `order_atoms` use the GPU?** It is 86 % of runtime
-   and runs on the CPU. `ATOM_TI_ARCH=cuda` now makes this a one-command test
-   (see "The order_atoms question" below). Worth settling before the P0.8
-   matrix, since it could change the cost of everything downstream.
+```powershell
+.\scripts\run_baseline_matrix.ps1            # size s, ~7.2 h, 24 runs
+.\scripts\run_baseline_matrix.ps1 -Size xs   # ~1.6 h, proves the flow first
+```
 
----
+This produces `reports/baseline_overhang.md`: the "before" numbers the whole
+contribution is measured against, and what gate D0 is waiting on. Everything
+needed is built and tested; only the compute time remains.
+
+Expect stock Atomizer to fail much of the ramp family. That is the finding, not
+a bug: the field constrains only the first layer and low-curvature top
+surfaces, so it has no reason to lean into an overhang. On the calibration cube
+it used 5.53 degrees of a 7 degree budget with no overhang to aim at.
+
+### After that
+
+1. **P1** — kinematics test suite, templated header/footer, infill parameters,
+   and the G-code validator that P3, P4, P5 and P7 all use. Lane A, unblocked.
+2. **P2** — the overhang-aware field. The core contribution and the only
+   research-shaped phase. Depends on P0.6 (done), P0.7 (done) and P0.8's
+   numbers.
+3. **P4** — motion safety. Lane C, needs only P1.4 and P0.6, so it can run
+   beside P2.
+
+Note that P1, P2 and P4 are meant to run in parallel, but there is one operator
+doing every laptop run. The plan's advice is at most two Claude Code sessions
+at a time.
 
 ## 6. What has been built
 
@@ -138,7 +158,7 @@ the golden net is therefore proven, not merely assumed.
 | `benchmark_meshes.py` | Parametric box / ramp / T-shape / twin-dome generators. Self-contained geometry (ear-clipping triangulation, height-field solid) so trimesh's optional extras are not needed. |
 | `overhang_metrics.py` | The three measurements the contribution is judged by: effective overhang angle, unsupported deposition, maximum tilt used. numpy + scipy only. |
 | `tilt.py` | Tilt angles, rotations and limits. Pure numpy. `rotate_toward` is the operation P2.2 performs. |
-| `contracts.py` | `MachineToolpath`: a toolpath plus the machine state it implies. Runs the IK over every point and marks failures rather than aborting, which is what P3.3, P4 and P5.4 are built on. |
+| `contracts.py` | `MachineToolpath`: a toolpath plus the machine state it implies. Runs the IK over every point and marks failures rather than aborting, which is what P3.3, P4 and P5.4 are built on. Verified against the golden toolpath: 46 773 points, 0 unreachable, and the Z/U/V maxima match the written G-code exactly. |
 | `ti_env.py` | One switch for the Taichi backend across every stage. |
 
 ### New tools (`tools/`)
@@ -160,7 +180,9 @@ the golden net is therefore proven, not merely assumed.
 
 - `tests/golden/baseline.md` — baseline commit, environment, stage timings, determinism.
 - `tests/golden/README.md` — how to re-capture the baseline.
-- `docs/plan_corrections.md` — **read this before trusting the build plan.**
+- `docs/plan_corrections.md` — **read this before trusting the build plan.** Its
+  section 6 is a five-line index of what a later task is most likely to get
+  wrong.
 - `docs/conventions.md` — frames, what `normal` means, the three screws, how the
   IK signals failure, and a worked numeric example. Derived from the code by
   running it.
@@ -192,43 +214,41 @@ worse than linear.
 
 ---
 
-## 7a. The `order_atoms` question
+## 7a. The `order_atoms` question, settled
 
-`order_atoms` is 86 % of pipeline runtime and initialises Taichi on the CPU.
-Moving it to the GPU is now a one-command experiment via `ATOM_TI_ARCH`, but
-the structure argues against a large win:
+`order_atoms` is 86 % of pipeline runtime and runs on the CPU. Moving it to the
+GPU was tried via `ATOM_TI_ARCH=cuda` and **is not a win**: the run was
+abandoned after far exceeding the 457 s the same test takes on the CPU. That is
+"not faster", not a measured factor, and some of the excess is one-off kernel
+compilation on a new backend.
 
-* The ordering loop is **inherently sequential** — one atom appended per
-  iteration (31 630 of them for the calibration cube), each choice depending on
-  every earlier one. No backend parallelises that.
-* The work **inside** each iteration is already Taichi kernels
-  (`src/atom/toolpath3.py` has 27), and the BVH is Taichi too, so both are
-  backend-agnostic and would run on the GPU unchanged.
-* But every iteration **synchronises back to the host**:
+Why the structure argues against it:
+
+* The ordering loop is **sequential** — one atom appended per iteration
+  (31 630 for the calibration cube), each choice depending on every earlier
+  one. No backend parallelises that.
+* The work inside each iteration is already Taichi kernels
+  (`src/atom/toolpath3.py` has 27) and the BVH is Taichi too, so both would run
+  on the GPU unchanged.
+* But every iteration **synchronises to the host**:
   `compute_cost_and_find_best_next(...).to_numpy()` returns to Python, which
-  then branches on the result. On a GPU that is ~31 630 forced pipeline
-  flushes.
+  branches on the result. Many tiny kernels punctuated by host round-trips is
+  the pattern GPUs handle worst.
 
-So the per-iteration work would get faster while per-iteration overhead gets
-worse. At 10.5 ms per iteration on the CPU there is room to win, but it is an
-empirical question.
+There was also a correctness risk that never came into play: GPU reductions and
+atomics have no deterministic ordering, so `find_best_next` could break ties
+differently and produce a different toolpath. The golden test would have caught
+it.
 
-**Risk to watch:** GPU reductions and atomics do not have a deterministic
-ordering, so `find_best_next` could break ties differently and produce a
-different toolpath. The golden test detects this immediately. If it fails on
-GPU, the backend is not a free switch and the CPU default must stand.
+**Still untested, and cheaper:** `tools/order_atoms.py` passes
+`kernel_profiler=True`, which is not free. Removing it might speed up the CPU
+path with no determinism risk at all.
 
-The experiment, on the laptop:
-
-```powershell
-$env:ATOM_TI_ARCH = "cuda"
-pytest --run-pipeline tests/test_golden.py -v   # correctness, ~7.5 min on CPU
-Remove-Item Env:\ATOM_TI_ARCH
-```
-
-Compare the reported `order_atoms` time in `data/log/calibration_cube.log`
-against the 331.6 s baseline. Note `kernel_profiler=True` is set on that stage
-and is not free; worth measuring with it off too.
+Practical consequence: long runs are CPU-bound. A machine with faster or more
+CPU cores helps; a better GPU does not. Sustained load is within a laptop's
+design spec — expect loud fans, a hot chassis and thermal throttling that makes
+the runtime estimates optimistic, not damage. Keep it plugged in and stop it
+sleeping (`powercfg /change standby-timeout-ac 0`).
 
 ## 8. Gates (blocked on other people)
 

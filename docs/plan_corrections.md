@@ -9,7 +9,7 @@ report.
 **PLAN EDIT** should be corrected in the plan document itself, because a later
 task will be written against the wrong fact.
 
-Last updated: 2026-09-21.
+Last updated: 2026-09-21. Covers phase P0, now complete.
 
 ---
 
@@ -80,6 +80,47 @@ the big matrix.
 
 ---
 
+### 1.6 `forward()` imposes no X-then-Y tilt decomposition ★ PLAN EDIT
+
+Section 2 of the plan says the tilt parameters `(tilt_a_deg, tilt_b_deg)` are
+"rotation about machine X then machine Y", and asks P0.6 to "confirm this order
+against `kinematics3z.forward()`, and change it if the code implies a different
+one".
+
+Neither is possible: **`forward` uses no such decomposition at all.** It
+composes three rotations about axes derived from the ball geometry
+(`src/atom/kinematics3z.py`, the `forward` closure):
+
+1. about an axis perpendicular to ball0->ball1 in the xy-plane, by the angle
+   that matches `z0 - z1`;
+2. about that vector once rotated, by the angle matching `z0 - z2`;
+3. about +Z by a third angle solved from the slot constraints.
+
+None of those is machine X or Y, and the sequence depends on the machine's ball
+positions. The `(a, b)` pair is therefore a **reporting convention we choose**,
+not one the code constrains. P0.6 fixes it explicitly as X-then-Y applied to
++Z, documented in `docs/conventions.md`, so the reachability map (P2.3) and the
+reports agree with each other. The plan should say "define" rather than
+"confirm".
+
+### 1.7 The inverse kinematics signals failure as NaN, in a value named `offset`
+
+Not contradicted by the plan, which simply never says how failure is reported.
+P1.1 step 4 asks to "read the code first to learn how invalidity is signalled
+(NaN? flag?)", so recording the answer here:
+
+`kinematics3z.inverse` returns `(x, y, z0, z1, z2, offset)`. **`offset` is NaN
+when the point cannot be reached.** There is no flag and no exception.
+
+When it is not NaN, `offset` is a non-negative **required vertical clearance**
+in millimetres — how far the part must be raised for the move to be safe.
+`kinematics3z.get_plaftorm_size` takes the maximum over a toolpath to size the
+sacrificial platform. So the same value carries two meanings, and code that
+treats a non-zero `offset` as an error is wrong.
+
+Full details, including which conditions produce NaN and which only raise
+`offset`, are in `docs/conventions.md` section 5.
+
 ## 2. Deliberate deviations
 
 ### 2.1 Golden baseline taken at this fork's `main`, not upstream
@@ -132,7 +173,28 @@ P0.8 signature is `effective_overhang_angles(mesh, toolpath)`. Implemented as
 to honour the same task's "numpy + scipy only" constraint. A caller with a
 trimesh object passes `mesh.face_normals, mesh.triangles_center, mesh.area_faces`.
 
-### 2.7 Single branch instead of one branch per task
+### 2.7 `contracts.from_toolpath` validates the profile rather than selecting it
+
+P0.6 specifies `from_toolpath(tp, profile)`. The `profile` argument cannot
+select a machine: `atom.kinematics3z` bakes its constants into Taichi closures
+at import time, so a profile passed afterwards could not take effect. Passing
+one that differs from the imported profile raises, rather than silently solving
+against the wrong machine. To change machines, set `ATOM_MACHINE` before
+importing.
+
+A `center_on_bed` argument was added for the same reason `bed_centering_offset`
+exists (see 4.7).
+
+### 2.8 Overhang metrics are taken from `<part>_smoothed.npz`
+
+P0.8 says only "the toolpath". `tools/atomize.py` produces four, and
+`tools/overhang_report.py` uses `_smoothed`: after ordering and smoothing, but
+before `tesselate_toolpath_orientations`, which only subdivides segments so the
+orientation steps stay small, and before `add_platform`, which adds sacrificial
+material below the part that is not part of its geometry and would distort both
+the support test and the surface sampling.
+
+### 2.9 Single branch instead of one branch per task
 
 Plan section 0.1 wants `p<phase>/<task-id>-<short-slug>` branches with one pull
 request each. All work is on `claude/new-session-l8g46d`, one commit per task,
@@ -140,7 +202,7 @@ at the operator's choice: the session is restricted to that branch, and the
 operator is new to git and preferred a single review surface. `main` is
 untouched.
 
-### 2.8 Golden archive is the `_platform` toolpath
+### 2.10 Golden archive is the `_platform` toolpath
 
 P0.2 says "copy the final toolpath file". The final toolpath stage before G-code
 is `data/toolpath/<part>_platform.npz` (`tools/atomize.py`), not the `_smoothed`
@@ -182,6 +244,31 @@ golden comparisons use the G-code SHA-256 directly rather than float tolerances.
 
 ---
 
+### 3.5 `order_atoms` on the GPU is not faster
+
+Tested via `ATOM_TI_ARCH=cuda` (P0.4). The run was abandoned after it had far
+exceeded the 457 s the same test takes on the CPU, so the result is
+**"not a win", not a measured factor**. Some of the excess is one-off
+compilation of every kernel on a new backend.
+
+The structure explains it: the ordering loop is sequential (one atom per
+iteration, 31 630 of them for the calibration cube, each choice depending on
+all previous), and `compute_cost_and_find_best_next` returns to Python every
+iteration, forcing a host synchronisation each time. Many tiny kernels
+punctuated by host round-trips is the pattern GPUs handle worst. The CPU
+default stands.
+
+Untested and cheaper: `tools/order_atoms.py` passes `kernel_profiler=True`,
+which is not free and could be removed with no effect on determinism.
+
+### 3.6 The P0.5 refactor was confirmed byte-identical
+
+The golden test passed after the machine constants moved into profiles: 3
+passed in 457 s, G-code SHA-256 unchanged. This validates the working method
+as well as the change — the golden baseline does catch what it was built to
+catch, so later vendored edits can proceed behind it. Recorded in
+`tests/golden/baseline.md` as a regression history table.
+
 ## 4. Implementation hazards found while building
 
 ### 4.1 `M98 P"/macros/enable3Z.g"` parses as an `E3` word
@@ -215,7 +302,47 @@ than the filesystem.
 
 ---
 
-### 4.5 `git ls-files` reports the index, not what is committed
+### 4.5 Re-centring on the bed is not a constant offset
+
+`tools/toolpath_to_gcode.py` re-centres the whole toolpath on the bed before
+solving. It is tempting to treat that as a translation whose effect cancels in
+any comparison of ranges. It does not.
+
+Bed tilt pivots about the three ball joints, so how far a screw must travel for
+a given tilt depends on where the point sits relative to them. Solving the
+golden toolpath in the part frame gave screw travel 7 to 13 mm larger than the
+G-code's on all three axes; solving it re-centred reproduced the G-code's
+maxima exactly. `contracts.bed_centering_offset` mirrors the arithmetic and
+`from_toolpath(..., center_on_bed=True)` applies it.
+
+Anything comparing computed machine axes against written G-code must solve in
+the same frame.
+
+### 4.6 The header's purge lines extend the G-code's axis ranges
+
+`kinematics3z.HEADER` draws two priming lines at fixed coordinates
+(`X0.1 Y20`, `Y200.0`, all three screws at `0.3 + Z_OFFSET`). Those points are
+not in the toolpath, so any statistic taken over a whole G-code file includes
+them. On the calibration cube they set the file's X minimum, both Y extremes
+and the V minimum.
+
+They can only extend a range, never narrow it, so a comparison against toolpath
+output should assert equality on the maxima and an inequality on the minima.
+`tests/test_contracts.py` does exactly that.
+
+### 4.7 `from __future__ import annotations` was hit in practice
+
+Recorded as a hazard in 3.2, then walked into two commits later while writing
+`src/atom/contracts.py`: the module had the import, and its Taichi kernel
+failed with `Invalid type annotation (argument 0) of Taichi kernel:
+ti.types.ndarray()`.
+
+Modules that define Taichi kernels now carry a comment saying why the import is
+absent. Affected so far: `contracts.py`, `tests/test_contracts.py`,
+`tests/test_ti_env.py`, `tools/overhang_report.py`,
+`tests/test_overhang_report.py`.
+
+### 4.8 `git ls-files` reports the index, not what is committed
 
 Two guard tests were written against the wrong notion of "tracked" and passed
 while the thing they guarded was broken:
@@ -228,7 +355,7 @@ while the thing they guarded was broken:
 Both now use `git ls-tree -r --name-only HEAD`. Only a commit survives a push,
 a clone, or a move to another machine.
 
-### 4.6 A fresh Windows machine has no git identity
+### 4.9 A fresh Windows machine has no git identity
 
 `git commit` fails with "Author identity unknown" until
 `git config --global user.name` and `user.email` are set. The error is easy to
@@ -240,7 +367,24 @@ during setup on any new machine.
 
 | Item | Status |
 |---|---|
-| CI sets `ATOM_TI_ARCH=cpu` | Nothing reads it yet; P0.4's `ti_env` helper is not written |
+| P0.8 matrix | **Not run.** Everything to run it exists (`scripts/run_baseline_matrix.ps1`); only compute time remains. Gate D0 needs the result. |
 | Gates M1, M2, M3, E1 | Deferred by the team until the mechanical design is settled |
-| Gate D0 (tilt budget, benchmark geometry) | Needs P0.8 results and P2.1's analytic bound |
+| Gate D0 (tilt budget, benchmark geometry) | Needs the P0.8 matrix and P2.1's analytic bound |
 | T-shape `underside_angle_deg` | Defaults to 90; gate D0 picks the real value |
+| Thresholds (45 deg effective, 1 % unsupported) | Placeholders, gate D0. Marked as such in code, JSON and the summary. |
+| `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk |
+| P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
+
+---
+
+## 6. Quick index
+
+The five items a later task is most likely to get wrong if it trusts the plan:
+
+| # | In one line |
+|---|---|
+| 1.1 | `tool_orientation` is `(N,2)` spherical; `theta` is the tilt directly |
+| 1.5 | `order_atoms` is CPU and 86 % of runtime; long runs are not GPU-bound |
+| 1.6 | `forward()` has no X-then-Y tilt decomposition to confirm against |
+| 1.7 | IK failure is NaN in `offset`; a non-zero `offset` is a clearance, not an error |
+| 4.5 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
