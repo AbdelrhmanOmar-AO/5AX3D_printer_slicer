@@ -116,6 +116,26 @@ needed), runs `conda init powershell` so `conda activate` works, and prints
 what is still missing. Close and reopen PowerShell afterwards — `PATH` changes
 only reach newly-started shells.
 
+If several Blender versions are installed it prefers 4.4 or 4.5, the versions
+this pipeline is tested against, because
+[`tools/process_for_atomizer.py`](tools/process_for_atomizer.py) drives the
+`bpy` API directly and those calls change across major Blender releases. To
+point at a specific install:
+
+```powershell
+.\scripts\fix_tool_paths.ps1 -BlenderPath "C:\Program Files\Blender Foundation\Blender 4.5"
+```
+
+You can check the Blender stage on its own, without running the whole
+pipeline, with:
+
+```powershell
+blender -b -P tools/process_for_atomizer.py -- data/mesh/calibration_cube.stl data/mesh/calibration_cube.obj 0.084375
+```
+
+It should finish without a Python traceback and write
+`data/mesh/calibration_cube.obj`.
+
 #### "running scripts is disabled on this system"
 
 Windows blocks PowerShell scripts by default, so the first script you run fails

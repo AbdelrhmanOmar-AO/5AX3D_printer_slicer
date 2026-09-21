@@ -24,7 +24,11 @@
 #>
 
 [CmdletBinding()]
-param()
+param(
+    # Explicit folder containing blender.exe, when auto-detection picks the
+    # wrong install (e.g. you keep both a tested 4.x and a newer Blender).
+    [string]$BlenderPath
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -89,23 +93,55 @@ function Find-CondaRoot {
     return $null
 }
 
+#: Blender major versions this pipeline has been verified against (README.md).
+$script:TestedBlenderMajors = @("4.4", "4.5")
+
 function Find-BlenderDir {
+    <#
+      Returns the folder containing blender.exe.
+
+      A version the pipeline was actually tested with wins over a newer one:
+      tools/process_for_atomizer.py drives the bpy API directly
+      (bpy.ops.object.voxel_remesh, bpy.ops.wm.obj_export with named
+      arguments, the SMOOTH modifier), and those break across major Blender
+      releases. If only an untested version is installed we still use it, but
+      say so.
+    #>
     $roots = @(
         "$env:ProgramFiles\Blender Foundation",
         "${env:ProgramFiles(x86)}\Blender Foundation",
         "$env:LOCALAPPDATA\Programs\Blender Foundation",
         "$env:USERPROFILE\Apps"
     )
+
+    $found = @()
     foreach ($root in $roots) {
         if (-not (Test-Path $root)) { continue }
-        # Newest version first, so a machine with several Blenders picks the latest.
-        $hit = Get-ChildItem -Path $root -Filter "blender.exe" -Recurse `
-                             -ErrorAction SilentlyContinue |
-               Sort-Object FullName -Descending |
-               Select-Object -First 1
-        if ($hit) { return $hit.DirectoryName }
+        $found += Get-ChildItem -Path $root -Filter "blender.exe" -Recurse `
+                                -ErrorAction SilentlyContinue
     }
-    return $null
+    if ($found.Count -eq 0) { return $null }
+
+    if ($found.Count -gt 1) {
+        Write-Host "  several Blender installs found:"
+        $found | ForEach-Object { Write-Host "    $($_.DirectoryName)" }
+    }
+
+    foreach ($major in $script:TestedBlenderMajors) {
+        $match = $found | Where-Object { $_.DirectoryName -like "*Blender $major*" } |
+                 Select-Object -First 1
+        if ($match) {
+            Write-Host "  using tested Blender $major" -ForegroundColor Green
+            return $match.DirectoryName
+        }
+    }
+
+    $newest = $found | Sort-Object FullName -Descending | Select-Object -First 1
+    Write-Host "  WARNING: no tested Blender ($($script:TestedBlenderMajors -join ', ')) found." -ForegroundColor Yellow
+    Write-Host "  Using $($newest.DirectoryName)." -ForegroundColor Yellow
+    Write-Host "  If the first pipeline stage fails, install Blender 4.5 LTS and re-run" -ForegroundColor Yellow
+    Write-Host "  this script with -BlenderPath pointing at its folder." -ForegroundColor Yellow
+    return $newest.DirectoryName
 }
 
 $failures = @()
@@ -129,7 +165,16 @@ else {
 }
 
 Write-Section "Looking for Blender"
-$blenderDir = Find-BlenderDir
+if ($BlenderPath) {
+    if (-not (Test-Path (Join-Path $BlenderPath "blender.exe"))) {
+        throw "No blender.exe in the -BlenderPath folder: $BlenderPath"
+    }
+    $blenderDir = $BlenderPath
+    Write-Host "  using -BlenderPath override"
+}
+else {
+    $blenderDir = Find-BlenderDir
+}
 if ($blenderDir) {
     Write-Host "  found: $blenderDir"
     Add-ToUserPath $blenderDir
