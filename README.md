@@ -190,6 +190,24 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
 `-Scope Process` lasts only until you close that PowerShell window.
 
+### Choosing a machine
+
+Machine constants (bed geometry, travel limits, tilt limit, feed rates) live in
+JSON profiles under [`config/machines/`](config/machines), not in the code. The
+`ATOM_MACHINE` environment variable picks one:
+
+```powershell
+$env:ATOM_MACHINE = "reference"   # the default
+```
+
+| Profile | Status | What it is |
+|---|---|---|
+| `reference` | verified | The upstream Atomizer machine. Values copied exactly from the original constants block; the golden test runs against it, and it stays in the test matrix permanently. |
+| `ours` | **PLACEHOLDER** | Our printer. Every number is copied from `reference` and none has been measured. Loading it warns on stderr and raises `PlaceholderProfileWarning`. |
+
+Fill in `ours.json` only once the mechanical team supplies real measurements
+(gates M1 and M2), then set its `status` to `verified`.
+
 ### Running the tests
 
 ```powershell

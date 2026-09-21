@@ -2,28 +2,39 @@ import taichi as ti
 import numpy as np
 
 from . import direction, math, toolpath3
+from .machine_profile import load_profile
 
-BALL_2DPOS_0 = np.array((-4.07, -12.16))
-BALL_2DPOS_1 = np.array((304.93, -12.16))
-BALL_2DPOS_2 = np.array((150.43, 296.84))
-BALL_Z = -45.7
-RAIL_ANGLE_0 = 29.89
-RAIL_ANGLE_1 = -29.89
-RAIL_ANGLE_2 = 90.0
-Z_OFFSET = 75.0
-MAX_TILT_ANGLE_DEG = 30.0
-MAX_X_AXIS = 300
-MAX_Y_AXIS = 293
-MAX_Z_AXIS = 280
-BALL_TO_CORNER = 10
-NOZZLE_TO_GAUNTRY = 70
-FILAMENT_DIAMETER = 1.75
-DEPOSITON_FEEDRATE = 600
-TRAVEL_FEEDRATE = 3000
-Z_FAN_ON = 2.0
-RETRACT_THRESH = 1.8
-RETRACT_LENGTH = 2.0
-RETRACT_SPEED = 2700
+# Machine constants are loaded from a profile under config/machines/, chosen by
+# the ATOM_MACHINE environment variable and defaulting to "reference", which
+# holds these exact upstream values. See atom.machine_profile (build plan P0.5).
+#
+# Every name below keeps its upstream spelling, NOZZLE_TO_GAUNTRY and
+# DEPOSITON_FEEDRATE included: the Taichi kernels in this module read them as
+# globals when they compile, and tools/toolpath_to_gcode.py reads them as
+# attributes of this module.
+_PROFILE = load_profile()
+
+BALL_2DPOS_0 = np.array(_PROFILE.ball_2dpos_0)
+BALL_2DPOS_1 = np.array(_PROFILE.ball_2dpos_1)
+BALL_2DPOS_2 = np.array(_PROFILE.ball_2dpos_2)
+BALL_Z = _PROFILE.ball_z
+RAIL_ANGLE_0 = _PROFILE.rail_angle_0
+RAIL_ANGLE_1 = _PROFILE.rail_angle_1
+RAIL_ANGLE_2 = _PROFILE.rail_angle_2
+Z_OFFSET = _PROFILE.z_offset
+MAX_TILT_ANGLE_DEG = _PROFILE.max_tilt_angle_deg
+MAX_X_AXIS = _PROFILE.max_x_axis
+MAX_Y_AXIS = _PROFILE.max_y_axis
+MAX_Z_AXIS = _PROFILE.max_z_axis
+BALL_TO_CORNER = _PROFILE.ball_to_corner
+NOZZLE_TO_GAUNTRY = _PROFILE.nozzle_to_gantry
+FILAMENT_DIAMETER = _PROFILE.filament_diameter
+DEPOSITON_FEEDRATE = _PROFILE.deposition_feedrate
+TRAVEL_FEEDRATE = _PROFILE.travel_feedrate
+Z_FAN_ON = _PROFILE.z_fan_on
+RETRACT_THRESH = _PROFILE.retract_thresh
+RETRACT_LENGTH = _PROFILE.retract_length
+RETRACT_SPEED = _PROFILE.retract_speed
 
 HEADER = \
 f"""G21 ; set units to millimeters
