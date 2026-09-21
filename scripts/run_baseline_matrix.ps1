@@ -47,6 +47,19 @@ param(
 
 $ErrorActionPreference = "Continue"
 
+# tqdm draws its progress bars with Unicode block characters, which render as
+# mojibake on the default Windows console code page and pollute the log file.
+# PowerShell also surfaces anything a program writes to stderr as a
+# NativeCommandError record even when nothing failed; progress bars go to
+# stderr, so that noise is expected and harmless.
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $env:PYTHONIOENCODING = "utf-8"
+}
+catch {
+    Write-Host "Could not switch the console to UTF-8; progress bars may look garbled." -ForegroundColor Yellow
+}
+
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 

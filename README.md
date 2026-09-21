@@ -232,6 +232,20 @@ $env:ATOM_MACHINE = "reference"   # the default
 Fill in `ours.json` only once the mechanical team supplies real measurements
 (gates M1 and M2), then set its `status` to `verified`.
 
+#### Noise during a pipeline run
+
+Three things look alarming and are not:
+
+* `conda.exe : ... NativeCommandError` — PowerShell reports anything written to
+  stderr as an error record. Progress bars go to stderr.
+* `ΓûêΓûÄ` in place of a progress bar — the console code page is not UTF-8.
+  `scripts/run_baseline_matrix.ps1` sets it; other scripts do not.
+* `Lock C:/taichi_cache/ticache/ticache.lock failed` — Taichi could not lock its
+  compiled-kernel cache, so it recompiles instead of reusing. Results are
+  unaffected, but every stage pays the compilation cost again. Clear it with
+  `ti cache clean -p C:/taichi_cache/ticache`, or delete the folder; an
+  interrupted run can leave the lock behind.
+
 #### "No module named ..." after a `git pull`
 
 Dependencies are added as the work progresses, and a `git pull` brings the new
