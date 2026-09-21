@@ -4,6 +4,8 @@ from math import pi
 
 import taichi as ti
 
+from atom.ti_env import init_taichi
+
 import atom.basis3
 import atom.fff3
 import atom.phasor3
@@ -11,7 +13,7 @@ import atom.solid3
 import atom.toolpath3
 import atom.triphasor3
 
-ti.init(arch=ti.gpu, offline_cache_cleaning_policy="never")
+init_taichi("gpu", offline_cache_cleaning_policy="never")
 
 
 def align_atoms():

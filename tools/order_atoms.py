@@ -4,6 +4,8 @@ import time
 
 import numpy as np
 import taichi as ti
+
+from atom.ti_env import init_taichi
 from tqdm import tqdm
 
 import atom.fff3
@@ -12,7 +14,7 @@ import atom.solid3
 import atom.toolpath3
 from atom.bvh import BVH
 
-ti.init(arch=ti.cpu, offline_cache_cleaning_policy="never", kernel_profiler=True)
+init_taichi("cpu", offline_cache_cleaning_policy="never", kernel_profiler=True)
 
 
 def order_atoms():

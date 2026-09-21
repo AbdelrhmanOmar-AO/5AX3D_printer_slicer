@@ -2,11 +2,13 @@ import argparse
 
 import taichi as ti
 
+from atom.ti_env import init_taichi
+
 import atom.color
 import atom.drawer3
 import atom.toolpath3
 
-ti.init(arch=ti.cpu, offline_cache_cleaning_policy="never")
+init_taichi("cpu", offline_cache_cleaning_policy="never")
 
 
 def visualize_toolpath():

@@ -2,11 +2,13 @@ import argparse
 
 import taichi as ti
 
+from atom.ti_env import init_taichi
+
 import atom.fff3
 import atom.solid3
 from atom.bvh import BVH
 
-ti.init(arch=ti.gpu, debug=False, offline_cache_cleaning_policy="never")
+init_taichi("gpu", debug=False, offline_cache_cleaning_policy="never")
 
 
 def bpn_to_sdf():

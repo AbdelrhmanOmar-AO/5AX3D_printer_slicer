@@ -2,9 +2,11 @@ import argparse
 
 import taichi as ti
 
+from atom.ti_env import init_taichi
+
 import atom.solid3
 
-ti.init(arch=ti.cpu, debug=False, offline_cache_cleaning_policy="never")
+init_taichi("cpu", debug=False, offline_cache_cleaning_policy="never")
 
 
 def obj_to_bpn():

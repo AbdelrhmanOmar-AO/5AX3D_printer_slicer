@@ -190,6 +190,22 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
 `-Scope Process` lasts only until you close that PowerShell window.
 
+### Choosing the Taichi backend
+
+Each pipeline stage has its own default backend (see
+[`src/atom/ti_env.py`](src/atom/ti_env.py)). `ATOM_TI_ARCH` overrides all of
+them at once:
+
+```powershell
+$env:ATOM_TI_ARCH = "cuda"      # force every stage onto CUDA
+$env:ATOM_TI_ARCH = "cpu"       # force every stage onto the CPU
+Remove-Item Env:\ATOM_TI_ARCH   # back to each stage's own default
+```
+
+Note that Taichi does **not** fail when a requested GPU backend is unavailable:
+it logs a warning and falls back to the CPU, running far slower. Check what it
+actually started on rather than assuming.
+
 ### Project documents
 
 | Document | What it holds |

@@ -4,12 +4,14 @@ from math import pi
 
 import taichi as ti
 
+from atom.ti_env import init_taichi
+
 import atom.direction
 import atom.fff3
 import atom.solid3
 import atom.toolpath3
 
-ti.init(arch=ti.gpu, debug=False, offline_cache_cleaning_policy="never")
+init_taichi("gpu", debug=False, offline_cache_cleaning_policy="never")
 
 
 def compute_tool_orientation():
