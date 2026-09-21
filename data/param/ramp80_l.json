@@ -1,0 +1,6 @@
+{
+    "solid_name": "ramp80_l",
+    "deposition_width": 0.9,
+    "max_slope": 7.0,
+    "infill": true
+}
