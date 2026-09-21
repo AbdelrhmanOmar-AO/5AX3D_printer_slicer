@@ -94,29 +94,33 @@ Setup pain already solved, all documented in `README.md`:
 | P0.2 Golden baseline | **Done**; pipeline is deterministic, baseline captured |
 | P0.3 Test harness and CI | **Done**, verified on the laptop |
 | P0.4 Taichi arch helper (`ti_env`) | **Not started**. Its key question is already answered (corrections 3.1) |
-| P0.5 Machine profiles | **Code done**, awaiting the operator's golden-test confirmation |
+| P0.5 Machine profiles | **Done and verified** — golden test passed on the laptop, G-code byte-identical |
 | P0.6 Tilt contracts and conventions | **Not started** — ★ this unblocks lanes B and C |
 | P0.7 Benchmark meshes | **Done**, 36 meshes committed |
 | P0.8 Overhang metrics | **Core done**; `tools/overhang_report.py` and the 24-run matrix remain |
 
 153 unit tests pass.
 
-### Outstanding verification
+### Verification status
 
-`pytest --run-pipeline tests/test_golden.py -v` on the laptop, to confirm the
-P0.5 machine-profile refactor left the G-code unchanged. **P0.5 is the first
-edit to a vendored Atomizer file**; everything afterwards assumes it was safe.
-Static checks done: all 21 constants equal in value and Python type, and
-`HEADER` + `FOOTER` byte-identical (962 bytes).
+The golden test passes on the laptop as of 2026-09-21:
+`pytest --run-pipeline tests/test_golden.py -v` -> 3 passed in 457 s. P0.5 was
+the first edit to a vendored Atomizer file, and the G-code it produces is
+byte-identical to the baseline. The approach of editing vendored files behind
+the golden net is therefore proven, not merely assumed.
+
+**Re-run that test after every subsequent vendored edit.** It takes about
+7.5 minutes.
 
 ### Suggested next steps
 
-1. Confirm the golden test passes.
-2. **P0.6** — tilt contracts and `docs/conventions.md`. Marked ★ in the plan
+1. **P0.6** — tilt contracts and `docs/conventions.md`. Marked ★ in the plan
    because lanes B and C both wait on it. Note correction 1.1: the tilt
    contract must handle the spherical `(N, 2)` form.
-3. Finish **P0.8** — `tools/overhang_report.py`, then the 24-run matrix, which
+2. Finish **P0.8** — `tools/overhang_report.py`, then the 24-run matrix, which
    produces the "before" numbers the whole contribution is measured against.
+3. **P0.4** (`ti_env`) is small and would let `ATOM_TI_ARCH` actually work; CI
+   already sets it.
 
 ---
 

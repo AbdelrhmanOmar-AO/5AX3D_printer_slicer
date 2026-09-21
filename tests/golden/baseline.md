@@ -93,6 +93,12 @@ be chosen with this in mind — see the note in that task.
 | `calibration_cube.stats.json` | `tools/gcode_stats.py` output for the baseline G-code |
 | `calibration_cube.toolpath.npz` | `data/toolpath/calibration_cube_platform.npz`, the last toolpath stage before G-code |
 
+## Regression history
+
+| Date | Change verified | Result |
+|---|---|---|
+| 2026-09-21 | P0.5, machine constants moved into profiles (first vendored edit) | Pass, 3 tests in 457 s. G-code byte-identical. |
+
 ## Re-checking it
 
 ```powershell
