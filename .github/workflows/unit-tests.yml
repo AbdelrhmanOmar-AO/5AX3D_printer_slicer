@@ -1,0 +1,44 @@
+name: unit-tests
+
+# Runs the CPU-only tier of the suite on every push and pull request.
+# The `pipeline` and `benchmark` tiers need a CUDA GPU and Blender, so they are
+# skipped here by default (see tests/conftest.py) and run on the operator's
+# laptop instead.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    env:
+      # Force Taichi onto the CPU backend; the runner has no GPU.
+      ATOM_TI_ARCH: cpu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install the package and dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Report environment
+        run: |
+          python --version
+          python -c "import taichi as ti; print('taichi', ti.__version__)"
+
+      - name: Run unit tests
+        run: pytest -m unit --timeout=60 -q

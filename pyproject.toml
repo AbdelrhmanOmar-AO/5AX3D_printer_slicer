@@ -21,3 +21,12 @@ dependencies = [
     "Pillow",
     "typing_extensions>=4.0",
 ]
+
+[project.optional-dependencies]
+# Kept in sync with requirements-dev.txt.
+dev = [
+    "pytest>=8.0,<10.0",
+    "pytest-timeout>=2.3,<3.0",
+    "trimesh>=4.0,<5.0",
+    "jsonschema>=4.0,<5.0",
+]

@@ -4,3 +4,8 @@ __pycache__
 *.egg-info
 imgui.ini
 .DS_Store
+# Test and pipeline run logs
+logs/
+run1.txt
+run2.txt
+run2.stats.json
