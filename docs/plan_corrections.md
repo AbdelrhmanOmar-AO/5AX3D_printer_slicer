@@ -215,6 +215,27 @@ than the filesystem.
 
 ---
 
+### 4.5 `git ls-files` reports the index, not what is committed
+
+Two guard tests were written against the wrong notion of "tracked" and passed
+while the thing they guarded was broken:
+
+- the first checked the working tree, and passed while 36 benchmark meshes sat
+  uncommitted because `data/mesh/.gitignore` had silently skipped them;
+- the second used `git ls-files`, which lists staged files, and passed while
+  the golden baseline had been `git add`-ed but never committed.
+
+Both now use `git ls-tree -r --name-only HEAD`. Only a commit survives a push,
+a clone, or a move to another machine.
+
+### 4.6 A fresh Windows machine has no git identity
+
+`git commit` fails with "Author identity unknown" until
+`git config --global user.name` and `user.email` are set. The error is easy to
+miss in a scrollback, and the files simply stay staged, so a later `git push`
+reports "Everything up-to-date" while nothing has been committed. Worth setting
+during setup on any new machine.
+
 ## 5. Open plan items not yet resolved
 
 | Item | Status |

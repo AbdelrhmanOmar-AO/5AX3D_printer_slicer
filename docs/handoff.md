@@ -101,27 +101,11 @@ Setup pain already solved, all documented in `README.md`:
 
 153 unit tests pass.
 
-### KNOWN GAP: the golden data file is not committed
-
-`tests/golden/calibration_cube.stats.json` was produced on the operator's
-laptop and never pushed. `tests/test_golden.py` skips when it is absent, so on
-any other machine the regression test silently does nothing while appearing
-healthy. `test_golden_data_files_are_committed` fails until the file is
-committed; that failure is expected and correct.
-
-The operator must run, on the laptop that has the file:
-
-```powershell
-git add tests/golden/calibration_cube.stats.json
-git commit -m "P0.2: commit the captured golden baseline statistics"
-git push
-```
-
-`calibration_cube.toolpath.npz` should go too if it is under 5 MB.
-
 ### Verification status
 
-The golden test passes on the laptop as of 2026-09-21:
+The golden baseline is committed (`tests/golden/calibration_cube.stats.json`,
+`calibration_cube.toolpath.npz`) and the golden test passes on the laptop as
+of 2026-09-21:
 `pytest --run-pipeline tests/test_golden.py -v` -> 3 passed in 457 s. P0.5 was
 the first edit to a vendored Atomizer file, and the G-code it produces is
 byte-identical to the baseline. The approach of editing vendored files behind
