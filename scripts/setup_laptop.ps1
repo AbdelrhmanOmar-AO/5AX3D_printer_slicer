@@ -125,19 +125,35 @@ else {
 }
 
 Write-Host "-- Taichi / GPU --"
+# The probe is written to a file rather than passed with `python -c`: conda run
+# rejects arguments containing newlines with
+# "NotImplementedError: Support for scripts where arguments contain newlines".
 $probe = @'
 import taichi as ti
 
-try:
-    ti.init(arch=ti.cuda)
-    arch = ti.lang.impl.current_cfg().arch
-    print(f"taichi {ti.__version__}; requested cuda; got {arch}")
-    print("CUDA AVAILABLE" if str(arch).endswith("cuda") else "CUDA NOT AVAILABLE (fell back)")
-except Exception as exc:  # noqa: BLE001 - this is a diagnostic probe
-    print(f"taichi cuda init raised: {type(exc).__name__}: {exc}")
-    print("CUDA NOT AVAILABLE")
+print(f"taichi {ti.__version__}")
+for name in ("cuda", "gpu"):
+    try:
+        ti.init(arch=getattr(ti, name))
+        arch = str(ti.lang.impl.current_cfg().arch)
+        print(f"  requested {name}: got {arch}")
+        if arch.endswith("cuda"):
+            print("CUDA AVAILABLE")
+            break
+    except Exception as exc:
+        print(f"  requested {name}: raised {type(exc).__name__}: {exc}")
+else:
+    print("CUDA NOT AVAILABLE - Taichi will fall back to CPU (much slower)")
 '@
-& conda run --name $EnvName --no-capture-output python -c $probe
+
+$probeFile = Join-Path ([System.IO.Path]::GetTempPath()) "atom_gpu_probe.py"
+Set-Content -LiteralPath $probeFile -Value $probe -Encoding UTF8
+try {
+    & conda run --name $EnvName --no-capture-output python $probeFile
+}
+finally {
+    Remove-Item -LiteralPath $probeFile -ErrorAction SilentlyContinue
+}
 
 Write-Section "Running the unit test suite"
 & conda run --name $EnvName --no-capture-output python -m pytest -m unit -q
