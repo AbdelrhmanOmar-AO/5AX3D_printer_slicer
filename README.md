@@ -101,6 +101,21 @@ reports the Python / Blender / CUDA versions that later tasks depend on:
 .\scripts\setup_laptop.ps1
 ```
 
+#### "conda"/"blender" is not recognized
+
+Neither the Miniconda nor the Blender installer puts itself on `PATH`, so both
+commands fail even after a successful install (and after a reboot). Fix both at
+once:
+
+```powershell
+.\scripts\fix_tool_paths.ps1
+```
+
+It locates each tool, appends it to your **user** `PATH` (no Administrator
+needed), runs `conda init powershell` so `conda activate` works, and prints
+what is still missing. Close and reopen PowerShell afterwards — `PATH` changes
+only reach newly-started shells.
+
 #### "running scripts is disabled on this system"
 
 Windows blocks PowerShell scripts by default, so the first script you run fails
