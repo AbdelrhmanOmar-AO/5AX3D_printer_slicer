@@ -4,8 +4,18 @@ This folder holds a frozen record of what the slicer produces **today**, before
 any of our changes. Every later change is compared against it to prove we did
 not break or silently alter existing behaviour.
 
-Status: **not yet captured.** The files below must be produced on the operator's
-laptop before any vendored Atomizer file is edited (build plan task P0.2).
+Status: **captured** on 2026-09-21. See [`baseline.md`](baseline.md) for the
+commit, environment, stage timings and the determinism result.
+
+The pipeline proved deterministic, so comparisons use the G-code SHA-256
+directly. Re-check at any time with:
+
+```powershell
+pytest --run-pipeline tests/test_golden.py -v
+```
+
+The instructions below are kept for re-capturing the baseline (for example on a
+new machine, or if the baseline is deliberately moved to a later commit).
 
 ## Which commit is the baseline?
 
@@ -25,6 +35,7 @@ Record the exact commit in `baseline.md` (below) when capturing.
 | `calibration_cube.stats.json` | Output of `tools/gcode_stats.py` on the baseline G-code |
 | `calibration_cube.toolpath.npz` | The final toolpath (`..._platform.npz`), if under 5 MB |
 | `baseline.md` | Commit hash, environment, timings, determinism result |
+| `../test_golden.py` | The regression test that re-runs and compares |
 
 ## How to capture it (operator, on the laptop)
 
