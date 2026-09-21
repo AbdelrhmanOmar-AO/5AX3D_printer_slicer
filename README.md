@@ -135,11 +135,21 @@ needed), runs `conda init powershell` so `conda activate` works, and prints
 what is still missing. Close and reopen PowerShell afterwards — `PATH` changes
 only reach newly-started shells.
 
-If several Blender versions are installed it prefers 4.4 or 4.5, the versions
-this pipeline is tested against, because
+If several Blender versions are installed it prefers a version the pipeline has
+been verified against, because
 [`tools/process_for_atomizer.py`](tools/process_for_atomizer.py) drives the
-`bpy` API directly and those calls change across major Blender releases. To
-point at a specific install:
+`bpy` API directly and those calls change across major Blender releases.
+
+| Version | Status |
+|---|---|
+| 4.4, 4.5 | Tested upstream |
+| 5.2.1 LTS | Verified here on the calibration cube (STL import, voxel remesh, smooth modifier, OBJ export) |
+
+Blender is invoked exactly once in the pipeline, by
+[`tools/atomize.py`](tools/atomize.py), so checking that one stage covers every
+use of it.
+
+To point at a specific install:
 
 ```powershell
 .\scripts\fix_tool_paths.ps1 -BlenderPath "C:\Program Files\Blender Foundation\Blender 4.5"

@@ -94,7 +94,9 @@ function Find-CondaRoot {
 }
 
 #: Blender major versions this pipeline has been verified against (README.md).
-$script:TestedBlenderMajors = @("4.4", "4.5")
+#: 4.4/4.5 are upstream's; 5.2 was verified here on the calibration cube.
+#: Order is preference order - the first one installed wins.
+$script:TestedBlenderMajors = @("4.4", "4.5", "5.2")
 
 function Find-BlenderDir {
     <#
