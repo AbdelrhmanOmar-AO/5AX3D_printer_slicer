@@ -109,8 +109,10 @@ baseline matrix is being re-run against corrected metrics.
 | P5.4a Toolpath viewer | **Built**, pulled forward at the operator's request (`plan_corrections.md` 2.11). Laptop check pending |
 | P5.4b Bed-motion animation | **Built**: machine-view toggle, Play/Pause and speed. Laptop check pending. Side-by-side view deferred until P2 |
 
-439 unit tests pass; 9 skipped (the `pipeline` and `benchmark` tiers, plus
-the viewer's three display tests when there is no display).
+439 unit tests pass; 10 skipped (the `pipeline` and `benchmark` tiers, plus
+the viewer's four display tests when there is no display). The Play fix
+(`plan_corrections.md` 4.12) is Windows-specific and needs the laptop to
+confirm it.
 
 ### Verification status
 

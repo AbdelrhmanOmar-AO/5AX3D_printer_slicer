@@ -567,6 +567,22 @@ miss in a scrollback, and the files simply stay staged, so a later `git push`
 reports "Everything up-to-date" while nothing has been committed. Worth setting
 during setup on any new machine.
 
+### 4.12 A VTK timer created before the window opens never fires on Windows
+
+The viewer's Play button did nothing on the operator's laptop, although it
+worked in every test here. The playback timer was created while the scene was
+built, before `show()`. `vtkWin32RenderWindowInteractor::InternalCreateTimer`
+calls `SetTimer(this->WindowId, ...)`, and `WindowId` is only set in
+`Initialize()`, which pyvista first calls inside `show()`. Created earlier,
+the timer belongs to no window and its messages never reach VTK. On Linux
+(X11) VTK keeps its own timer list, so the same code works there, and **no
+Linux test can tell the two orders apart**.
+
+The fix is `Viewer.start_timer`: initialise the interactor, then create the
+timer. `tests/test_visualize_5ax.py` now drives the real event loop, but that
+only guards the playback path. The Windows behaviour has to be checked on the
+laptop.
+
 ## 5. Open plan items not yet resolved
 
 | Item | Status |
@@ -594,6 +610,7 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 4.5 | The bed-contact rule must anchor to the part's lowest point |
 | 4.6 | Sampling by face centroid under-measures large flat faces; subdivide first |
 | 4.7 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
+| 4.12 | Create VTK timers after the interactor is initialised, or they never fire on Windows |
 
 And the two habits that caught most of them:
 

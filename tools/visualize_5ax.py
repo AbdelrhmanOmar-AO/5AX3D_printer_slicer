@@ -613,7 +613,25 @@ class Viewer:
         plotter.add_key_event("comma", lambda: self._step(-max(1, count // 100)))
         plotter.add_key_event("period", lambda: self._step(max(1, count // 100)))
         plotter.add_key_event("space", lambda: self._set_playing(not self.playing))
-        plotter.add_timer_event(max_steps=10**9, duration=30, callback=self._tick)
+
+    def start_timer(self):
+        """Create the playback timer, bound to the on-screen window.
+
+        pyvista only attaches the interactor to its window inside ``show()``.
+        On Windows, VTK attaches a timer to the window's handle, so a timer
+        created before that (as `add_timer_event` does if called while the
+        scene is built) belongs to no window and never fires: Play did
+        nothing. Initialising the interactor first creates the window and
+        binds it. On Linux (X11), VTK keeps its own list of timers, which is
+        why the first version worked in testing there.
+        """
+        self.plotter.iren.initialize()
+        self.plotter.add_timer_event(max_steps=10**9, duration=30, callback=self._tick)
+
+    def show(self):
+        """Open the window and hand control to it until it is closed."""
+        self.start_timer()
+        self.plotter.show()
 
     # -- interaction ----------------------------------------------------------
 
@@ -1000,7 +1018,8 @@ def main(argv=None):
         print(f"Wrote {args.screenshot}")
         return 0
 
-    viewer.build().show()
+    viewer.build()
+    viewer.show()
     return 0
 
 

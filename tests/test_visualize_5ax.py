@@ -274,6 +274,38 @@ def test_play_button_advances_the_print_at_the_chosen_speed(tmp_path, monkeypatc
     viewer.plotter.close()
 
 
+@pytest.mark.skipif(
+    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
+    reason="needs a display (run under xvfb-run on Linux)",
+)
+def test_play_runs_from_the_windows_own_timer(tmp_path):
+    """Play must advance with nothing but the window's event loop running.
+
+    The first version passed a test that called the timer callback directly,
+    and still did nothing on Windows: the timer itself never fired. This
+    drives the real VTK event loop instead.
+    """
+    pytest.importorskip("pyvista")
+    import time
+
+    _write_toolpath(tmp_path / "line_smoothed.npz", [[i * 0.5, 0, 0.45] for i in range(2000)])
+    view = vt.load_npz_view(tmp_path / "line_smoothed.npz", [])
+    viewer = vt.Viewer(view, end=0)
+    viewer.build()
+    viewer.start_timer()
+    viewer.plotter.show(interactive_update=True, auto_close=False)
+
+    viewer._set_speed(1000.0)
+    viewer._set_playing(True)
+    deadline = time.perf_counter() + 1.0
+    while time.perf_counter() < deadline:
+        viewer.plotter.iren.process_events()
+        time.sleep(0.005)
+
+    assert viewer.end > 100
+    viewer.plotter.close()
+
+
 # --------------------------------------------------------------------------
 # Machine view
 # --------------------------------------------------------------------------
