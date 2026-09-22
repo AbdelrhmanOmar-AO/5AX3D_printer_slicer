@@ -457,6 +457,7 @@ class Viewer:
         self._toggle_buttons = {}
         self._play_button = None
         self._progress_slider = None
+        self._ready = False
         self.plotter = None
 
     # -- data ---------------------------------------------------------------
@@ -507,6 +508,7 @@ class Viewer:
         plotter.add_axes(color=TEXT, viewport=(0.84, 0.0, 0.98, 0.16))
 
         self._add_controls()
+        self._ready = True
         self.refresh(reset_camera=True)
         return plotter
 
@@ -659,11 +661,11 @@ class Viewer:
     def _set_end(self, index):
         self.end = int(np.clip(index, 0, self.view.count - 1))
         self._play_position = float(self.end)
-        self.refresh()
+        self.refresh(rebuild=False)
 
     def _set_z_max(self, value):
         self.z_max = float(value)
-        self.refresh()
+        self.refresh(rebuild=False)
 
     def _set_speed(self, speed):
         self.speed = float(speed)
@@ -682,7 +684,7 @@ class Viewer:
             self._play_button.GetRepresentation().SetState(int(playing))
             self._label("Pause" if playing else "Play",
                         (52, int(0.07 * self.window_size[1]) - 7), "play_label", size=11)
-        self.refresh()
+        self.refresh(rebuild=False)
 
     def _step(self, delta):
         if self.playing:
@@ -690,11 +692,11 @@ class Viewer:
         self._play_position = float(self.end + delta)
         self._move_to(self.end + delta)
 
-    def _move_to(self, index):
+    def _move_to(self, index, render=True):
         self.end = int(np.clip(index, 0, self.view.count - 1))
         if self._progress_slider is not None:
             self._progress_slider.GetRepresentation().SetValue(self.end + 1)
-        self.refresh()
+        self.refresh(rebuild=False, render=render)
 
     def _tick(self, _step):
         import time
@@ -706,106 +708,163 @@ class Viewer:
         self._last_tick = now
         self._play_position, finished = tv.playback_advance(
             self._play_position, self.speed, elapsed, self.view.count)
-        self._move_to(int(self._play_position))
+        # pyvista's timer renders after this callback, so do not render twice.
+        self._move_to(int(self._play_position), render=False)
         if finished:
             self._set_playing(False)
 
     # -- drawing ----------------------------------------------------------------
+    #
+    # Two levels, so playback does not flicker. `_rebuild` creates every actor:
+    # it runs only when what is drawn changes (colour mode, a Show toggle).
+    # `_update_frame` runs for every step through the print and changes
+    # actors in place: which segments are visible (new connectivity shallow-
+    # copied into the same PolyData), poses (user matrices) and text. Nothing
+    # is removed and re-added between frames, so the colour map, scalar bar
+    # and tube shading stay put.
 
-    def refresh(self, reset_camera=False):
+    _DYNAMIC = ("deposit", "unsupported_dots", "travel", "mesh", "nozzle", "bed",
+                "bed_outline", "balls", "gantry", "gantry_outline")
+    _ON_BED = ("deposit", "unsupported_dots", "travel", "mesh", "bed", "bed_outline", "balls")
+
+    def refresh(self, reset_camera=False, rebuild=True, render=True):
+        # Sliders fire their callbacks while the controls are being created,
+        # before there is anything to update.
+        if not self._ready:
+            return
+        if rebuild:
+            self._rebuild()
+        self._update_frame()
+        if reset_camera:
+            self.plotter.view_isometric()
+            self.plotter.reset_camera()
+        if render:
+            self.plotter.render()
+
+    def _points(self):
+        """Point coordinates in the frame actors are built in."""
+        if self.machine_view:
+            return self.view.point + self.machine_state().bed_offset
+        return self.view.point
+
+    def _segments_poly(self, deposit):
+        """Visible segments of one kind, over all points (never an empty mesh)."""
+        view = self.view
+        indices = tv.visible_segments(view, self.end, z_max=self.z_max, deposit=deposit)
+        poly = self.pv.PolyData(self._points(), lines=tv.line_cells(indices))
+        if deposit:
+            poly.cell_data["value"] = self._scalars[indices]
+        return poly, indices
+
+    def _dots_poly(self, deposit_indices):
+        flagged = deposit_indices[tv.unsupported_mask(self.view)[deposit_indices]]
+        vertices = np.column_stack([np.ones(len(flagged), dtype=np.int64), flagged]).ravel()
+        return self.pv.PolyData(self._points(), verts=vertices)
+
+    def _rebuild(self):
         plotter, pv, view = self.plotter, self.pv, self.view
         mode = tv.MODES_BY_KEY[self.mode]
-
-        # In the machine view everything attached to the bed is drawn in the
-        # bed frame and moved by the bed's pose (a VTK user matrix), so only
-        # the pose changes as the print plays.
-        pose = None
-        points = view.point
-        if self.machine_view:
-            state = self.machine_state()
-            points = view.point + state.bed_offset
-            pose = self._pose_index()
-
-        def attach(actor):
-            if actor is not None and pose is not None:
-                actor.user_matrix = self._pose_matrix(pose)
-            return actor
-
-        deposit = tv.visible_segments(view, self.end, z_max=self.z_max, deposit=True)
-        cells = pv.PolyData(points, lines=tv.line_cells(deposit))
-        cells.cell_data["value"] = self.scalars()[deposit]
-
-        plotter.remove_actor("deposit", reset_camera=False, render=False)
+        self._actors = {}
+        self._polys = {}
+        for name in self._DYNAMIC:
+            plotter.remove_actor(name, reset_camera=False, render=False)
         for title in list(plotter.scalar_bars.keys()):
             plotter.remove_scalar_bar(title, render=False)
-        if len(deposit):
-            options = dict(line_width=3, render_lines_as_tubes=True, name="deposit",
-                           scalars="value", reset_camera=False, render=False)
-            if mode.categories:
-                from matplotlib.colors import ListedColormap
 
-                # Leave trailing categories nothing uses (e.g. "platform" on
-                # a part without one) out of the legend.
-                used = int(self.scalars()[view.deposit].max(initial=0)) + 1
-                count = max(2, min(used, len(mode.categories)))
-                options.update(
-                    cmap=ListedColormap(list(mode.category_colours[:count])),
-                    clim=[-0.5, count - 0.5],
-                    annotations={float(i): name
-                                 for i, name in enumerate(mode.categories[:count])},
-                    scalar_bar_args=dict(title=mode.title, n_labels=0, **self._bar_position()),
-                )
-            else:
-                options.update(
-                    cmap=mode.cmap,
-                    clim=tv.colour_range(self.scalars()[view.deposit], mode.key),
-                    nan_color="#bdbdbd",
-                    scalar_bar_args=dict(title=mode.title, fmt="%.1f", **self._bar_position()),
-                )
-            attach(plotter.add_mesh(cells, **options))
+        self._scalars = self.scalars()
+        deposit_poly, deposit = self._segments_poly(True)
+        options = dict(line_width=3, render_lines_as_tubes=True, name="deposit",
+                       scalars="value", reset_camera=False, render=False)
+        if mode.categories:
+            from matplotlib.colors import ListedColormap
+
+            # Leave trailing categories nothing uses (e.g. "platform" on
+            # a part without one) out of the legend.
+            used = int(self._scalars[view.deposit].max(initial=0)) + 1
+            count = max(2, min(used, len(mode.categories)))
+            options.update(
+                cmap=ListedColormap(list(mode.category_colours[:count])),
+                clim=[-0.5, count - 0.5],
+                annotations={float(i): name for i, name in enumerate(mode.categories[:count])},
+                scalar_bar_args=dict(title=mode.title, n_labels=0, **self._bar_position()),
+            )
+        else:
+            options.update(
+                cmap=mode.cmap,
+                clim=tv.colour_range(self._scalars[view.deposit], mode.key),
+                nan_color="#bdbdbd",
+                scalar_bar_args=dict(title=mode.title, fmt="%.1f", **self._bar_position()),
+            )
+        self._polys["deposit"] = deposit_poly
+        self._actors["deposit"] = plotter.add_mesh(deposit_poly, **options)
 
         # A few red segments are easy to miss among thousands, so the
         # unsupported points are also drawn as dots.
-        plotter.remove_actor("unsupported_dots", reset_camera=False, render=False)
-        if self.mode == "unsupported" and len(deposit):
-            flagged = deposit[tv.unsupported_mask(view)[deposit]]
-            if len(flagged):
-                attach(plotter.add_mesh(pv.PolyData(points[flagged]), color="#ff3b30",
-                                        point_size=9, render_points_as_spheres=True,
-                                        name="unsupported_dots", reset_camera=False,
-                                        render=False))
+        if self.mode == "unsupported":
+            self._polys["unsupported_dots"] = self._dots_poly(deposit)
+            self._actors["unsupported_dots"] = plotter.add_mesh(
+                self._polys["unsupported_dots"], color="#ff3b30", point_size=9,
+                render_points_as_spheres=True, name="unsupported_dots",
+                reset_camera=False, render=False)
 
-        plotter.remove_actor("travel", reset_camera=False, render=False)
         if self.show_travel:
-            travel = tv.visible_segments(view, self.end, z_max=self.z_max, deposit=False)
-            if len(travel):
-                attach(plotter.add_mesh(pv.PolyData(points, lines=tv.line_cells(travel)),
-                                        color="#5fd35f" if self.mode == "type" else "#8f96a3",
-                                        opacity=0.6, line_width=1, name="travel",
-                                        reset_camera=False, render=False))
+            self._polys["travel"], _ = self._segments_poly(False)
+            self._actors["travel"] = plotter.add_mesh(
+                self._polys["travel"], color="#5fd35f" if self.mode == "type" else "#8f96a3",
+                opacity=0.6, line_width=1, name="travel", reset_camera=False, render=False)
 
-        plotter.remove_actor("mesh", reset_camera=False, render=False)
         if self.show_mesh and self.mesh is not None:
             vertices, faces = self.mesh
             if self.machine_view:
                 vertices = vertices + self.machine_state().bed_offset
             surface = pv.PolyData(vertices, np.column_stack(
                 [np.full(len(faces), 3), faces]).ravel())
-            attach(plotter.add_mesh(surface, color="#b0c4de", opacity=0.18, name="mesh",
-                                    reset_camera=False, render=False, show_edges=False))
+            self._actors["mesh"] = plotter.add_mesh(
+                surface, color="#b0c4de", opacity=0.18, name="mesh",
+                reset_camera=False, render=False, show_edges=False)
 
-        for name in ("nozzle", "bed", "bed_outline", "balls", "gantry", "gantry_outline"):
-            plotter.remove_actor(name, reset_camera=False, render=False)
+        if self.show_nozzle and view.count:
+            self._actors["nozzle"] = plotter.add_mesh(
+                self._nozzle_cone(), color="#d9dde3", opacity=0.8 if self.machine_view else 0.55,
+                name="nozzle", reset_camera=False, render=False)
+
         if self.machine_view:
-            self._draw_machine(pose)
-        elif self.show_nozzle and view.count and view.point[self.end, 2] <= self.z_max:
-            self._draw_nozzle()
+            self._build_machine()
 
-        self._draw_text()
-        if reset_camera:
-            plotter.view_isometric()
-            plotter.reset_camera()
-        plotter.render()
+        self._draw_header()
+        self._status_actor = plotter.add_text("", position="upper_right", font_size=9,
+                                              color=TEXT, name="status")
+        plotter.add_text(
+            "Left/Right: 1 point   , / . : 1 %   Space: play/pause   v: iso view   q: quit",
+            position="lower_left", font_size=8, color=TEXT_DIM, name="help")
+
+    def _update_frame(self):
+        view = self.view
+        deposit_poly, deposit = self._segments_poly(True)
+        self._polys["deposit"].copy_from(deposit_poly, deep=False)
+        if "unsupported_dots" in self._polys:
+            self._polys["unsupported_dots"].copy_from(self._dots_poly(deposit), deep=False)
+        if "travel" in self._polys:
+            self._polys["travel"].copy_from(self._segments_poly(False)[0], deep=False)
+
+        if self.machine_view:
+            pose = self._pose_index()
+            if pose is not None:
+                matrix = self._pose_matrix(pose)
+                for name in self._ON_BED:
+                    if name in self._actors:
+                        self._actors[name].user_matrix = matrix
+                clash = (not self.machine_state().valid[self.end]) or self._bed_clearance(pose) < 0
+                self._actors["bed"].prop.color = "#c0392b" if clash else "#5b6676"
+                self._actors["bed_outline"].prop.color = "#ff6b5e" if clash else "#aab4c3"
+
+        nozzle = self._actors.get("nozzle")
+        if nozzle is not None:
+            nozzle.user_matrix = self._nozzle_matrix()
+            visible = self.machine_view or view.point[self.end, 2] <= self.z_max
+            nozzle.SetVisibility(bool(visible))
+
+        self._status_actor.set_text("upper_right", self._status_text())
 
     def _pose_index(self):
         from atom import bed_motion
@@ -828,45 +887,56 @@ class Viewer:
                                             corners)
         return float(self._profile.nozzle_to_gantry - heights.max())
 
-    def _draw_machine(self, pose):
-        """The bed (tilting), the ball joints, the nozzle and the gantry level."""
+    def _nozzle_cone(self):
+        """The nozzle cone with its tip at the origin, opening along +Z.
+
+        Placed each frame by `_nozzle_matrix`; in the machine view it stays
+        vertical, in the part view it follows the tool orientation.
+        """
         from math import degrees
 
-        from atom import bed_motion, toolpath3
+        from atom import toolpath3  # imports Taichi; only needed for the constant
+
+        if self.machine_view:
+            height = 20.0
+        else:
+            points = self.view.point
+            extent = float(np.ptp(points, axis=0).max()) if self.view.count > 1 else 10.0
+            height = max(3.0, 0.12 * extent)
+        return self.pv.Cone(center=(0.0, 0.0, height / 2.0), direction=(0.0, 0.0, -1.0),
+                            height=height, angle=degrees(toolpath3.NOZZLE_CONE_ANGLE / 2.0),
+                            resolution=48)
+
+    def _nozzle_matrix(self):
+        matrix = np.eye(4)
+        if self.machine_view:
+            state = self.machine_state()
+            pose = self._pose_index()
+            if pose is not None:
+                matrix[:2, 3] = state.machine[pose, :2]
+            return matrix
+        matrix[:3, :3] = _rotation_from_z(self.view.direction[self.end])
+        matrix[:3, 3] = self.view.point[self.end]
+        return matrix
+
+    def _build_machine(self):
+        """The bed and ball joints (moved by the pose each frame) and the gantry level."""
+        from atom import bed_motion
 
         pv, plotter, profile = self.pv, self.plotter, self._profile
-        state = self.machine_state()
-        if pose is None:
-            return
-
-        clash = (not state.valid[self.end]) or self._bed_clearance(pose) < 0
         corners = bed_motion.bed_corners(profile)
-        plate = pv.PolyData(corners, faces=[4, 0, 1, 2, 3])
-        matrix = self._pose_matrix(pose)
-        bed = plotter.add_mesh(plate, color="#c0392b" if clash else "#5b6676", opacity=0.55,
-                               name="bed", reset_camera=False, render=False)
-        bed.user_matrix = matrix
-        outline = plotter.add_mesh(pv.PolyData(corners, lines=[5, 0, 1, 2, 3, 0]),
-                                   color="#ff6b5e" if clash else "#aab4c3", line_width=2,
-                                   name="bed_outline", reset_camera=False, render=False)
-        outline.user_matrix = matrix
-        balls = plotter.add_mesh(pv.PolyData(bed_motion.ball_positions(profile)),
-                                 color="#e8a33d", point_size=16, render_points_as_spheres=True,
-                                 name="balls", reset_camera=False, render=False)
-        balls.user_matrix = matrix
+        self._actors["bed"] = plotter.add_mesh(
+            pv.PolyData(corners, faces=[4, 0, 1, 2, 3]), color="#5b6676", opacity=0.55,
+            name="bed", reset_camera=False, render=False)
+        self._actors["bed_outline"] = plotter.add_mesh(
+            pv.PolyData(corners, lines=[5, 0, 1, 2, 3, 0]), color="#aab4c3", line_width=2,
+            name="bed_outline", reset_camera=False, render=False)
+        self._actors["balls"] = plotter.add_mesh(
+            pv.PolyData(bed_motion.ball_positions(profile)), color="#e8a33d", point_size=16,
+            render_points_as_spheres=True, name="balls", reset_camera=False, render=False)
 
-        # Fixed to the machine: the nozzle at (X, Y, 0), vertical, and the
-        # gantry level nozzle_to_gantry above it (the reference proxy P4.1
-        # also uses).
-        x, y = state.machine[pose, 0], state.machine[pose, 1]
-        if self.show_nozzle:
-            height = 20.0
-            plotter.add_mesh(pv.Cone(center=(x, y, height / 2.0), direction=(0, 0, -1),
-                                     height=height,
-                                     angle=degrees(toolpath3.NOZZLE_CONE_ANGLE / 2.0),
-                                     resolution=48),
-                             color="#d9dde3", opacity=0.8, name="nozzle",
-                             reset_camera=False, render=False)
+        # Fixed to the machine: the gantry level nozzle_to_gantry above the
+        # nozzle tip (the reference proxy P4.1 also uses).
         level = float(profile.nozzle_to_gantry)
         span = np.array([[0, 0, level], [profile.max_x_axis, 0, level],
                          [profile.max_x_axis, profile.max_y_axis, level],
@@ -885,22 +955,7 @@ class Viewer:
         self._label(tv.describe_speed(self.speed, self.view.count),
                     self._speed_label_position, "speed_label", size=9)
 
-    def _draw_nozzle(self):
-        from math import degrees
-
-        from atom import toolpath3  # imports Taichi; only needed for the constant
-
-        point = self.view.point[self.end]
-        direction = self.view.direction[self.end]
-        extent = float(np.ptp(self.view.point, axis=0).max()) if self.view.count > 1 else 10.0
-        height = max(3.0, 0.12 * extent)
-        cone = self.pv.Cone(center=point + direction * height / 2.0, direction=-direction,
-                            height=height, angle=degrees(toolpath3.NOZZLE_CONE_ANGLE / 2.0),
-                            resolution=48)
-        self.plotter.add_mesh(cone, color="#d9dde3", opacity=0.55, name="nozzle",
-                              reset_camera=False, render=False)
-
-    def _draw_text(self):
+    def _draw_header(self):
         view = self.view
         mode = tv.MODES_BY_KEY[self.mode]
         frame = "machine view: nozzle fixed, bed moves" if self.machine_view else view.frame
@@ -929,6 +984,8 @@ class Viewer:
         self.plotter.add_text("\n".join(header), position="upper_left", font_size=9,
                               color=TEXT, name="header")
 
+    def _status_text(self):
+        view = self.view
         status = tv.describe_point(view, self.end)
         if self.machine_view:
             state = self.machine_state()
@@ -942,11 +999,19 @@ class Viewer:
                 clearance = self._bed_clearance(pose)
                 verdict = "CLASH" if clearance < 0 else "ok"
                 status += f"\nbed-gantry clearance {clearance:.1f} mm ({verdict})"
-        self.plotter.add_text(status, position="upper_right", font_size=9, color=TEXT,
-                              name="status")
-        self.plotter.add_text(
-            "Left/Right: 1 point   , / . : 1 %   Space: play/pause   v: iso view   q: quit",
-            position="lower_left", font_size=8, color=TEXT_DIM, name="help")
+        return status
+
+
+def _rotation_from_z(direction):
+    """Rotation taking +Z to the unit vector ``direction`` (Rodrigues)."""
+    direction = np.asarray(direction, dtype=np.float64)
+    direction = direction / np.linalg.norm(direction)
+    axis = np.cross([0.0, 0.0, 1.0], direction)
+    cosine = float(direction[2])
+    if np.linalg.norm(axis) < 1e-12:
+        return np.eye(3) if cosine > 0 else np.diag([1.0, -1.0, -1.0])
+    k = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+    return np.eye(3) + k + k @ k / (1.0 + cosine)
 
 
 # --------------------------------------------------------------------------

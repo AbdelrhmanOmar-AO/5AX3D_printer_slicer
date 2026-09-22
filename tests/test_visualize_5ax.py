@@ -339,3 +339,36 @@ def test_machine_state_of_gcode_uses_the_written_screw_values(ti_cpu, repo_root)
     assert not state.solved
     np.testing.assert_array_equal(state.machine, view.machine)
     np.testing.assert_allclose(state.bed_offset, 0.0)
+
+
+@pytest.mark.skipif(
+    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
+    reason="needs a display (run under xvfb-run on Linux)",
+)
+@pytest.mark.parametrize("machine_view", [False, True])
+def test_moving_through_the_print_updates_the_scene_in_place(ti_cpu, tmp_path, machine_view):
+    """Playback flickered while every frame removed and re-added each actor.
+
+    Stepping through the print must keep the same actors and scalar bar and
+    only change what they show.
+    """
+    pytest.importorskip("pyvista")
+    angle = np.linspace(0, 12 * np.pi, 600)
+    spiral = np.column_stack([5 + 4 * np.cos(angle), 5 + 4 * np.sin(angle), angle / 4])
+    _write_toolpath(tmp_path / "spiral_smoothed.npz", spiral, tilt_deg=10)
+    view = vt.load_npz_view(tmp_path / "spiral_smoothed.npz", [])
+    viewer = vt.Viewer(view, mode="tilt", end=10, machine_view=machine_view)
+    viewer.build(off_screen=True)
+    actors = dict(viewer._actors)
+    bars = list(viewer.plotter.scalar_bars.keys())
+    shown = viewer._polys["deposit"].n_cells
+
+    viewer._move_to(300)
+    viewer._set_z_max(3.0)
+
+    assert viewer._actors == actors
+    assert all(actor in viewer.plotter.renderer.actors.values() for actor in actors.values())
+    assert list(viewer.plotter.scalar_bars.keys()) == bars
+    assert viewer._polys["deposit"].n_cells > shown
+    assert "Point 301 of 600" in viewer._status_actor.get_text(3)
+    viewer.plotter.close()
