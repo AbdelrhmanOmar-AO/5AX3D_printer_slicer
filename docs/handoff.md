@@ -256,6 +256,69 @@ design spec — expect loud fans, a hot chassis and thermal throttling that make
 the runtime estimates optimistic, not damage. Keep it plugged in and stop it
 sleeping (`powercfg /change standby-timeout-ac 0`).
 
+## 7b. The P0.8 baseline result (2026-09-22)
+
+48 runs, 8 parts x 3 slopes x 2 sizes, 19.9 hours wall clock, **none failed**.
+`reports/baseline_overhang.md` and the per-run JSON are committed.
+
+### The headline finding
+
+**Stock Atomizer does not merely ignore overhangs; it tilts away from them, and
+a larger tilt budget makes that worse.** Geometric angle against the effective
+angle achieved, size `s`:
+
+| Part | max_slope 7° | 15° | 30° | Tilt used at 30° |
+|---|---|---|---|---|
+| `ramp45` | 45° | 45° | **50°** | 6.3° |
+| `ramp50` | 50° | 50° | **65°** | 17.1° |
+| `ramp60` | 60° | 64° | **90°** | 29.7° |
+| `ramp70` | 70° | 79° | **90°** | 20.6° |
+| `ramp80` | 83° | 90° | 90° | 14.6° |
+| `ramp90` | 90° | 90° | 90° | 11.9° |
+
+The damage tracks the tilt almost exactly one-for-one: `ramp60` at 30° uses
+29.7° of tilt and its overhang worsens by 30°, turning a 60° slope into a
+horizontal ceiling. That is the same `theta_eff = theta_geo ± tilt` relation
+P0.6 verified, with the wrong sign, and it is the clearest possible statement
+of what P2 exists to fix: the same tilt aimed correctly would turn 60° into
+30°.
+
+`ramp90` and `tshape` are already horizontal and cannot get worse. At
+`max_slope 7` the field barely tilts at all (0.6–1.3°) on most parts, so the
+harm only appears once there is a budget to misuse.
+
+No part passed the thresholds, at any tilt setting.
+
+### Caveat on the unsupported column
+
+Those runs predate the bed-contact fix (`plan_corrections.md` 4.5), so their
+unsupported figures are inflated by roughly three percentage points. The
+verdicts do not change — every part fails on the effective angle alone — but
+the absolute percentages should not be quoted until the runs are re-scored.
+
+Re-scoring needs archived toolpaths, which were added *after* this matrix. So
+either accept the caveat, or re-run. Runs from now on archive to
+`reports/toolpaths/` and `--reanalyse` re-scores them in seconds.
+
+### Measured runtime scaling
+
+`order_atoms` grows as **points^1.5**, not linearly (mean exponent 1.50 over 24
+part/slope pairs, range 1.39–1.61). This does not appear to be published for
+Atomizer, so it is a result in its own right.
+
+| Size | Volume vs `s` | Per run | 24-run matrix |
+|---|---|---|---|
+| `s` (50 mm) | 1x | 42 min | 17 h (measured) |
+| `m` (75 mm) | 3.4x | ~4.4 h | ~105 h (4 days) |
+| `l` (100 mm) | 8.0x | ~16 h | ~384 h (16 days) |
+
+**`l` is out of reach** for a full matrix and `m` is a four-day commitment.
+Size `s` is the practical ceiling for anything run repeatedly; reserve `l` for
+individual showcase parts and the printed benchmarks.
+
+This is also why the first matrix took 19.9 h against an 8.8 h estimate: that
+estimate assumed linear scaling.
+
 ## 8. Gates (blocked on other people)
 
 | Gate | Question | Status |
