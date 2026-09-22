@@ -318,3 +318,31 @@ def test_runtime_section_is_honest_when_nothing_was_timed():
 )
 def test_size_suffix_is_recognised(part, expected):
     assert overhang_report._size_of(part) == expected
+
+
+def test_archived_toolpaths_are_not_committed(repo_root):
+    """A full matrix archives ~220 MB of toolpaths; they must stay local.
+
+    They exist so `--reanalyse` can re-score without re-slicing, which is a
+    local concern. The JSON reports are the committed artifact.
+    """
+    import subprocess
+
+    result = subprocess.run(
+        ["git", "check-ignore", "reports/toolpaths/example_ms7.npz"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        "reports/toolpaths/ is not gitignored; a matrix run would try to commit "
+        "hundreds of megabytes of regenerable data"
+    )
+
+
+def test_archive_and_report_paths_agree_on_naming():
+    """`--reanalyse` finds an archive by rebuilding its name from the report."""
+    assert (
+        overhang_report.archive_path("ramp60_s", 7.0).stem
+        == overhang_report.report_path("ramp60_s", 7.0).stem
+    )
