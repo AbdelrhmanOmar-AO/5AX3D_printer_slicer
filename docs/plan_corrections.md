@@ -9,7 +9,8 @@ report.
 **PLAN EDIT** should be corrected in the plan document itself, because a later
 task will be written against the wrong fact.
 
-Last updated: 2026-09-21. Covers phase P0, now complete.
+Last updated: 2026-09-22. Phase P0 complete; the P0.8 matrix is being re-run
+against corrected metrics.
 
 ---
 
@@ -300,6 +301,30 @@ as well as the change — the golden baseline does catch what it was built to
 catch, so later vendored edits can proceed behind it. Recorded in
 `tests/golden/baseline.md` as a regression history table.
 
+### 3.7 The overhang metric is now validated against a known case
+
+Three separate flaws (4.5, 4.6 and 1.8) each produced confident but wrong
+figures for unsupported deposition, and each was hidden by the one before it.
+The sequence on `ramp45_xs` at `max_slope 7`, an overhang any 3-axis printer
+manages:
+
+| State | Unsupported near overhangs | Verdict |
+|---|---:|---|
+| Original | 28.70 % | not printable |
+| After the bed-contact fix (4.5) | 28.70 % | unchanged — the bug was in the *overall* figure |
+| After dense surface sampling (4.6) | 16.35 % | not printable |
+| After the cone governs the radius (1.8) | **0.24 %** | **printable** |
+
+0.24 % is the answer physics predicts, and it is the first passing result in
+the study: before this the metric returned "not printable" for everything,
+whatever Atomizer did.
+
+**The standard worth keeping:** a metric should be checked against a case whose
+answer is known before its output is put in a table. Each of these was found by
+noticing a figure that did not match physical intuition and chasing it rather
+than explaining it away, and twice the check that exposed it cost seven
+minutes against a twenty-hour run.
+
 ## 4. Implementation hazards found while building
 
 ### 4.1 `M98 P"/macros/enable3Z.g"` parses as an `E3` word
@@ -442,19 +467,18 @@ during setup on any new machine.
 
 | Item | Status |
 |---|---|
-| P0.8 matrix | **Not run.** Everything to run it exists (`scripts/run_baseline_matrix.ps1`); only compute time remains. Gate D0 needs the result. |
+| P0.8 matrix | **Re-running** (2026-09-22) against the corrected metrics. The first run, 48 runs in 19.9 h, produced sound tilt and runtime data but unusable unsupported figures. |
 | Gates M1, M2, M3, E1 | Deferred by the team until the mechanical design is settled |
-| Gate D0 (tilt budget, benchmark geometry) | Needs the P0.8 matrix and P2.1's analytic bound |
+| Gate D0 (tilt budget, benchmark geometry) | Needs the re-run matrix and P2.1's analytic bound |
 | T-shape `underside_angle_deg` | Defaults to 90; gate D0 picks the real value |
-| Thresholds (45 deg effective, 1 % unsupported) | Placeholders, gate D0. Marked as such in code, JSON and the summary. |
+| Thresholds (45 deg effective, 1 % unsupported) | Placeholders, gate D0. Now meaningful: with the metric fixed, parts can actually pass. |
+| `twin_domes` verdict | Reports "not printable" when it has no overhang to measure. Conservative by design but misleading in the table; distinguishing "nothing to measure" from "failed" is worth doing. |
 | `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
 
----
-
 ## 6. Quick index
 
-The five items a later task is most likely to get wrong if it trusts the plan:
+The items a later task is most likely to get wrong if it trusts the plan:
 
 | # | In one line |
 |---|---|
@@ -463,6 +487,14 @@ The five items a later task is most likely to get wrong if it trusts the plan:
 | 1.6 | `forward()` has no X-then-Y tilt decomposition to confirm against |
 | 1.7 | IK failure is NaN in `offset`; a non-zero `offset` is a clearance, not an error |
 | 1.8 | The plan's 1.5 x height support radius overrides its own 65-degree cone |
-| 4.5 | The bed-contact rule must anchor to the part's lowest point, or a plain cube reads as 6 % unsupported |
+| 4.5 | The bed-contact rule must anchor to the part's lowest point |
 | 4.6 | Sampling by face centroid under-measures large flat faces; subdivide first |
 | 4.7 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
+
+And the two habits that caught most of them:
+
+* Before a long run, do one short run and compare against what you expect. A
+  figure that does not move when the thing it depends on changes is worth
+  chasing (4.6 was found exactly this way).
+* Check a metric against a case whose answer is known before putting its
+  output in a table (3.7).

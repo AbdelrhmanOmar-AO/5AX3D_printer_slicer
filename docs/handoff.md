@@ -5,7 +5,8 @@ with no prior conversation.
 
 **Keep this file updated as the work progresses.**
 
-Last updated: 2026-09-21. **Phase P0 is complete**; 344 unit tests pass.
+Last updated: 2026-09-22. **Phase P0 is complete**; 368 unit tests pass.
+The P0.8 matrix is being re-run against corrected metrics.
 
 ---
 
@@ -89,7 +90,8 @@ Setup pain already solved, all documented in `README.md`:
 ## 5. Where the work stands
 
 **Phase P0 is complete.** Every foundation task is built, tested and verified
-on the operator's laptop. What remains in P0 is compute time, not code.
+on the operator's laptop. What remains in P0 is compute time, not code: the
+baseline matrix is being re-run against corrected metrics.
 
 | Task | Status |
 |---|---|
@@ -100,9 +102,9 @@ on the operator's laptop. What remains in P0 is compute time, not code.
 | P0.5 Machine profiles | **Done**. Golden test passed after it: G-code byte-identical |
 | P0.6 Tilt contracts and conventions | **Done**. `atom.tilt`, `atom.contracts`, `docs/conventions.md` |
 | P0.7 Benchmark meshes | **Done**. 36 meshes, 9 parts x 4 sizes |
-| P0.8 Overhang metrics | **Tooling done.** The 24-run matrix has not been run |
+| P0.8 Overhang metrics | Tooling done and validated. **Matrix re-running** (2026-09-22); see section 7b |
 
-344 unit tests pass; 6 skipped (the `pipeline` and `benchmark` tiers).
+368 unit tests pass; 6 skipped (the `pipeline` and `benchmark` tiers).
 
 ### Verification status
 
@@ -120,25 +122,31 @@ The golden baseline is committed (`tests/golden/calibration_cube.stats.json`,
 
 ### The immediate next step
 
+The baseline matrix is being re-run (~20 h) after three flaws were found in the
+unsupported-deposition metric:
+
 ```powershell
-.\scripts\run_baseline_matrix.ps1                # size s, ~7.2 h, 24 runs
-.\scripts\run_baseline_matrix.ps1 -Sizes xs      # ~1.6 h, proves the flow first
-.\scripts\run_baseline_matrix.ps1 -Sizes xs,s    # ~8.8 h, adds the scaling curve
+.\scripts\run_baseline_matrix.ps1 -Sizes xs,s
 ```
 
-Note that `-Sizes` is what turns the summary's runtime table from a single
-point into a scaling curve. The overhang baseline itself needs only one size;
-the sizes exist to measure how pipeline cost grows with part volume, which
-nobody has published for Atomizer.
+When it finishes, read `reports/baseline_overhang.md`, commit `reports/`, and
+take the result to gate D0.
 
-This produces `reports/baseline_overhang.md`: the "before" numbers the whole
-contribution is measured against, and what gate D0 is waiting on. Everything
-needed is built and tested; only the compute time remains.
+**Before any long run, do one short one.** Both of the later flaws were caught
+by a seven-minute single-part check against a twenty-hour matrix:
 
-Expect stock Atomizer to fail much of the ramp family. That is the finding, not
-a bug: the field constrains only the first layer and low-curvature top
-surfaces, so it has no reason to lean into an overhang. On the calibration cube
-it used 5.53 degrees of a 7 degree budget with no overhang to aim at.
+```powershell
+python tools/overhang_report.py data/param/ramp45_xs.json --max-slope 7
+```
+
+`ramp45_xs` at `max_slope 7` should report about **0.24 % unsupported** and
+**printable: True**. A 45-degree overhang is one any 3-axis printer manages, so
+that is the case whose answer is known; if it moves, something has regressed.
+
+**A metric change no longer costs a re-run.** Every run archives its toolpath
+to `reports/toolpaths/` (gitignored, ~220 MB for a full matrix), and
+`python tools/overhang_report.py --reanalyse` re-scores every archived run in
+seconds.
 
 ### After that
 
@@ -162,7 +170,7 @@ at a time.
 |---|---|
 | `machine_profile.py` | Loads machine constants from `config/machines/*.json`, selected by `ATOM_MACHINE` (default `reference`). Frozen dataclass, validated, warns loudly on a PLACEHOLDER profile. |
 | `benchmark_meshes.py` | Parametric box / ramp / T-shape / twin-dome generators. Self-contained geometry (ear-clipping triangulation, height-field solid) so trimesh's optional extras are not needed. |
-| `overhang_metrics.py` | The three measurements the contribution is judged by: effective overhang angle, unsupported deposition, maximum tilt used. numpy + scipy only. |
+| `overhang_metrics.py` | The three measurements the contribution is judged by: effective overhang angle, unsupported deposition, maximum tilt used. numpy + scipy only. Validated against a known case: a 45-degree overhang reads 0.24 % unsupported and printable. |
 | `tilt.py` | Tilt angles, rotations and limits. Pure numpy. `rotate_toward` is the operation P2.2 performs. |
 | `contracts.py` | `MachineToolpath`: a toolpath plus the machine state it implies. Runs the IK over every point and marks failures rather than aborting, which is what P3.3, P4 and P5.4 are built on. Verified against the golden toolpath: 46 773 points, 0 unreachable, and the Z/U/V maxima match the written G-code exactly. |
 | `ti_env.py` | One switch for the Taichi backend across every stage. |
@@ -173,7 +181,7 @@ at a time.
 |---|---|
 | `gcode_stats.py` | G-code to a stable JSON record (hash, counts, axis ranges, extrusion). The golden comparison. |
 | `make_benchmarks.py` | Generates the benchmark meshes and parameter files; prints estimated runtime before writing. |
-| `overhang_report.py` | Runs a part at a chosen `max_slope`, measures it, writes a JSON report. `--summarize` builds the comparison table. |
+| `overhang_report.py` | Runs a part at a chosen `max_slope`, measures it, writes a JSON report, and archives the toolpath. `--summarize` builds the comparison table; `--reanalyse` re-scores every archived run against the current metrics in seconds. |
 
 ### Configuration and scripts
 
@@ -192,6 +200,8 @@ at a time.
 - `docs/conventions.md` — frames, what `normal` means, the three screws, how the
   IK signals failure, and a worked numeric example. Derived from the code by
   running it.
+- `reports/baseline_overhang.md` — the P0.8 comparison table and runtime
+  scaling, regenerated by `--summarize`.
 
 ---
 
@@ -256,10 +266,20 @@ design spec — expect loud fans, a hot chassis and thermal throttling that make
 the runtime estimates optimistic, not damage. Keep it plugged in and stop it
 sleeping (`powercfg /change standby-timeout-ac 0`).
 
-## 7b. The P0.8 baseline result (2026-09-22)
+## 7b. The P0.8 baseline (2026-09-22)
 
-48 runs, 8 parts x 3 slopes x 2 sizes, 19.9 hours wall clock, **none failed**.
-`reports/baseline_overhang.md` and the per-run JSON are committed.
+A first matrix ran on 2026-09-21: 48 runs, 8 parts x 3 slopes x 2 sizes, 19.9
+hours wall clock, none failed. Three flaws were then found in the
+unsupported-deposition metric, so **it is being re-run**. What survives from
+the first run and what does not:
+
+| Result | Status |
+|---|---|
+| Tilt behaviour (below) | **Sound.** Comes from tool orientations, which no flaw touched |
+| Runtime scaling (below) | **Sound.** Comes from timings, which no flaw touched |
+| Unsupported deposition | **Superseded.** All three flaws were in this column |
+
+The first run's reports are in git history at `ea675ba`.
 
 ### The headline finding
 
@@ -279,26 +299,19 @@ angle achieved, size `s`:
 The damage tracks the tilt almost exactly one-for-one: `ramp60` at 30° uses
 29.7° of tilt and its overhang worsens by 30°, turning a 60° slope into a
 horizontal ceiling. That is the same `theta_eff = theta_geo ± tilt` relation
-P0.6 verified, with the wrong sign, and it is the clearest possible statement
-of what P2 exists to fix: the same tilt aimed correctly would turn 60° into
-30°.
+P0.6 verified, with the wrong sign, and it states plainly what P2 exists to
+fix: the same tilt aimed correctly would turn 60° into 30°.
 
 `ramp90` and `tshape` are already horizontal and cannot get worse. At
 `max_slope 7` the field barely tilts at all (0.6–1.3°) on most parts, so the
-harm only appears once there is a budget to misuse.
+harm only appears once there is a budget to misuse. Upstream's 5.5–7° defaults
+hide it.
 
-No part passed the thresholds, at any tilt setting.
-
-### Caveat on the unsupported column
-
-Those runs predate the bed-contact fix (`plan_corrections.md` 4.5), so their
-unsupported figures are inflated by roughly three percentage points. The
-verdicts do not change — every part fails on the effective angle alone — but
-the absolute percentages should not be quoted until the runs are re-scored.
-
-Re-scoring needs archived toolpaths, which were added *after* this matrix. So
-either accept the caveat, or re-run. Runs from now on archive to
-`reports/toolpaths/` and `--reanalyse` re-scores them in seconds.
+**What to look for in the re-run.** With the metric working, `ramp45` passes at
+`max_slope 7` (0.24 % unsupported). If it then *fails* at 30°, where its
+effective overhang becomes 50°, the claim sharpens to: **raising the tilt
+budget turns a printable overhang into an unprintable one.** The first matrix
+could not show this, because nothing passed at any setting.
 
 ### Measured runtime scaling
 
@@ -314,10 +327,31 @@ Atomizer, so it is a result in its own right.
 
 **`l` is out of reach** for a full matrix and `m` is a four-day commitment.
 Size `s` is the practical ceiling for anything run repeatedly; reserve `l` for
-individual showcase parts and the printed benchmarks.
+individual showcase parts and printed benchmarks.
 
 This is also why the first matrix took 19.9 h against an 8.8 h estimate: that
 estimate assumed linear scaling.
+
+### The three metric flaws, and the habit that caught them
+
+Each was hidden by the one before it. On `ramp45_xs` at `max_slope 7`:
+
+| State | Unsupported | Verdict |
+|---|---:|---|
+| Original | 28.70 % | not printable |
+| After the bed-contact fix | 28.70 % | unchanged — that bug was in the *overall* figure |
+| After dense surface sampling | 16.35 % | not printable |
+| After the cone governs the radius | **0.24 %** | **printable** |
+
+Full write-ups in `plan_corrections.md` 4.5, 4.6 and 1.8; the validation is 3.7.
+
+Two habits worth keeping, both of which paid for themselves here:
+
+* **Before a long run, do one short one.** A seven-minute single-part check
+  caught two of the three, against a twenty-hour matrix.
+* **A figure that does not move when the thing it depends on changes is worth
+  chasing.** The identical 28.70 % after the first fix is what exposed the
+  second flaw.
 
 ## 8. Gates (blocked on other people)
 
