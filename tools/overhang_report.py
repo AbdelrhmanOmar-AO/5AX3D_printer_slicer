@@ -116,8 +116,24 @@ def run_pipeline(param_path, max_slope_deg):
     return elapsed, params
 
 
-def load_mesh_arrays(stl_path):
-    """Face normals, centres and areas from an STL, via trimesh."""
+def load_mesh_arrays(stl_path, max_edge=None):
+    """Face normals, centres and areas from an STL, via trimesh.
+
+    Both metrics sample a surface by searching near each face's **centroid**,
+    so a large flat face is represented by a single point. A ramp's overhang is
+    two triangles covering 172 mm^2; searching 1.8 mm around their two
+    centroids samples 20 mm^2 of it, at two arbitrary spots, and the first
+    baseline matrix measured "unsupported near overhangs" from 108 deposition
+    points rather than thousands.
+
+    Subdividing every face to at most ``max_edge`` (one deposition width) puts
+    centroids roughly a bead apart, so the search covers the surface. Splitting
+    a triangle in its own plane changes neither the normals nor the total area,
+    which is asserted in the tests.
+
+    Returns the original mesh (for volume and extents) alongside the subdivided
+    arrays used for sampling.
+    """
     try:
         import trimesh
     except ImportError as exc:  # pragma: no cover - dev dependency
@@ -126,7 +142,14 @@ def load_mesh_arrays(stl_path):
         ) from exc
 
     mesh = trimesh.load_mesh(str(stl_path))
-    return mesh, mesh.face_normals, mesh.triangles_center, mesh.area_faces
+    if max_edge is None or max_edge <= 0:
+        return mesh, mesh.face_normals, mesh.triangles_center, mesh.area_faces
+
+    vertices, faces = trimesh.remesh.subdivide_to_size(
+        mesh.vertices, mesh.faces, max_edge=max_edge
+    )
+    sampled = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+    return mesh, sampled.face_normals, sampled.triangles_center, sampled.area_faces
 
 
 def measure(
@@ -159,7 +182,9 @@ def measure(
 
     toolpath = toolpath3.Toolpath()
     toolpath.load(str(toolpath_path))
-    mesh, normals, centres, areas = load_mesh_arrays(stl_path)
+    mesh, normals, centres, areas = load_mesh_arrays(
+        stl_path, max_edge=deposition_width
+    )
 
     surfaces = om.effective_overhang_angles(
         normals,
@@ -195,6 +220,7 @@ def measure(
         "mesh": {
             "volume_mm3": float(mesh.volume),
             "face_count": int(len(mesh.faces)),
+            "sampled_face_count": int(len(areas)),
             "extents_mm": [float(v) for v in mesh.extents],
         },
         "toolpath": {

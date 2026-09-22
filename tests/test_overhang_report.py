@@ -346,3 +346,81 @@ def test_archive_and_report_paths_agree_on_naming():
         overhang_report.archive_path("ramp60_s", 7.0).stem
         == overhang_report.report_path("ramp60_s", 7.0).stem
     )
+
+
+# --------------------------------------------------------------------------
+# Face subdivision before sampling
+#
+# Both metrics search near each face's centroid, so one large flat face is
+# represented by a single point. A ramp's overhang is two triangles covering
+# 172 mm^2; the first baseline matrix measured it from 108 deposition points.
+# --------------------------------------------------------------------------
+
+
+def test_subdivision_preserves_normals_and_area():
+    """Splitting a triangle in its own plane must change neither."""
+    mesh = bm.make_ramp(45, **bm.default_dimensions(30.0))
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = f"{tmp}/ramp45.stl"
+        mesh.export(path)
+
+        original, _, _, coarse_areas = overhang_report.load_mesh_arrays(path)
+        _, fine_normals, fine_centres, fine_areas = overhang_report.load_mesh_arrays(
+            path, max_edge=0.9
+        )
+
+    assert len(fine_areas) > 10 * len(coarse_areas), "the mesh was not subdivided"
+    assert fine_areas.sum() == pytest.approx(coarse_areas.sum(), rel=1e-9)
+
+    from atom import overhang_metrics as om
+
+    fine_overhangs = om.overhang_face_mask(fine_normals, fine_centres)
+    # The overhang still measures 45 degrees, and still covers the same area.
+    angles = om.geometric_overhang_angle_deg(fine_normals[fine_overhangs])
+    assert np.allclose(angles, 45.0, atol=0.1)
+    assert fine_areas[fine_overhangs].sum() == pytest.approx(171.8, rel=1e-2)
+
+
+def test_subdivision_widens_the_sampled_region(tmp_path):
+    """The point of the fix: far more of the surface is actually measured."""
+    from atom import overhang_metrics as om
+
+    mesh = bm.make_ramp(45, **bm.default_dimensions(30.0))
+    path = tmp_path / "ramp45.stl"
+    mesh.export(path)
+
+    low, high = mesh.bounds
+    cloud = np.mgrid[
+        low[0] : high[0] : 0.45, low[1] : high[1] : 0.45, 0.45 : high[2] : 0.45
+    ].reshape(3, -1).T
+
+    _, coarse_n, coarse_c, _ = overhang_report.load_mesh_arrays(path)
+    _, fine_n, fine_c, _ = overhang_report.load_mesh_arrays(path, max_edge=0.9)
+
+    coarse = om.points_near_overhangs(cloud, coarse_n, coarse_c, radius=1.8).sum()
+    fine = om.points_near_overhangs(cloud, fine_n, fine_c, radius=1.8).sum()
+
+    assert fine > 5 * coarse, (
+        f"subdivision sampled {fine} points against {coarse}; the surface is "
+        "still being represented by too few centroids"
+    )
+
+
+def test_measure_records_how_many_faces_it_sampled(ti_cpu, tmp_path):
+    """The report must say how densely the surface was measured."""
+    mesh = bm.make_ramp(60, **bm.default_dimensions(60.0))
+    stl_path = tmp_path / "ramp60.stl"
+    mesh.export(stl_path)
+
+    toolpath_path = tmp_path / "ramp60_smoothed.npz"
+    SyntheticToolpath(
+        _points_over_overhang_faces(mesh), direction=[0.0, 0.0, 1.0]
+    ).save(toolpath_path)
+
+    report = overhang_report.measure(
+        "ramp60", 7.0, 0.9, toolpath_path=toolpath_path, stl_path=stl_path
+    )
+
+    assert report["mesh"]["sampled_face_count"] > report["mesh"]["face_count"]

@@ -322,7 +322,31 @@ clustered at the bottom, which is the gyroid infill bridging its own voids.
 The first baseline matrix (20 hours) was measured before this was found, so its
 unsupported column is inflated by roughly three percentage points.
 
-### 4.6 Re-centring on the bed is not a constant offset
+### 4.6 Sampling a surface by face centroid under-measures large flat faces
+
+Both overhang metrics search for deposition points near each mesh face's
+**centroid**. A ramp's overhang is two triangles covering 172 mm^2, so
+searching two deposition widths around their two centroids covers about
+20 mm^2 — 12 % of the surface, at two arbitrary spots.
+
+The first baseline matrix therefore computed "unsupported deposition near
+overhangs" from **108 deposition points** out of roughly 35 000. Reported as
+28.70 %, it was 31 points out of 108.
+
+`tools/overhang_report.py` now subdivides every face to at most one deposition
+width before sampling (`trimesh.remesh.subdivide_to_size`). Splitting a
+triangle in its own plane changes neither its normal nor the total area, both
+asserted in the tests, and on `ramp45_xs` it takes the sampled region from 524
+points to 7 130, a 13.6x improvement.
+
+The metrics module stays numpy + scipy only; the subdivision lives in the tool,
+which may use trimesh.
+
+This was found because a 7-minute check before a 20-hour re-run returned
+exactly the same 28.70 % as the run it was meant to correct. A figure that does
+not move when the thing it depends on changes is worth chasing.
+
+### 4.7 Re-centring on the bed is not a constant offset
 
 `tools/toolpath_to_gcode.py` re-centres the whole toolpath on the bed before
 solving. It is tempting to treat that as a translation whose effect cancels in
@@ -338,7 +362,7 @@ maxima exactly. `contracts.bed_centering_offset` mirrors the arithmetic and
 Anything comparing computed machine axes against written G-code must solve in
 the same frame.
 
-### 4.7 The header's purge lines extend the G-code's axis ranges
+### 4.8 The header's purge lines extend the G-code's axis ranges
 
 `kinematics3z.HEADER` draws two priming lines at fixed coordinates
 (`X0.1 Y20`, `Y200.0`, all three screws at `0.3 + Z_OFFSET`). Those points are
@@ -350,7 +374,7 @@ They can only extend a range, never narrow it, so a comparison against toolpath
 output should assert equality on the maxima and an inequality on the minima.
 `tests/test_contracts.py` does exactly that.
 
-### 4.8 `from __future__ import annotations` was hit in practice
+### 4.9 `from __future__ import annotations` was hit in practice
 
 Recorded as a hazard in 3.2, then walked into two commits later while writing
 `src/atom/contracts.py`: the module had the import, and its Taichi kernel
@@ -362,7 +386,7 @@ absent. Affected so far: `contracts.py`, `tests/test_contracts.py`,
 `tests/test_ti_env.py`, `tools/overhang_report.py`,
 `tests/test_overhang_report.py`.
 
-### 4.9 `git ls-files` reports the index, not what is committed
+### 4.10 `git ls-files` reports the index, not what is committed
 
 Two guard tests were written against the wrong notion of "tracked" and passed
 while the thing they guarded was broken:
@@ -375,7 +399,7 @@ while the thing they guarded was broken:
 Both now use `git ls-tree -r --name-only HEAD`. Only a commit survives a push,
 a clone, or a move to another machine.
 
-### 4.10 A fresh Windows machine has no git identity
+### 4.11 A fresh Windows machine has no git identity
 
 `git commit` fails with "Author identity unknown" until
 `git config --global user.name` and `user.email` are set. The error is easy to
@@ -408,4 +432,5 @@ The five items a later task is most likely to get wrong if it trusts the plan:
 | 1.6 | `forward()` has no X-then-Y tilt decomposition to confirm against |
 | 1.7 | IK failure is NaN in `offset`; a non-zero `offset` is a clearance, not an error |
 | 4.5 | The bed-contact rule must anchor to the part's lowest point, or a plain cube reads as 6 % unsupported |
-| 4.6 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
+| 4.6 | Sampling by face centroid under-measures large flat faces; subdivide first |
+| 4.7 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
