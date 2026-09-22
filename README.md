@@ -321,7 +321,12 @@ It shows the toolpath as lines and has these controls:
   height, feed rate, unsupported points (the P0.8 metric) or a shell/infill
   guess;
 - the part's STL drawn over the lines, and a cone showing the nozzle's tilt at
-  the current point.
+  the current point;
+- a Play/Pause button with a speed slider, which animates the print;
+- a **machine view** that shows the printer the way it moves: the nozzle stays
+  vertical and the bed tilts beneath it. The bed's pose comes from the three
+  screw values (Z, U, V), and the gantry level is drawn too. The bed turns red
+  if a corner would hit the gantry or a point is out of reach.
 
 It reads a toolpath `.npz` or the final G-code:
 
@@ -334,7 +339,8 @@ python tools/visualize_5ax.py data/gcode/ramp60_xs.gcode
 **Mouse:** left-drag rotates, scroll zooms, shift+drag pans.
 
 **Keys:** Left/Right step one point, `,` and `.` step 1 %, Space plays and
-pauses, `v` returns to the isometric view, `q` quits.
+pauses, `v` returns to the isometric view, `q` quits. `--machine-view` starts
+in the machine view.
 
 **Screenshot:** `--screenshot out.png` saves a picture without opening a
 window. Run `--help` for every option, and see the tool's docstring for which

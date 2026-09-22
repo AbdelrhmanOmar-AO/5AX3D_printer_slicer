@@ -315,3 +315,43 @@ def test_status_line_reports_what_the_source_has():
     assert "G-code line 31" in text
     assert "screws Z 80.00 U 70.00 V 76.00" in text
     assert "F 612 mm/min" in text
+
+
+# --------------------------------------------------------------------------
+# Playback
+# --------------------------------------------------------------------------
+
+
+def test_default_speed_plays_the_whole_print_in_a_minute():
+    assert tv.default_speed(60_000) == pytest.approx(1000.0)
+    low, high = tv.speed_limits(60_000)
+    assert low <= tv.default_speed(60_000) <= high
+    assert high == pytest.approx(60_000 / tv.FASTEST_PLAYBACK_S)
+
+
+def test_tiny_toolpaths_still_get_a_usable_speed_range():
+    low, high = tv.speed_limits(10)
+    assert low < high
+    assert low <= tv.default_speed(10) <= high
+
+
+def test_playback_moves_by_speed_times_elapsed_time():
+    position, finished = tv.playback_advance(100.0, speed=500.0, elapsed_s=0.1, count=10_000)
+    assert position == pytest.approx(150.0)
+    assert not finished
+
+
+def test_playback_stops_on_the_last_point():
+    position, finished = tv.playback_advance(9_990.0, speed=500.0, elapsed_s=1.0, count=10_000)
+    assert position == 9_999
+    assert finished
+
+
+def test_playback_never_runs_backwards():
+    position, _ = tv.playback_advance(10.0, speed=-5.0, elapsed_s=-1.0, count=100)
+    assert position == 10.0
+
+
+def test_speed_text_gives_the_time_for_the_whole_print():
+    assert tv.describe_speed(1000.0, 60_000) == "Speed: 1,000 points/s (whole print in 60 s)"
+    assert "10.0 min" in tv.describe_speed(100.0, 60_000)

@@ -222,7 +222,8 @@ def test_end_accepts_a_point_number_or_a_percentage(text, expected):
     sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
     reason="needs a display (run under xvfb-run on Linux)",
 )
-def test_off_screen_render_writes_a_picture(tmp_path):
+@pytest.mark.parametrize("machine_view", [False, True])
+def test_off_screen_render_writes_a_picture(tmp_path, machine_view):
     """Smoke test: builds the whole window, controls included, off screen.
 
     A small synthetic toolpath keeps it near the unit-test time budget; most
@@ -235,9 +236,74 @@ def test_off_screen_render_writes_a_picture(tmp_path):
     _write_toolpath(tmp_path / "spiral_smoothed.npz", spiral, tilt_deg=10)
     trimesh.creation.box(extents=(10, 10, 10)).export(tmp_path / "box.stl")
     output = tmp_path / "view.png"
+    extra = ["--machine-view"] if machine_view else []
 
     assert vt.main([str(tmp_path / "spiral_smoothed.npz"), "--screenshot", str(output),
                     "--mode", "shell", "--end", "80%", "--no-nozzle",
-                    "--stl", str(tmp_path / "box.stl")]) == 0
+                    "--stl", str(tmp_path / "box.stl"), *extra]) == 0
 
     assert output.stat().st_size > 10_000
+
+
+@pytest.mark.skipif(
+    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
+    reason="needs a display (run under xvfb-run on Linux)",
+)
+def test_play_button_advances_the_print_at_the_chosen_speed(tmp_path, monkeypatch):
+    pytest.importorskip("pyvista")
+    import time
+
+    _write_toolpath(tmp_path / "line_smoothed.npz", [[i * 0.5, 0, 0.45] for i in range(1000)])
+    view = vt.load_npz_view(tmp_path / "line_smoothed.npz", [])
+    viewer = vt.Viewer(view, end=0)
+    viewer.build(off_screen=True)
+    clock = [100.0]
+    monkeypatch.setattr(time, "perf_counter", lambda: clock[0])
+
+    viewer._set_speed(200.0)
+    viewer._set_playing(True)
+    clock[0] += 0.5
+    viewer._tick(0)
+    assert viewer.end == 100
+    assert viewer._play_button.GetRepresentation().GetState() == 1
+
+    viewer._set_playing(False)
+    clock[0] += 0.5
+    viewer._tick(0)
+    assert viewer.end == 100  # paused
+    viewer.plotter.close()
+
+
+# --------------------------------------------------------------------------
+# Machine view
+# --------------------------------------------------------------------------
+
+
+def test_machine_state_of_a_toolpath_is_solved_on_the_bed(ti_cpu, tmp_path):
+    """A toolpath has no screw values, so they are solved after re-centring."""
+    _write_toolpath(tmp_path / "part_smoothed.npz", [[1, 1, 0.45], [5, 1, 0.45], [5, 5, 0.9]],
+                    tilt_deg=10)
+    view = vt.load_npz_view(tmp_path / "part_smoothed.npz", [])
+
+    state = vt.solve_machine_state(view)
+
+    assert state.solved
+    assert state.valid.all()
+    np.testing.assert_allclose(
+        state.bed_offset,
+        contracts.bed_centering_offset(view.point, machine_profile.load_profile()))
+    # Each bed point under the nozzle lands at the nozzle tip (X, Y, 0).
+    for index in range(view.count):
+        world = state.rotation[index] @ (view.point[index] + state.bed_offset)
+        world += state.translation[index]
+        np.testing.assert_allclose(world, [*state.machine[index, :2], 0.0], atol=2e-3)
+
+
+def test_machine_state_of_gcode_uses_the_written_screw_values(ti_cpu, repo_root):
+    view = vt.load_gcode_view(repo_root / FIXTURE, repo_root / GOLDEN, [])
+
+    state = vt.solve_machine_state(view)
+
+    assert not state.solved
+    np.testing.assert_array_equal(state.machine, view.machine)
+    np.testing.assert_allclose(state.bed_offset, 0.0)

@@ -236,6 +236,7 @@ def load_gcode_view(path: Path, toolpath_path: Path | None, notes: list) -> tv.V
     view.feed_mm_min = moves.feed
     view.gcode_line = moves.line
     view.machine = moves.machine
+    view.bed_offset = np.zeros(3)
 
     if toolpath_path is None:
         part = tv.part_name_from_path(path)
@@ -270,6 +271,7 @@ def load_gcode_view(path: Path, toolpath_path: Path | None, notes: list) -> tv.V
         f"Paired with {toolpath_path.name}: G-code reproduces it within {gap:.4f} mm."
     )
     view.point = part_points
+    view.bed_offset = offset
     view.width = np.asarray(arrays["width"], dtype=np.float64)
     view.height = np.asarray(arrays["height"], dtype=np.float64)
     view.frame = "part frame (recovered from the G-code)"
@@ -339,12 +341,98 @@ def parse_end(text: str | None, count: int) -> int:
 _BUTTON = 22
 _ROW = 30
 
+#: Dark slate gradient: easier on the eye than white for long sessions, and
+#: the colour maps stay readable on it.
+BACKGROUND_BOTTOM = "#1c1f25"
+BACKGROUND_TOP = "#3a404b"
+TEXT = "#e6e8eb"
+TEXT_DIM = "#8b919c"
+BUTTON_OFF = "#d0d4da"
+
+_TAICHI_READY = False
+
+
+def _ensure_taichi():
+    """Initialise Taichi on the CPU once (it resets its runtime if re-initialised)."""
+    global _TAICHI_READY
+    if not _TAICHI_READY:
+        from atom.ti_env import init_taichi
+
+        init_taichi("cpu")
+        _TAICHI_READY = True
+
+
+@dataclass
+class MachineState:
+    """The bed pose at every point, for the machine view (P5.4b)."""
+
+    #: ``(N, 5)`` X, Y, Z, U, V.
+    machine: np.ndarray
+    #: ``(N,)`` False where the inverse kinematics found the point unreachable.
+    valid: np.ndarray
+    #: ``(N, 3, 3)`` and ``(N, 3)``: bed frame to world frame, `atom.bed_motion`.
+    rotation: np.ndarray
+    translation: np.ndarray
+    #: View frame to bed frame, mm.
+    bed_offset: np.ndarray
+    #: True when the screws were solved here rather than read from G-code.
+    solved: bool
+
+
+def solve_machine_state(view) -> MachineState:
+    """Screw values and bed poses for every point of ``view``.
+
+    G-code carries the screw values the printer will get. A toolpath does not,
+    so they are solved with `contracts.from_toolpath` after re-centring on the
+    bed as `toolpath_to_gcode` does; for a ``_smoothed`` toolpath (no platform
+    yet) they can differ from the final G-code's by the platform lift.
+    """
+    from types import SimpleNamespace
+
+    from atom import bed_motion, contracts, machine_profile
+
+    _ensure_taichi()
+    profile = machine_profile.load_profile()
+
+    if view.machine is not None:
+        machine = np.asarray(view.machine, dtype=np.float64)
+        valid = np.isfinite(machine).all(axis=1)
+        offset = np.zeros(3) if view.bed_offset is None else np.asarray(view.bed_offset)
+        solved = False
+    else:
+        spherical = np.column_stack([
+            np.arccos(np.clip(view.direction[:, 2], -1.0, 1.0)),
+            np.arctan2(view.direction[:, 1], view.direction[:, 0]),
+        ])
+        toolpath = SimpleNamespace(
+            point=view.point.astype(np.float32),
+            travel_type=np.where(view.deposit, tv.TRAVEL_TYPE_DEPOSITION, 1),
+            tool_orientation=spherical.astype(np.float32),
+            width=np.ones(view.count) if view.width is None else view.width,
+            height=np.ones(view.count) if view.height is None else view.height,
+            point_count=view.count,
+        )
+        result = contracts.from_toolpath(toolpath, profile, center_on_bed=True)
+        machine, valid = result.machine, result.valid & np.isfinite(result.machine).all(axis=1)
+        offset = contracts.bed_centering_offset(view.point, profile)
+        solved = True
+
+    count = len(machine)
+    rotation = np.tile(np.eye(3), (count, 1, 1))
+    translation = np.zeros((count, 3))
+    if np.any(valid):
+        good = machine[valid]
+        probed, _ = machine_to_build_frame(bed_motion.probe_states(good))
+        rotation[valid], translation[valid] = bed_motion.poses_from_probes(good, probed)
+    return MachineState(machine, valid, rotation, translation, np.asarray(offset, float), solved)
+
 
 class Viewer:
     """The pyvista window. All state changes go through `refresh`."""
 
     def __init__(self, view, mesh=None, mode="progress", end=None, z_max=None,
-                 show_travel=True, show_mesh=True, show_nozzle=True, notes=()):
+                 show_travel=True, show_mesh=True, show_nozzle=True, machine_view=False,
+                 notes=()):
         self.view = view
         self.mesh = mesh  # (vertices, faces) in the view's frame, or None
         self.notes = list(notes)
@@ -356,11 +444,18 @@ class Viewer:
         self.show_travel = show_travel
         self.show_mesh = show_mesh and mesh is not None
         self.show_nozzle = show_nozzle
+        self.machine_view = machine_view
         self.playing = False
+        self.speed = tv.default_speed(view.count)
+        self._play_position = float(self.end)
+        self._last_tick = None
         self.message = ""
         self._shell = None
+        self._machine = None
+        self._profile = None
         self._mode_buttons = {}
         self._toggle_buttons = {}
+        self._play_button = None
         self._progress_slider = None
         self.plotter = None
 
@@ -385,27 +480,43 @@ class Viewer:
         shell = self.shell() if self.mode == "shell" else None
         return tv.point_scalars(self.view, self.mode, shell=shell)
 
+    def machine_state(self):
+        if self._machine is None:
+            from atom import machine_profile
+
+            print("Solving the bed pose at every point...")
+            self._machine = solve_machine_state(self.view)
+            self._profile = machine_profile.load_profile()
+            unreachable = int(np.count_nonzero(~self._machine.valid))
+            if unreachable:
+                self.notes.append(f"{unreachable:,} points are unreachable (IK): "
+                                  "the bed turns red there.")
+        return self._machine
+
     # -- building the scene -------------------------------------------------
 
     def build(self, off_screen=False, window_size=(1500, 950)):
         import pyvista as pv
 
         self.pv = pv
+        self.window_size = window_size
         plotter = pv.Plotter(off_screen=off_screen, window_size=window_size,
                              title=f"Toolpath viewer: {Path(self.view.source).name}")
         self.plotter = plotter
-        plotter.set_background("white")
-        plotter.add_axes()
-
-        self._point_cloud = pv.PolyData(self.view.point)
+        plotter.set_background(BACKGROUND_BOTTOM, top=BACKGROUND_TOP)
+        plotter.add_axes(color=TEXT, viewport=(0.84, 0.0, 0.98, 0.16))
 
         self._add_controls()
         self.refresh(reset_camera=True)
         return plotter
 
+    def _label(self, text, position, name, size=9, color=TEXT):
+        self.plotter.add_text(text, position=position, font_size=size, color=color, name=name)
+
     def _add_controls(self):
         plotter = self.plotter
         count = self.view.count
+        width, height = self.window_size
 
         self._progress_slider = plotter.add_slider_widget(
             lambda value: self._set_end(int(round(value)) - 1),
@@ -418,6 +529,7 @@ class Viewer:
             title_height=0.02,
             interaction_event="always",
             fmt="%.0f",
+            color=TEXT,
         )
         low, high = self.z_range
         plotter.add_slider_widget(
@@ -431,15 +543,38 @@ class Viewer:
             title_height=0.02,
             interaction_event="always",
             fmt="%.1f",
+            color=TEXT,
         )
-
         plotter.add_text("Z clip (mm)", position=(0.925, 0.88), viewport=True,
-                         font_size=10, color="black", name="z_clip_label")
+                         font_size=10, color=TEXT, name="z_clip_label")
 
-        # Colour modes as radio buttons, then the show/hide toggles.
-        top = 800
-        plotter.add_text("Colour by", position=(12, top + 8), font_size=11,
-                         color="black", name="colour_header")
+        # Playback: a play/pause button and a speed slider, bottom left.
+        self._play_button = plotter.add_checkbox_button_widget(
+            self._set_playing, value=False, position=(16, int(0.07 * height) - 14),
+            size=28, border_size=2, color_on="#e8a33d", color_off=BUTTON_OFF,
+            background_color="grey",
+        )
+        self._label("Play", (52, int(0.07 * height) - 7), "play_label", size=11)
+        speed_low, speed_high = tv.speed_limits(count)
+        self._speed_label_position = (int(0.10 * width), int(0.07 * height) + 18)
+        speed_slider = plotter.add_slider_widget(
+            lambda value: self._set_speed(10.0 ** value),
+            [np.log10(speed_low), np.log10(speed_high)],
+            value=np.log10(self.speed),
+            title="",
+            pointa=(0.10, 0.07),
+            pointb=(0.25, 0.07),
+            style="modern",
+            interaction_event="always",
+            color=TEXT,
+        )
+        speed_slider.GetRepresentation().SetShowSliderLabel(False)
+        self._draw_speed()
+
+        # Colour modes as radio buttons, then the show/hide toggles. Anchored
+        # below the header text in the upper left.
+        top = height - 200
+        self._label("Colour by", (12, top + 8), "colour_header", size=11)
         for row, mode in enumerate(tv.COLOUR_MODES):
             y = top - (row + 1) * _ROW
             reason = self.unavailable(mode.key)
@@ -447,21 +582,20 @@ class Viewer:
                 lambda state, key=mode.key: self._pick_mode(key, state),
                 value=mode.key == self.mode,
                 position=(12, y), size=_BUTTON, border_size=2,
-                color_on="#1f77b4", color_off="#e0e0e0", background_color="grey",
+                color_on="#3b8fd9", color_off=BUTTON_OFF, background_color="grey",
             )
             self._mode_buttons[mode.key] = widget
-            plotter.add_text(mode.label, position=(12 + _BUTTON + 8, y + 3), font_size=9,
-                             color="#a0a0a0" if reason else "black",
-                             name=f"mode_label_{mode.key}")
+            self._label(mode.label, (12 + _BUTTON + 8, y + 3), f"mode_label_{mode.key}",
+                        color=TEXT_DIM if reason else TEXT)
 
         toggles = (
             ("Travel moves", "show_travel"),
             ("STL overlay", "show_mesh"),
-            ("Nozzle cone", "show_nozzle"),
+            ("Nozzle", "show_nozzle"),
+            ("Machine view (bed moves)", "machine_view"),
         )
         base = top - (len(tv.COLOUR_MODES) + 2) * _ROW
-        plotter.add_text("Show", position=(12, base + 8), font_size=11, color="black",
-                         name="show_header")
+        self._label("Show", (12, base + 8), "show_header", size=11)
         for row, (label, attribute) in enumerate(toggles):
             y = base - (row + 1) * _ROW
             disabled = attribute == "show_mesh" and self.mesh is None
@@ -469,19 +603,17 @@ class Viewer:
                 lambda state, a=attribute: self._toggle(a, state),
                 value=getattr(self, attribute),
                 position=(12, y), size=_BUTTON, border_size=2,
-                color_on="#2ca02c", color_off="#e0e0e0", background_color="grey",
+                color_on="#3fae5a", color_off=BUTTON_OFF, background_color="grey",
             )
-            plotter.add_text(label + (" (no STL)" if disabled else ""),
-                             position=(12 + _BUTTON + 8, y + 3), font_size=9,
-                             color="#a0a0a0" if disabled else "black",
-                             name=f"toggle_label_{attribute}")
+            self._label(label + (" (no STL)" if disabled else ""), (12 + _BUTTON + 8, y + 3),
+                        f"toggle_label_{attribute}", color=TEXT_DIM if disabled else TEXT)
 
         plotter.add_key_event("Left", lambda: self._step(-1))
         plotter.add_key_event("Right", lambda: self._step(1))
         plotter.add_key_event("comma", lambda: self._step(-max(1, count // 100)))
         plotter.add_key_event("period", lambda: self._step(max(1, count // 100)))
-        plotter.add_key_event("space", self._toggle_play)
-        plotter.add_timer_event(max_steps=10**9, duration=40, callback=self._tick)
+        plotter.add_key_event("space", lambda: self._set_playing(not self.playing))
+        plotter.add_timer_event(max_steps=10**9, duration=30, callback=self._tick)
 
     # -- interaction ----------------------------------------------------------
 
@@ -504,18 +636,40 @@ class Viewer:
             state = False
             self._toggle_buttons[attribute].GetRepresentation().SetState(0)
         setattr(self, attribute, bool(state))
-        self.refresh()
+        self.refresh(reset_camera=attribute == "machine_view")
 
     def _set_end(self, index):
         self.end = int(np.clip(index, 0, self.view.count - 1))
+        self._play_position = float(self.end)
         self.refresh()
 
     def _set_z_max(self, value):
         self.z_max = float(value)
         self.refresh()
 
+    def _set_speed(self, speed):
+        self.speed = float(speed)
+        self._draw_speed()
+
+    def _set_playing(self, playing):
+        import time
+
+        playing = bool(playing)
+        if playing and self.end >= self.view.count - 1:
+            self.end = 0  # play again from the start
+        self.playing = playing
+        self._play_position = float(self.end)
+        self._last_tick = time.perf_counter()
+        if self._play_button is not None:
+            self._play_button.GetRepresentation().SetState(int(playing))
+            self._label("Pause" if playing else "Play",
+                        (52, int(0.07 * self.window_size[1]) - 7), "play_label", size=11)
+        self.refresh()
+
     def _step(self, delta):
-        self.playing = False
+        if self.playing:
+            self._set_playing(False)
+        self._play_position = float(self.end + delta)
         self._move_to(self.end + delta)
 
     def _move_to(self, index):
@@ -524,18 +678,19 @@ class Viewer:
             self._progress_slider.GetRepresentation().SetValue(self.end + 1)
         self.refresh()
 
-    def _toggle_play(self):
-        if not self.playing and self.end >= self.view.count - 1:
-            self.end = 0
-        self.playing = not self.playing
-
     def _tick(self, _step):
+        import time
+
         if not self.playing:
             return
-        if self.end >= self.view.count - 1:
-            self.playing = False
-            return
-        self._move_to(self.end + max(1, self.view.count // 600))
+        now = time.perf_counter()
+        elapsed = now - (self._last_tick or now)
+        self._last_tick = now
+        self._play_position, finished = tv.playback_advance(
+            self._play_position, self.speed, elapsed, self.view.count)
+        self._move_to(int(self._play_position))
+        if finished:
+            self._set_playing(False)
 
     # -- drawing ----------------------------------------------------------------
 
@@ -543,10 +698,24 @@ class Viewer:
         plotter, pv, view = self.plotter, self.pv, self.view
         mode = tv.MODES_BY_KEY[self.mode]
 
+        # In the machine view everything attached to the bed is drawn in the
+        # bed frame and moved by the bed's pose (a VTK user matrix), so only
+        # the pose changes as the print plays.
+        pose = None
+        points = view.point
+        if self.machine_view:
+            state = self.machine_state()
+            points = view.point + state.bed_offset
+            pose = self._pose_index()
+
+        def attach(actor):
+            if actor is not None and pose is not None:
+                actor.user_matrix = self._pose_matrix(pose)
+            return actor
+
         deposit = tv.visible_segments(view, self.end, z_max=self.z_max, deposit=True)
-        cells = pv.PolyData(view.point, lines=tv.line_cells(deposit))
-        values = self.scalars()[deposit]
-        cells.cell_data["value"] = values
+        cells = pv.PolyData(points, lines=tv.line_cells(deposit))
+        cells.cell_data["value"] = self.scalars()[deposit]
 
         plotter.remove_actor("deposit", reset_camera=False, render=False)
         for title in list(plotter.scalar_bars.keys()):
@@ -575,7 +744,7 @@ class Viewer:
                     nan_color="#bdbdbd",
                     scalar_bar_args=dict(title=mode.title, fmt="%.1f", **self._bar_position()),
                 )
-            plotter.add_mesh(cells, **options)
+            attach(plotter.add_mesh(cells, **options))
 
         # A few red segments are easy to miss among thousands, so the
         # unsupported points are also drawn as dots.
@@ -583,29 +752,35 @@ class Viewer:
         if self.mode == "unsupported" and len(deposit):
             flagged = deposit[tv.unsupported_mask(view)[deposit]]
             if len(flagged):
-                plotter.add_mesh(pv.PolyData(view.point[flagged]), color="#e31a1c",
-                                 point_size=9, render_points_as_spheres=True,
-                                 name="unsupported_dots", reset_camera=False, render=False)
+                attach(plotter.add_mesh(pv.PolyData(points[flagged]), color="#ff3b30",
+                                        point_size=9, render_points_as_spheres=True,
+                                        name="unsupported_dots", reset_camera=False,
+                                        render=False))
 
         plotter.remove_actor("travel", reset_camera=False, render=False)
         if self.show_travel:
             travel = tv.visible_segments(view, self.end, z_max=self.z_max, deposit=False)
             if len(travel):
-                plotter.add_mesh(pv.PolyData(view.point, lines=tv.line_cells(travel)),
-                                 color="#2ca02c" if self.mode == "type" else "#9e9e9e",
-                                 opacity=0.6, line_width=1, name="travel",
-                                 reset_camera=False, render=False)
+                attach(plotter.add_mesh(pv.PolyData(points, lines=tv.line_cells(travel)),
+                                        color="#5fd35f" if self.mode == "type" else "#8f96a3",
+                                        opacity=0.6, line_width=1, name="travel",
+                                        reset_camera=False, render=False))
 
         plotter.remove_actor("mesh", reset_camera=False, render=False)
         if self.show_mesh and self.mesh is not None:
             vertices, faces = self.mesh
+            if self.machine_view:
+                vertices = vertices + self.machine_state().bed_offset
             surface = pv.PolyData(vertices, np.column_stack(
                 [np.full(len(faces), 3), faces]).ravel())
-            plotter.add_mesh(surface, color="#b0c4de", opacity=0.18, name="mesh",
-                             reset_camera=False, render=False, show_edges=False)
+            attach(plotter.add_mesh(surface, color="#b0c4de", opacity=0.18, name="mesh",
+                                    reset_camera=False, render=False, show_edges=False))
 
-        plotter.remove_actor("nozzle", reset_camera=False, render=False)
-        if self.show_nozzle and view.count and view.point[self.end, 2] <= self.z_max:
+        for name in ("nozzle", "bed", "bed_outline", "balls", "gantry", "gantry_outline"):
+            plotter.remove_actor(name, reset_camera=False, render=False)
+        if self.machine_view:
+            self._draw_machine(pose)
+        elif self.show_nozzle and view.count and view.point[self.end, 2] <= self.z_max:
             self._draw_nozzle()
 
         self._draw_text()
@@ -614,9 +789,83 @@ class Viewer:
             plotter.reset_camera()
         plotter.render()
 
+    def _pose_index(self):
+        from atom import bed_motion
+
+        return bed_motion.last_valid_index(self.machine_state().valid, self.end)
+
+    def _pose_matrix(self, index):
+        from atom import bed_motion
+
+        state = self.machine_state()
+        return bed_motion.pose_matrix(state.rotation[index], state.translation[index])
+
+    def _bed_clearance(self, index):
+        """Gantry clearance of the highest bed corner at pose ``index``, mm."""
+        from atom import bed_motion
+
+        state = self.machine_state()
+        corners = bed_motion.bed_corners(self._profile)
+        heights = bed_motion.corner_heights(state.rotation[index], state.translation[index],
+                                            corners)
+        return float(self._profile.nozzle_to_gantry - heights.max())
+
+    def _draw_machine(self, pose):
+        """The bed (tilting), the ball joints, the nozzle and the gantry level."""
+        from math import degrees
+
+        from atom import bed_motion, toolpath3
+
+        pv, plotter, profile = self.pv, self.plotter, self._profile
+        state = self.machine_state()
+        if pose is None:
+            return
+
+        clash = (not state.valid[self.end]) or self._bed_clearance(pose) < 0
+        corners = bed_motion.bed_corners(profile)
+        plate = pv.PolyData(corners, faces=[4, 0, 1, 2, 3])
+        matrix = self._pose_matrix(pose)
+        bed = plotter.add_mesh(plate, color="#c0392b" if clash else "#5b6676", opacity=0.55,
+                               name="bed", reset_camera=False, render=False)
+        bed.user_matrix = matrix
+        outline = plotter.add_mesh(pv.PolyData(corners, lines=[5, 0, 1, 2, 3, 0]),
+                                   color="#ff6b5e" if clash else "#aab4c3", line_width=2,
+                                   name="bed_outline", reset_camera=False, render=False)
+        outline.user_matrix = matrix
+        balls = plotter.add_mesh(pv.PolyData(bed_motion.ball_positions(profile)),
+                                 color="#e8a33d", point_size=16, render_points_as_spheres=True,
+                                 name="balls", reset_camera=False, render=False)
+        balls.user_matrix = matrix
+
+        # Fixed to the machine: the nozzle at (X, Y, 0), vertical, and the
+        # gantry level nozzle_to_gantry above it (the reference proxy P4.1
+        # also uses).
+        x, y = state.machine[pose, 0], state.machine[pose, 1]
+        if self.show_nozzle:
+            height = 20.0
+            plotter.add_mesh(pv.Cone(center=(x, y, height / 2.0), direction=(0, 0, -1),
+                                     height=height,
+                                     angle=degrees(toolpath3.NOZZLE_CONE_ANGLE / 2.0),
+                                     resolution=48),
+                             color="#d9dde3", opacity=0.8, name="nozzle",
+                             reset_camera=False, render=False)
+        level = float(profile.nozzle_to_gantry)
+        span = np.array([[0, 0, level], [profile.max_x_axis, 0, level],
+                         [profile.max_x_axis, profile.max_y_axis, level],
+                         [0, profile.max_y_axis, level]], dtype=float)
+        plotter.add_mesh(pv.PolyData(span, faces=[4, 0, 1, 2, 3]), color="#e8a33d",
+                         opacity=0.06, name="gantry", reset_camera=False, render=False)
+        plotter.add_mesh(pv.PolyData(span, lines=[5, 0, 1, 2, 3, 0]), color="#e8a33d",
+                         opacity=0.5, line_width=1, name="gantry_outline",
+                         reset_camera=False, render=False)
+
     def _bar_position(self):
         return dict(position_x=0.80, position_y=0.30, width=0.05, height=0.45,
-                    vertical=True, title_font_size=12, label_font_size=11, color="black")
+                    vertical=True, title_font_size=12, label_font_size=11, color=TEXT)
+
+    def _draw_speed(self):
+        self._label(tv.describe_speed(self.speed, self.view.count),
+                    self._speed_label_position, "speed_label", size=9)
 
     def _draw_nozzle(self):
         from math import degrees
@@ -630,15 +879,16 @@ class Viewer:
         cone = self.pv.Cone(center=point + direction * height / 2.0, direction=-direction,
                             height=height, angle=degrees(toolpath3.NOZZLE_CONE_ANGLE / 2.0),
                             resolution=48)
-        self.plotter.add_mesh(cone, color="#555555", opacity=0.55, name="nozzle",
+        self.plotter.add_mesh(cone, color="#d9dde3", opacity=0.55, name="nozzle",
                               reset_camera=False, render=False)
 
     def _draw_text(self):
         view = self.view
         mode = tv.MODES_BY_KEY[self.mode]
+        frame = "machine view: nozzle fixed, bed moves" if self.machine_view else view.frame
         header = [
             Path(view.source).name,
-            f"{view.frame}   colour: {mode.label}",
+            f"{frame}   colour: {mode.label}",
         ]
         if self.mode in tv.ROBUST_RANGE_MODES:
             header.append("Colour range: 0.5th to 99.5th percentile; "
@@ -649,15 +899,36 @@ class Viewer:
             share = float(np.mean(tv.unsupported_mask(view)[view.deposit])) * 100.0
             header.append(f"Unsupported: {share:.2f} % of deposition points (P0.8 metric)")
         header.extend(self.notes)
+        if self.machine_view:
+            header.append("Grey plate: bed (red on a clash)   orange dots: ball joints")
+            header.append(f"Orange frame: gantry level, {self._profile.nozzle_to_gantry} mm "
+                          "above the nozzle tip")
+            if self.machine_state().solved:
+                header.append("Screw values solved from this toolpath, re-centred on the bed;")
+                header.append("open the G-code for the exact values the printer gets.")
         if self.message:
             header.append(self.message)
         self.plotter.add_text("\n".join(header), position="upper_left", font_size=9,
-                              color="black", name="header")
-        self.plotter.add_text(tv.describe_point(view, self.end), position="upper_right",
-                              font_size=9, color="black", name="status")
+                              color=TEXT, name="header")
+
+        status = tv.describe_point(view, self.end)
+        if self.machine_view:
+            state = self.machine_state()
+            pose = self._pose_index()
+            if not state.valid[self.end]:
+                status += "\nUNREACHABLE: the inverse kinematics reject this point"
+            if pose is not None:
+                if view.machine is None:
+                    _, _, z0, z1, z2 = state.machine[pose]
+                    status += f"\nscrews Z {z0:.2f} U {z1:.2f} V {z2:.2f}"
+                clearance = self._bed_clearance(pose)
+                verdict = "CLASH" if clearance < 0 else "ok"
+                status += f"\nbed-gantry clearance {clearance:.1f} mm ({verdict})"
+        self.plotter.add_text(status, position="upper_right", font_size=9, color=TEXT,
+                              name="status")
         self.plotter.add_text(
-            "Left/Right: 1 point   , / . : 1 %   Space: play   v: iso view   q: quit",
-            position="lower_left", font_size=8, color="#555555", name="help")
+            "Left/Right: 1 point   , / . : 1 %   Space: play/pause   v: iso view   q: quit",
+            position="lower_left", font_size=8, color=TEXT_DIM, name="help")
 
 
 # --------------------------------------------------------------------------
@@ -691,6 +962,8 @@ def main(argv=None):
     parser.add_argument("--z-max", type=float, help="Hide everything above this height, mm.")
     parser.add_argument("--hide-travel", action="store_true", help="Start with travel moves hidden.")
     parser.add_argument("--no-nozzle", action="store_true", help="Do not draw the nozzle cone.")
+    parser.add_argument("--machine-view", action="store_true",
+                        help="Start in the machine view: nozzle fixed, the bed tilting beneath it.")
     parser.add_argument("--screenshot", help="Render to this PNG and exit, without a window.")
     args = parser.parse_args(argv)
 
@@ -718,7 +991,8 @@ def main(argv=None):
 
     viewer = Viewer(view, mesh, mode=args.mode, end=parse_end(args.end, view.count),
                     z_max=args.z_max, show_travel=not args.hide_travel,
-                    show_nozzle=not args.no_nozzle, notes=notes)
+                    show_nozzle=not args.no_nozzle, machine_view=args.machine_view,
+                    notes=notes)
     if args.screenshot:
         plotter = viewer.build(off_screen=True)
         plotter.screenshot(args.screenshot)

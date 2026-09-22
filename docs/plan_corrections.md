@@ -153,6 +153,38 @@ the neighbour search.
 
 Decided with the operator on 2026-09-22.
 
+### 1.9 The kinematics realise the requested tool direction only approximately ★ PLAN EDIT
+
+Found while building P5.4b. `kinematics3z.inverse` turns the requested build
+direction into the bed's normal by flipping its x and y
+(`docs/conventions.md` section 2), and `forward` flips them back. That is
+exact only if the bed does not also turn about its own normal, and the three
+slot constraints do make it turn a little.
+
+The bed's real pose can be recovered from `forward`'s positions:
+
+* at fixed screws, a change in X or Y moves only the nozzle, so three
+  `forward` calls give the bed's rotation (`atom.bed_motion`);
+* that pose reproduces the screw height differences at the three ball joints
+  to within 0.001 mm, up to 30 degrees of tilt.
+
+The nozzle axis under that pose is the build direction the machine actually
+produces. It differs from the requested one by:
+
+| Tilt | Largest difference (at diagonal azimuths) |
+|---|---|
+| 5.5 degrees (golden cube) | 0.0003 degrees |
+| 25 degrees | 0.08 degrees |
+| 30 degrees | 0.14 degrees |
+
+This is far below the 1-degree tessellation step, so it does not matter for
+printing. But **P1.1's IK→FK round trip on the normal (1e-4 rad) cannot catch
+it**, because both directions use the same flip and so agree with each other
+exactly. P1.1 should also check the physical pose: build the pose with
+`atom.bed_motion` and require `R @ d` to be within a stated tolerance of +Z.
+`tests/test_bed_motion.py` pins the gap below 0.2 degrees. The kinematics
+maths is left unchanged.
+
 ## 2. Deliberate deviations
 
 ### 2.1 Golden baseline taken at this fork's `main`, not upstream
@@ -254,7 +286,9 @@ has been started now and split in two:
   draw the nozzle cone. It reads the toolpath `.npz` or the G-code. Code is in
   `atom.toolpath_view` (numpy only, unit-tested) and `tools/visualize_5ax.py`
   (the window).
-* **P5.4b:** the bed-motion animation.
+* **P5.4b:** the bed-motion animation. Built as a "machine view" toggle in
+  the same window, together with a Play/Pause button and a speed slider (the
+  operator's requests).
 
 The operator's choices differ from the plan text in three places:
 
@@ -266,6 +300,23 @@ The operator's choices differ from the plan text in three places:
   rule (solid within `shell_thickness = 2` deposition widths of the surface).
 * **Side by side deferred:** the stock vs overhang-aware comparison was not
   asked for in this round. It has nothing to compare until P2 exists.
+
+P5.4b differs from the plan text in three places:
+
+* **Only two kinds of violation are shown in red:** a bed corner above the
+  gantry level, and a point the IK rejects. Both come straight from the
+  kinematics' own checks. The plan's "clearance model" violations need P4.1,
+  which does not exist yet. The part-so-far is drawn as the actual printed
+  lines, not a convex-hull proxy.
+* **The plan's "frame count = points / stride" test is replaced.** Playback
+  runs live and advances by wall-clock time at the chosen speed (points per
+  second). The tests check that timing instead. Saving the animation to a
+  video file is not built.
+* **Toolpath input solves its own screw values.** An `.npz` carries no screw
+  values, so they are solved after re-centring on the bed, as
+  `toolpath_to_gcode` does. For a `_smoothed` toolpath (no platform yet)
+  they can differ from the final G-code's by the platform lift, and the
+  window says so. Opening the G-code shows the exact values.
 
 ### 2.12 The G-code is paired with its toolpath through the forward kinematics
 

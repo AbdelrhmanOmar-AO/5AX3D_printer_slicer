@@ -120,6 +120,11 @@ class ViewData:
     gcode_line: np.ndarray | None = None
     #: ``(N, 5)`` machine axes X, Y, Z, U, V as written in the G-code.
     machine: np.ndarray | None = None
+    #: Translation from this view's frame to the bed frame the kinematics use
+    #: (`atom.bed_motion`), mm; None until known. For G-code it is the bed
+    #: re-centring `toolpath_to_gcode` applied (zero if the view is already
+    #: in that frame).
+    bed_offset: np.ndarray | None = None
     _cache: dict = field(default_factory=dict, repr=False)
 
     @property
@@ -486,6 +491,49 @@ def colour_range(values: np.ndarray, key: str) -> tuple[float, float]:
     if high - low < 1e-9:
         high = low + (1.0 if key == "tilt" else max(abs(low) * 0.01, 1e-3))
     return low, high
+
+
+# --------------------------------------------------------------------------
+# Playback
+# --------------------------------------------------------------------------
+
+#: Default playback speed: the whole print in this many seconds.
+DEFAULT_PLAYBACK_S = 60.0
+#: Fastest selectable speed: the whole print in this many seconds.
+FASTEST_PLAYBACK_S = 5.0
+
+
+def speed_limits(count: int) -> tuple[float, float]:
+    """Slowest and fastest playback speeds offered, points per second."""
+    return 1.0, max(10.0, count / FASTEST_PLAYBACK_S)
+
+
+def default_speed(count: int) -> float:
+    """Playback speed that shows the whole print in `DEFAULT_PLAYBACK_S`."""
+    low, high = speed_limits(count)
+    return float(np.clip(count / DEFAULT_PLAYBACK_S, low, high))
+
+
+def playback_advance(position: float, speed: float, elapsed_s: float, count: int):
+    """Advance playback by wall-clock time, so the speed holds however fast
+    the window redraws.
+
+    ``position`` is a fractional point index. Returns ``(new_position,
+    finished)``; playback finishes on the last point.
+    """
+    last = max(count - 1, 0)
+    position = min(float(position) + max(speed, 0.0) * max(elapsed_s, 0.0), float(last))
+    return position, position >= last
+
+
+def describe_speed(speed: float, count: int) -> str:
+    """Speed as shown next to its slider."""
+    seconds = count / speed if speed > 0 else float("inf")
+    if seconds >= 120:
+        whole = f"{seconds / 60:.1f} min"
+    else:
+        whole = f"{seconds:.0f} s"
+    return f"Speed: {speed:,.0f} points/s (whole print in {whole})"
 
 
 # --------------------------------------------------------------------------
