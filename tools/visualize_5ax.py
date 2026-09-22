@@ -458,6 +458,9 @@ class Viewer:
         self._play_button = None
         self._progress_slider = None
         self._ready = False
+        self.overlay = True
+        #: Called after every refresh; the Qt window syncs its controls here.
+        self.on_frame = None
         self.plotter = None
 
     # -- data ---------------------------------------------------------------
@@ -496,18 +499,29 @@ class Viewer:
 
     # -- building the scene -------------------------------------------------
 
-    def build(self, off_screen=False, window_size=(1500, 950)):
+    def build(self, off_screen=False, window_size=(1500, 950), plotter=None):
+        """Create the scene.
+
+        Without ``plotter`` this opens pyvista's own window, with the controls
+        drawn into the 3D view (the classic window). With one, e.g. the
+        `pyvistaqt.QtInteractor` of the Qt window, the scene is drawn into it
+        and the caller provides the controls: no overlay widgets or text.
+        """
         import pyvista as pv
 
         self.pv = pv
         self.window_size = window_size
-        plotter = pv.Plotter(off_screen=off_screen, window_size=window_size,
-                             title=f"Toolpath viewer: {Path(self.view.source).name}")
+        self.overlay = plotter is None
+        if plotter is None:
+            plotter = pv.Plotter(off_screen=off_screen, window_size=window_size,
+                                 title=f"Toolpath viewer: {Path(self.view.source).name}")
         self.plotter = plotter
         plotter.set_background(BACKGROUND_BOTTOM, top=BACKGROUND_TOP)
-        plotter.add_axes(color=TEXT, viewport=(0.84, 0.0, 0.98, 0.16))
-
-        self._add_controls()
+        if self.overlay:
+            plotter.add_axes(color=TEXT, viewport=(0.84, 0.0, 0.98, 0.16))
+            self._add_controls()
+        else:
+            plotter.add_axes(color=TEXT, viewport=(0.0, 0.0, 0.13, 0.17))
         self._ready = True
         self.refresh(reset_camera=True)
         return plotter
@@ -637,26 +651,73 @@ class Viewer:
 
     # -- interaction ----------------------------------------------------------
 
-    def _pick_mode(self, key, state):
+    # Public API, used by the Qt window's controls.
+
+    def set_mode(self, key):
+        """Switch colour mode. Returns why it cannot be shown, or None."""
         reason = self.unavailable(key)
         if reason:
             self.message = f"{tv.MODES_BY_KEY[key].label}: {reason}"
-            key = self.mode
-        elif not state and key == self.mode:
-            pass  # clicking the active mode keeps it on
-        else:
-            self.mode = key
-            self.message = ""
+            return reason
+        self.mode = key
+        self.message = ""
+        self.refresh()
+        return None
+
+    def set_option(self, attribute, value):
+        """Set one of the Show options (``show_travel``, ``show_mesh``,
+        ``show_nozzle``, ``machine_view``). Returns the value in effect."""
+        value = bool(value) and not (attribute == "show_mesh" and self.mesh is None)
+        setattr(self, attribute, value)
+        self.refresh(reset_camera=attribute == "machine_view")
+        return value
+
+    def go_to(self, index, render=True):
+        """Show the print up to point ``index`` (0-based)."""
+        self.end = int(np.clip(index, 0, self.view.count - 1))
+        self.refresh(rebuild=False, render=render)
+
+    def set_z_max(self, value):
+        self._set_z_max(value)
+
+    def frame_text(self):
+        """Which frame the scene is drawn in, in words."""
+        if self.machine_view:
+            return "Machine view: nozzle fixed, bed moves"
+        return self.view.frame[:1].upper() + self.view.frame[1:]
+
+    def header_lines(self):
+        """What the classic window writes top left: source, frame, notes."""
+        return self._header_lines()
+
+    def point_fields(self):
+        """``(label, value)`` rows describing the current point."""
+        fields = tv.point_fields(self.view, self.end)
+        if self.machine_view:
+            state = self.machine_state()
+            pose = self._pose_index()
+            if not state.valid[self.end]:
+                fields.append(("Reachable", "NO: the IK rejects this point"))
+            if pose is not None:
+                if self.view.machine is None:
+                    _, _, z0, z1, z2 = state.machine[pose]
+                    fields.append(("Screws Z, U, V", f"{z0:.2f}, {z1:.2f}, {z2:.2f}"))
+                clearance = self._bed_clearance(pose)
+                fields.append(("Gantry gap (mm)",
+                               f"{clearance:.1f}" + ("  CLASH" if clearance < 0 else "")))
+        return fields
+
+    # Classic-window controls.
+
+    def _pick_mode(self, key, state):
+        if self.set_mode(key):
+            self.refresh()  # show the message
         for other, widget in self._mode_buttons.items():
             widget.GetRepresentation().SetState(int(other == self.mode))
-        self.refresh()
 
     def _toggle(self, attribute, state):
-        if attribute == "show_mesh" and self.mesh is None:
-            state = False
+        if not self.set_option(attribute, state):
             self._toggle_buttons[attribute].GetRepresentation().SetState(0)
-        setattr(self, attribute, bool(state))
-        self.refresh(reset_camera=attribute == "machine_view")
 
     def _set_end(self, index):
         self.end = int(np.clip(index, 0, self.view.count - 1))
@@ -740,6 +801,8 @@ class Viewer:
             self.plotter.reset_camera()
         if render:
             self.plotter.render()
+        if self.on_frame is not None:
+            self.on_frame()
 
     def _points(self):
         """Point coordinates in the frame actors are built in."""
@@ -831,12 +894,14 @@ class Viewer:
         if self.machine_view:
             self._build_machine()
 
-        self._draw_header()
-        self._status_actor = plotter.add_text("", position="upper_right", font_size=9,
-                                              color=TEXT, name="status")
-        plotter.add_text(
-            "Left/Right: 1 point   , / . : 1 %   Space: play/pause   v: iso view   q: quit",
-            position="lower_left", font_size=8, color=TEXT_DIM, name="help")
+        if self.overlay:
+            self.plotter.add_text("\n".join(self._header_lines()), position="upper_left",
+                                  font_size=9, color=TEXT, name="header")
+            self._status_actor = plotter.add_text("", position="upper_right", font_size=9,
+                                                  color=TEXT, name="status")
+            plotter.add_text(
+                "Left/Right: 1 point   , / . : 1 %   Space: play/pause   v: iso view   q: quit",
+                position="lower_left", font_size=8, color=TEXT_DIM, name="help")
 
     def _update_frame(self):
         view = self.view
@@ -864,7 +929,8 @@ class Viewer:
             visible = self.machine_view or view.point[self.end, 2] <= self.z_max
             nozzle.SetVisibility(bool(visible))
 
-        self._status_actor.set_text("upper_right", self._status_text())
+        if self.overlay:
+            self._status_actor.set_text("upper_right", self._status_text())
 
     def _pose_index(self):
         from atom import bed_motion
@@ -948,6 +1014,9 @@ class Viewer:
                          reset_camera=False, render=False)
 
     def _bar_position(self):
+        if not self.overlay:  # Qt window: nothing else on the right of the view
+            return dict(position_x=0.885, position_y=0.22, width=0.045, height=0.56,
+                        vertical=True, title_font_size=12, label_font_size=11, color=TEXT)
         return dict(position_x=0.80, position_y=0.30, width=0.05, height=0.45,
                     vertical=True, title_font_size=12, label_font_size=11, color=TEXT)
 
@@ -955,7 +1024,7 @@ class Viewer:
         self._label(tv.describe_speed(self.speed, self.view.count),
                     self._speed_label_position, "speed_label", size=9)
 
-    def _draw_header(self):
+    def _header_lines(self):
         view = self.view
         mode = tv.MODES_BY_KEY[self.mode]
         frame = "machine view: nozzle fixed, bed moves" if self.machine_view else view.frame
@@ -981,8 +1050,7 @@ class Viewer:
                 header.append("open the G-code for the exact values the printer gets.")
         if self.message:
             header.append(self.message)
-        self.plotter.add_text("\n".join(header), position="upper_left", font_size=9,
-                              color=TEXT, name="header")
+        return header
 
     def _status_text(self):
         view = self.view
@@ -1048,6 +1116,8 @@ def main(argv=None):
     parser.add_argument("--machine-view", action="store_true",
                         help="Start in the machine view: nozzle fixed, the bed tilting beneath it.")
     parser.add_argument("--screenshot", help="Render to this PNG and exit, without a window.")
+    parser.add_argument("--classic", action="store_true",
+                        help="Use the classic pyvista window even if the Qt window is available.")
     args = parser.parse_args(argv)
 
     notes = []
@@ -1082,6 +1152,16 @@ def main(argv=None):
         plotter.close()
         print(f"Wrote {args.screenshot}")
         return 0
+
+    if not args.classic:
+        try:
+            import viewer_qt
+        except Exception as exc:  # ImportError, or qtpy finding no Qt binding
+            print(f"The Qt window is not available ({exc}); using the classic window.\n"
+                  "For the full interface, install once: "
+                  "conda install -c conda-forge pyside6 pyvistaqt")
+        else:
+            return viewer_qt.run(viewer)
 
     viewer.build()
     viewer.show()

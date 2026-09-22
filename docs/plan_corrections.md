@@ -301,6 +301,16 @@ The operator's choices differ from the plan text in three places:
 * **Side by side deferred:** the stock vs overhang-aware comparison was not
   asked for in this round. It has nothing to compare until P2 exists.
 
+**UI (operator's request after P5.4b).** The main window is now a Qt desktop
+app, `tools/viewer_qt.py`. It has a side panel with a colour-mode dropdown,
+toggle switches, Z clip, camera presets and the current point; a timeline bar
+with transport buttons and speed; and tooltips. It embeds the same engine
+(`visualize_5ax.Viewer`) through `pyvistaqt`. PySide6 and pyvistaqt are new
+**optional** dependencies (`pyproject.toml` `gui` extra); without them the
+classic pyvista window opens instead. Playback there runs on a Qt timer, not
+a VTK one, which avoids 4.12 entirely. CI installs neither, so
+`tests/test_viewer_qt.py` skips there and runs where Qt and a display exist.
+
 P5.4b differs from the plan text in three places:
 
 * **Only two kinds of violation are shown in red:** a bed corner above the

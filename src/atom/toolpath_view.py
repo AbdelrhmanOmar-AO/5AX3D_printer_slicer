@@ -541,6 +541,35 @@ def describe_speed(speed: float, count: int) -> str:
 # --------------------------------------------------------------------------
 
 
+def point_fields(view: ViewData, index: int) -> list[tuple[str, str]]:
+    """The current point as ``(label, value)`` rows, for a side panel."""
+    if view.count == 0:
+        return [("Point", "empty toolpath")]
+    index = int(np.clip(index, 0, view.count - 1))
+    x, y, z = view.point[index]
+    kind = "print" if view.deposit[index] else "travel"
+    if view.is_platform[index]:
+        kind += " (platform)"
+    azimuth = view.azimuth_deg[index]
+    fields = [
+        ("Point", f"{index + 1:,} / {view.count:,}"),
+        ("Move", kind),
+        ("Position (mm)", f"{x:.2f}, {y:.2f}, {z:.2f}"),
+        ("Tilt", f"{view.tilt_deg[index]:.1f}\N{DEGREE SIGN}"),
+        ("Leans toward", "-" if np.isnan(azimuth) else f"{azimuth:.0f}\N{DEGREE SIGN} from +X"),
+    ]
+    if view.width is not None:
+        fields.append(("Bead (mm)", f"{view.width[index]:.2f} x {view.height[index]:.2f}"))
+    if view.feed_mm_min is not None:
+        fields.append(("Feed (mm/min)", f"{view.feed_mm_min[index]:.0f}"))
+    if view.gcode_line is not None:
+        fields.append(("G-code line", f"{view.gcode_line[index]:,}"))
+    if view.machine is not None:
+        _, _, z0, z1, z2 = view.machine[index]
+        fields.append(("Screws Z, U, V", f"{z0:.2f}, {z1:.2f}, {z2:.2f}"))
+    return fields
+
+
 def describe_point(view: ViewData, index: int) -> str:
     """One point's state, for the window's status line."""
     index = int(np.clip(index, 0, max(view.count - 1, 0)))

@@ -355,3 +355,15 @@ def test_playback_never_runs_backwards():
 def test_speed_text_gives_the_time_for_the_whole_print():
     assert tv.describe_speed(1000.0, 60_000) == "Speed: 1,000 points/s (whole print in 60 s)"
     assert "10.0 min" in tv.describe_speed(100.0, 60_000)
+
+
+def test_point_fields_for_the_side_panel():
+    view = make_view([[0, 0, 0], [1, 2, 3]], tilts_deg=[0, 12], azimuths_deg=[0, 45])
+    fields = dict(tv.point_fields(view, 1))
+    assert fields["Point"] == "2 / 2"
+    assert fields["Position (mm)"] == "1.00, 2.00, 3.00"
+    assert fields["Tilt"] == "12.0\N{DEGREE SIGN}"
+    assert "Feed (mm/min)" not in fields
+
+    view.machine = np.array([[0, 0, 75, 75, 75], [1, 2, 80, 70, 76]], float)
+    assert dict(tv.point_fields(view, 1))["Screws Z, U, V"] == "80.00, 70.00, 76.00"

@@ -315,14 +315,31 @@ python tools/atomize.py data/param/tubes.json
 `tools/visualize_5ax.py` opens a 3D window in the style of a slicer preview.
 It shows the toolpath as lines and has these controls:
 
-- a slider that scrubs through the print in the printer's order;
+**Install the window once** into the conda environment (it is a desktop app
+built with Qt):
+
+```powershell
+conda activate atomizer
+conda install -c conda-forge pyside6 pyvistaqt
+```
+
+Without it the tool still works, in a simpler "classic" window with the
+controls drawn over the 3D view (`--classic` picks that one on purpose).
+
+The window has a side panel on the left, the 3D view, and a timeline along
+the bottom:
+
+- a timeline that scrubs through the print in the printer's order, with
+  jump-to-start, step back, play/pause, step forward and jump-to-end buttons;
 - a Z-height clip for looking inside the part;
-- buttons that colour the lines by tilt, tilt direction, bead width or
+- a dropdown that colours the lines by tilt, tilt direction, bead width or
   height, feed rate, unsupported points (the P0.8 metric) or a shell/infill
   guess;
 - the part's STL drawn over the lines, and a cone showing the nozzle's tilt at
   the current point;
-- a Play/Pause button with a speed slider, which animates the print;
+- a playback speed slider (labelled with the time the whole print takes);
+- camera presets (Iso, Top, Front, Side) and "Save image";
+- a "Current point" card: position, tilt, bead size, screw values;
 - a **machine view** that shows the printer the way it moves: the nozzle stays
   vertical and the bed tilts beneath it. The bed's pose comes from the three
   screw values (Z, U, V), and the gantry level is drawn too. The bed turns red
@@ -338,9 +355,9 @@ python tools/visualize_5ax.py data/gcode/ramp60_xs.gcode
 
 **Mouse:** left-drag rotates, scroll zooms, shift+drag pans.
 
-**Keys:** Left/Right step one point, `,` and `.` step 1 %, Space plays and
-pauses, `v` returns to the isometric view, `q` quits. `--machine-view` starts
-in the machine view.
+**Keys:** Left/Right step one point, `,` and `.` step 1 %, Home/End jump to
+the start/end, Space plays and pauses. `--machine-view` starts in the machine
+view. Hover over any control for a tooltip.
 
 **Screenshot:** `--screenshot out.png` saves a picture without opening a
 window. Run `--help` for every option, and see the tool's docstring for which

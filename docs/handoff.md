@@ -107,11 +107,15 @@ baseline matrix is being re-run against corrected metrics.
 | P0.7 Benchmark meshes | **Done**. 36 meshes, 9 parts x 4 sizes |
 | P0.8 Overhang metrics | Tooling done and validated. **Matrix re-running** (2026-09-22); see section 7b |
 | P5.4a Toolpath viewer | **Built**, pulled forward at the operator's request (`plan_corrections.md` 2.11). Laptop check pending |
-| P5.4b Bed-motion animation | **Built**: machine-view toggle, Play/Pause and speed. Laptop check pending. Side-by-side view deferred until P2 |
+| P5.4b Bed-motion animation | **Built and checked on the laptop** (Play and smooth playback confirmed by the operator). Side-by-side view deferred until P2 |
+| P5.4 UI | **Qt window built** (`tools/viewer_qt.py`): side panel, timeline, toggle switches, dropdown. Needs `conda install -c conda-forge pyside6 pyvistaqt` once; falls back to the classic window without it. Laptop check pending |
 
-439 unit tests pass; 12 skipped (the `pipeline` and `benchmark` tiers, plus
-the viewer's six display tests when there is no display; under `xvfb-run`
-445 pass). The Play fix
+440 unit tests pass; 13 skipped (the `pipeline` and `benchmark` tiers, plus
+the viewer's display tests when there is no display; under `xvfb-run`, with
+PySide6 and pyvistaqt installed, 458 pass). In the session container the Qt
+tests need `pip install pyside6 pyvistaqt` and
+`apt-get install libegl1 libxkbcommon-x11-0 libxcb-cursor0` (plus the other
+`libxcb-*` libraries Qt lists). The Play fix
 (`plan_corrections.md` 4.12) is Windows-specific and needs the laptop to
 confirm it.
 
@@ -192,7 +196,8 @@ at a time.
 |---|---|
 | `gcode_stats.py` | G-code to a stable JSON record (hash, counts, axis ranges, extrusion). The golden comparison. |
 | `make_benchmarks.py` | Generates the benchmark meshes and parameter files; prints estimated runtime before writing. |
-| `visualize_5ax.py` | **Look at the output.** A slicer-style 3D preview of a toolpath `.npz` or the G-code: print-order slider, Z clip, colour by tilt / tilt direction / bead size / feed / unsupported / shell-infill, STL overlay, nozzle cone, Play/Pause with adjustable speed, and a machine view where the bed tilts under a fixed nozzle. `--screenshot` saves a PNG. G-code is mapped back through the forward kinematics and paired with its `.npz` (matches within 0.0001 mm on the golden cube). |
+| `viewer_qt.py` | The Qt window around `visualize_5ax.Viewer`: side panel (colour dropdown, switches, Z clip, camera presets, current point, notes) and timeline (transport buttons, scrubber, speed). Playback on a Qt timer. |
+| `visualize_5ax.py` | **Look at the output.** Opens the Qt window when available. A slicer-style 3D preview of a toolpath `.npz` or the G-code: print-order slider, Z clip, colour by tilt / tilt direction / bead size / feed / unsupported / shell-infill, STL overlay, nozzle cone, Play/Pause with adjustable speed, and a machine view where the bed tilts under a fixed nozzle. `--screenshot` saves a PNG. G-code is mapped back through the forward kinematics and paired with its `.npz` (matches within 0.0001 mm on the golden cube). |
 | `overhang_report.py` | Runs a part at a chosen `max_slope`, measures it, writes a JSON report, and archives the toolpath. `--summarize` builds the comparison table; `--reanalyse` re-scores every archived run against the current metrics in seconds. |
 
 ### Configuration and scripts
