@@ -424,3 +424,55 @@ def test_material_above_the_first_layer_is_judged_normally():
     assert not result.unsupported[0]
     assert not result.unsupported[1]
     assert result.unsupported[2], "a point 29 mm above anything must be flagged"
+
+
+# --------------------------------------------------------------------------
+# The search radius must not override the support cone
+# --------------------------------------------------------------------------
+
+
+def _planar_overhang_column(angle_deg, layers=25, layer_height=0.45):
+    """Deposition stepping sideways at `angle_deg`, as a planar print does."""
+    step = layer_height * math.tan(math.radians(angle_deg))
+    return [
+        [i * step, 0.0, layer_height * (i + 1)] for i in range(layers)
+    ]
+
+
+@pytest.mark.parametrize("angle", [30.0, 45.0, 55.0, 60.0])
+def test_surfaces_inside_the_support_cone_are_supported(angle):
+    """Up to the 65-degree cone, a planar overhang must read as supported.
+
+    With the plan's 1.5x radius this failed for everything past 48.2 degrees,
+    because the radius, not the cone, was deciding.
+    """
+    points = _planar_overhang_column(angle)
+    result = om.unsupported_deposition(FakeToolpath(points, [0.0, 0.0, 1.0]))
+
+    assert result.fraction == pytest.approx(0.0), (
+        f"a {angle} degree overhang is inside the "
+        f"{om.SUPPORT_CONE_HALF_ANGLE_DEG} degree cone and must not read as "
+        "printing into air"
+    )
+
+
+@pytest.mark.parametrize("angle", [75.0, 85.0])
+def test_surfaces_beyond_the_cone_are_still_flagged(angle):
+    """Raising the radius must not make everything look supported."""
+    points = _planar_overhang_column(angle)
+    result = om.unsupported_deposition(FakeToolpath(points, [0.0, 0.0, 1.0]))
+
+    assert result.fraction > 0.5, (
+        f"a {angle} degree overhang is well outside the cone and should be "
+        "flagged"
+    )
+
+
+def test_the_radius_no_longer_binds_before_the_cone():
+    """The radius must reach past the cone, so the cone is what decides."""
+    reach_deg = math.degrees(math.acos(1.0 / om.SUPPORT_SEARCH_HEIGHTS))
+
+    assert reach_deg > om.SUPPORT_CONE_HALF_ANGLE_DEG, (
+        f"the search radius stops reaching at {reach_deg:.1f} degrees, inside "
+        f"the {om.SUPPORT_CONE_HALF_ANGLE_DEG} degree cone, so it overrides it"
+    )

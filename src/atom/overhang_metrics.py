@@ -60,7 +60,24 @@ from scipy.spatial import cKDTree
 SUPPORT_CONE_HALF_ANGLE_DEG = 65.0
 
 #: Multiple of a deposition's own height searched for supporting material.
-SUPPORT_SEARCH_HEIGHTS = 1.5
+#:
+#: The build plan specifies 1.5, but that value silently overrides the cone it
+#: is meant to work alongside. On a surface at angle t from vertical,
+#: successive layers step ``h*tan(t)`` sideways, so the nearest earlier bead
+#: lies at ``h/cos(t)``. A radius of 1.5h therefore stops reaching at
+#: ``arccos(1/1.5) = 48.2`` degrees, well inside the 65-degree cone, and the
+#: cone never gets to decide anything.
+#:
+#: 2.5h stops binding at 66.4 degrees, just past the cone, so the cone governs
+#: as intended. Two independent checks support the cone being the right
+#: criterion: it is Atomizer's own ``SUPPORTING_REGION_CONE_ANGLE``, and the
+#: classic bead-overlap limit for fused filament (supported while
+#: ``h*tan(t) < w``) gives 63.4 degrees at this part's 0.45/0.9 geometry.
+#:
+#: Measured consequence: with 1.5h a 45-degree ramp, which any 3-axis printer
+#: manages, reported 16.35 % of its deposition as printing into air, and no
+#: part past ~48 degrees could pass the threshold at all.
+SUPPORT_SEARCH_HEIGHTS = 2.5
 
 #: `toolpath3.TRAVEL_TYPE_DEPOSITION`; repeated so this module stays free of
 #: Taichi, which `toolpath3` imports at module level.

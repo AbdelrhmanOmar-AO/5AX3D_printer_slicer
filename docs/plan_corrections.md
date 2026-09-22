@@ -121,6 +121,37 @@ treats a non-zero `offset` as an error is wrong.
 Full details, including which conditions produce NaN and which only raise
 `offset`, are in `docs/conventions.md` section 5.
 
+### 1.8 The support search radius of 1.5 x height overrides the 65-degree cone ★ PLAN EDIT
+
+P0.8 defines a deposition point as supported when earlier material lies "inside
+the cone with apex at `p_i`, axis `-d_i`, half-angle
+`toolpath3.SUPPORTING_REGION_CONE_ANGLE / 2` (65 degrees), **within
+`1.5 x height_i`**".
+
+Those two conditions conflict. On a surface at angle `t` from vertical,
+successive layers step `h*tan(t)` sideways, so the nearest earlier bead sits at
+`h/cos(t)`. A radius of `1.5h` therefore stops reaching at
+`arccos(1/1.5) = 48.2` degrees — well inside the cone, which consequently never
+decides anything. The metric measures the radius, not the geometry.
+
+Measured consequence: `ramp45_xs`, an overhang any 3-axis printer manages,
+reported **16.35 %** of its deposition near the overhang as printing into air,
+and everything past about 48 degrees reported 30–45 %, so no part could pass
+the `< 1 %` threshold and the pass/fail column carried no information.
+
+Two independent checks say the **cone** is the right criterion and the radius
+is the accident: it is Atomizer's own `SUPPORTING_REGION_CONE_ANGLE`, and the
+classic bead-overlap limit for fused filament (supported while `h*tan(t) < w`)
+gives **63.4 degrees** at this part's 0.45 / 0.9 geometry, close to the cone's
+65.
+
+`SUPPORT_SEARCH_HEIGHTS` is therefore **2.5**, which stops binding at 66.4
+degrees, just past the cone. The plan should specify a radius that does not
+bind before the cone, or drop the radius and state that it exists only to bound
+the neighbour search.
+
+Decided with the operator on 2026-09-22.
+
 ## 2. Deliberate deviations
 
 ### 2.1 Golden baseline taken at this fork's `main`, not upstream
@@ -431,6 +462,7 @@ The five items a later task is most likely to get wrong if it trusts the plan:
 | 1.5 | `order_atoms` is CPU and 86 % of runtime; long runs are not GPU-bound |
 | 1.6 | `forward()` has no X-then-Y tilt decomposition to confirm against |
 | 1.7 | IK failure is NaN in `offset`; a non-zero `offset` is a clearance, not an error |
+| 1.8 | The plan's 1.5 x height support radius overrides its own 65-degree cone |
 | 4.5 | The bed-contact rule must anchor to the part's lowest point, or a plain cube reads as 6 % unsupported |
 | 4.6 | Sampling by face centroid under-measures large flat faces; subdivide first |
 | 4.7 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
