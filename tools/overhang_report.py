@@ -22,11 +22,17 @@ smoothing, before `tesselate_toolpath_orientations` (which only subdivides
 segments so the orientation steps stay small) and before `add_platform` (which
 adds sacrificial material beneath the part that is not part of its geometry).
 
-A note on re-running
---------------------
+Archived toolpaths
+------------------
 Every run of a given part writes to the same ``data/`` paths regardless of
-``max_slope``, so a later run overwrites the intermediate files of an earlier
-one. The JSON report is the durable artifact; the toolpath is not kept.
+``max_slope``, so a later run overwrites the previous one's intermediates. Each
+run therefore copies its toolpath to
+``reports/toolpaths/<part>_ms<deg>.npz``.
+
+That copy is what makes ``--reanalyse`` possible: a change to the metrics
+re-scores every run already performed, in seconds, instead of re-slicing. The
+first baseline matrix took 20 hours, and a flaw found in the bed-contact rule
+afterwards would otherwise have cost all 20 again.
 """
 
 # No `from __future__ import annotations`: this module drives Taichi kernels
@@ -54,6 +60,8 @@ from atom.ti_env import init_taichi  # noqa: E402
 #: Where individual reports and the summary live.
 REPORT_DIR = REPO_ROOT / "reports" / "baseline_overhang"
 SUMMARY_PATH = REPO_ROOT / "reports" / "baseline_overhang.md"
+#: Each run's toolpath, kept so the metrics can be recomputed without re-slicing.
+TOOLPATH_ARCHIVE = REPO_ROOT / "reports" / "toolpaths"
 
 SCHEMA_VERSION = 1
 
@@ -226,6 +234,53 @@ def measure(
 
 def report_path(part, max_slope_deg):
     return REPORT_DIR / f"{part}_ms{max_slope_deg:g}.json"
+
+
+def archive_path(part, max_slope_deg):
+    return TOOLPATH_ARCHIVE / f"{part}_ms{max_slope_deg:g}.npz"
+
+
+def archive_toolpath(part, max_slope_deg):
+    """Keep this run's toolpath, so its metrics can be recomputed later."""
+    source = REPO_ROOT / "data" / "toolpath" / f"{part}_smoothed.npz"
+    if not source.is_file():
+        return None
+    TOOLPATH_ARCHIVE.mkdir(parents=True, exist_ok=True)
+    destination = archive_path(part, max_slope_deg)
+    shutil.copy2(source, destination)
+    return destination
+
+
+def reanalyse(reports):
+    """Re-score every archived run against the current metrics.
+
+    Returns (rewritten, skipped). A run whose toolpath was not archived cannot
+    be re-scored and is reported rather than silently left stale.
+    """
+    init_taichi("cpu")
+    rewritten, skipped = [], []
+
+    for old in reports:
+        part, slope = old["part"], old["max_slope_deg"]
+        archived = archive_path(part, slope)
+        if not archived.is_file():
+            skipped.append(f"{part} @ {slope:g} (no archived toolpath)")
+            continue
+
+        fresh = measure(
+            part,
+            slope,
+            old.get("deposition_width_mm", 0.9),
+            runtime_s=old.get("runtime", {}).get("total_s", 0.0),
+            stage_times=old.get("runtime", {}).get("stages", {}),
+            toolpath_path=archived,
+        )
+        report_path(part, slope).write_text(
+            json.dumps(fresh, indent=2) + "\n", encoding="utf-8"
+        )
+        rewritten.append(fresh)
+
+    return rewritten, skipped
 
 
 # --------------------------------------------------------------------------
@@ -443,7 +498,31 @@ def main(argv=None):
         "--summarize", action="store_true",
         help="Collect every report into reports/baseline_overhang.md.",
     )
+    parser.add_argument(
+        "--reanalyse", "--reanalyze", action="store_true", dest="reanalyse",
+        help=(
+            "Re-score every archived run against the current metrics, without "
+            "re-running the pipeline, then rewrite the summary."
+        ),
+    )
     args = parser.parse_args(argv)
+
+    if args.reanalyse:
+        existing = load_reports()
+        if not existing:
+            raise SystemExit(f"No reports in {REPORT_DIR} to re-score.")
+        rewritten, skipped = reanalyse(existing)
+        for note in skipped:
+            print(f"  skipped: {note}")
+        if not rewritten:
+            raise SystemExit(
+                "Nothing could be re-scored: no archived toolpaths. Runs made "
+                "before archiving was added must be repeated."
+            )
+        SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SUMMARY_PATH.write_text(summarize(rewritten), encoding="utf-8")
+        print(f"Re-scored {len(rewritten)} run(s); wrote {SUMMARY_PATH}.")
+        return 0
 
     if args.summarize:
         reports = load_reports()
@@ -476,6 +555,11 @@ def main(argv=None):
     report = measure(
         part, max_slope, float(params["deposition_width"]), runtime_s, stage_times
     )
+
+    if not args.skip_pipeline:
+        archived = archive_toolpath(part, max_slope)
+        if archived is not None:
+            print(f"Archived the toolpath to {archived}")
 
     destination = report_path(part, max_slope)
     destination.parent.mkdir(parents=True, exist_ok=True)

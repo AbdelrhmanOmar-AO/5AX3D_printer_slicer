@@ -170,9 +170,18 @@ def unsupported_deposition(
     Parameters
     ----------
     first_layer_height
-        Points at or below this height rest on the bed. Defaults to the
-        greatest deposition height in the toolpath, which is the layer height
-        the first layer was laid at.
+        Points at or below this height rest on the bed. Defaults to the lowest
+        deposition point plus one layer height, which covers the whole first
+        layer.
+
+        The obvious choice, the layer height alone, is wrong: Atomizer's layers
+        are conformal, so the first layer is a shell of finite thickness rather
+        than a plane. On the calibration cube its deposition centres span
+        z = 0.415 to beyond 0.45, and a threshold of 0.45 cuts through the
+        middle of it, leaving the upper half with nothing beneath but bed it is
+        not credited for. That alone reported 5.86 % of a plain cube as
+        printing into air; anchoring to the lowest point gives 2.78 %, which is
+        the gyroid infill genuinely bridging its own voids.
     """
     count = int(np.asarray(toolpath.point_count).item())
     mask = deposition_mask(toolpath)
@@ -186,7 +195,9 @@ def unsupported_deposition(
         return UnsupportedResult(np.zeros(0, dtype=bool), 0.0, 0)
 
     if first_layer_height is None:
-        first_layer_height = float(np.max(heights)) if len(heights) else 0.0
+        first_layer_height = (
+            float(points[:, 2].min() + np.max(heights)) if len(heights) else 0.0
+        )
 
     # On the bed: supported, whatever is or is not around it.
     on_bed = points[:, 2] <= first_layer_height + 1e-6

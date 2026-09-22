@@ -376,3 +376,51 @@ def test_a_face_with_no_deposition_nearby_is_reported_as_unmeasured():
     assert groups[0].sample_count == 0
     assert not groups[0].measured
     assert math.isnan(groups[0].max_effective_deg)
+
+
+# --------------------------------------------------------------------------
+# The bed-contact rule
+#
+# Atomizer's layers are conformal, so the first layer is a shell of finite
+# thickness, not a plane. A threshold of one layer height cuts through the
+# middle of it and reports the upper half as printing into air. These pin down
+# the fix: anchor to the lowest deposition point.
+# --------------------------------------------------------------------------
+
+
+def test_a_thick_first_layer_is_all_treated_as_resting_on_the_bed():
+    """Deposition spread through the first layer must not be called unsupported."""
+    # A shell of points spanning most of a layer height, as a conformal first
+    # layer does, with nothing above.
+    points = [[float(i) * 0.4, 0.0, 0.42 + 0.01 * i] for i in range(12)]
+    result = om.unsupported_deposition(FakeToolpath(points, [0.0, 0.0, 1.0]))
+
+    assert result.fraction == pytest.approx(0.0), (
+        "the whole first layer sits on the bed; none of it prints into air"
+    )
+
+
+def test_the_bed_threshold_follows_the_part_not_the_origin():
+    """A part lifted off z=0 still has a first layer resting on its support."""
+    lifted = [[float(i) * 0.4, 0.0, 5.0 + 0.01 * i] for i in range(12)]
+    result = om.unsupported_deposition(FakeToolpath(lifted, [0.0, 0.0, 1.0]))
+
+    assert result.fraction == pytest.approx(0.0)
+
+
+def test_an_explicit_threshold_still_overrides_the_default():
+    points = [[0.0, 0.0, 0.45], [0.0, 0.0, 6.0]]
+    result = om.unsupported_deposition(
+        FakeToolpath(points, [0.0, 0.0, 1.0]), first_layer_height=0.45
+    )
+    assert result.unsupported[1], "the floating point is still unsupported"
+
+
+def test_material_above_the_first_layer_is_judged_normally():
+    """Fixing the bed rule must not make everything look supported."""
+    points = [[0.0, 0.0, 0.45], [0.0, 0.0, 0.9], [0.0, 0.0, 30.0]]
+    result = om.unsupported_deposition(FakeToolpath(points, [0.0, 0.0, 1.0]))
+
+    assert not result.unsupported[0]
+    assert not result.unsupported[1]
+    assert result.unsupported[2], "a point 29 mm above anything must be flagged"
