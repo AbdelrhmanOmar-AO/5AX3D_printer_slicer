@@ -242,6 +242,42 @@ one.
 
 ---
 
+### 2.11 P5.4 started early, in two parts, as `visualize_5ax.py` P5.4a/P5.4b
+
+The operator asked for a way to look at Atomizer's output while the P0.8
+matrix re-runs. P5.4 says it "can start after P0.6 on stock toolpaths", so it
+has been started now and split in two:
+
+* **P5.4a:** a static viewer. It scrubs through the print order, clips by Z,
+  and colours the lines by tilt, tilt direction, bead width or height, feed
+  rate, unsupported points or a shell/infill guess. It can overlay the STL and
+  draw the nozzle cone. It reads the toolpath `.npz` or the G-code. Code is in
+  `atom.toolpath_view` (numpy only, unit-tested) and `tools/visualize_5ax.py`
+  (the window).
+* **P5.4b:** the bed-motion animation.
+
+The operator's choices differ from the plan text in three places:
+
+* **Z clip:** Atomizer's layers are curved and no layer number is stored, so
+  the "layer slider" is a print-order slider plus a flat Z clip. Recovering
+  true curved-layer numbers is left for later.
+* **Shell/infill colouring:** added at the operator's request. It is a
+  heuristic: Atomizer records no bead type, so it uses the infill stage's own
+  rule (solid within `shell_thickness = 2` deposition widths of the surface).
+* **Side by side deferred:** the stock vs overhang-aware comparison was not
+  asked for in this round. It has nothing to compare until P2 exists.
+
+### 2.12 The G-code is paired with its toolpath through the forward kinematics
+
+The viewer reads G-code by taking the moves between the header's `M83` and
+the footer's `M82`. It recovers each nozzle position and tilt from X, Y, Z, U
+and V with `kinematics3z.forward` (the vendored
+`toolpath_to_cartesian_toolpath` kernel). It then subtracts
+`contracts.bed_centering_offset` to get back to the part frame. On the golden
+cube this reproduces the toolpath the G-code was written from within
+**0.0001 mm**, so the reader checks that the G-code and the `.npz` belong to
+the same run before it pairs them.
+
 ## 3. Environment facts the plan asked to establish
 
 ### 3.1 Taichi falls back to CPU rather than failing (answers P0.4 step 1)
@@ -325,6 +361,16 @@ noticing a figure that did not match physical intuition and chasing it rather
 than explaining it away, and twice the check that exposed it cost seven
 minutes against a twenty-hour run.
 
+### 3.8 G-code written on the CPU differs from the CUDA golden in the last digits
+
+Running `tools/toolpath_to_gcode.py` on the golden toolpath with
+`ATOM_TI_ARCH=cpu` gives a G-code with the same lines and structure as the
+golden file. Axis values differ by up to about 4e-5 mm and total extrusion by
+2e-5 mm. That is float32 rounding in the IK kernel on a different backend. The
+SHA-256 therefore differs, so **the golden SHA check only holds on the
+backend the baseline was captured on** (CUDA, on the operator's laptop).
+Comparisons across backends need tolerances, not hashes.
+
 ## 4. Implementation hazards found while building
 
 ### 4.1 `M98 P"/macros/enable3Z.g"` parses as an `E3` word
@@ -377,6 +423,13 @@ clustered at the bottom, which is the gyroid infill bridging its own voids.
 
 The first baseline matrix (20 hours) was measured before this was found, so its
 unsupported column is inflated by roughly three percentage points.
+
+**Update (2026-09-22, found while building P5.4a).** The 2.78 % and the 852
+points above were measured with the old 1.5 x height search radius. With the
+2.5 x radius from 1.8, the same golden toolpath gives **0.27 % (82 points)**.
+So most of those 852 points were the radius cutting off the cone, not the
+gyroid bridging its own voids. The 82 that remain are clustered near the top
+of the cube and around its internal features.
 
 ### 4.6 Sampling a surface by face centroid under-measures large flat faces
 

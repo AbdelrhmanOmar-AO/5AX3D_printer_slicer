@@ -310,6 +310,36 @@ Add the `--warmup` option to exclude the compilation time from the computation t
 python tools/atomize.py data/param/tubes.json
 ```
 
+### Preview like a slicer (this fork)
+
+`tools/visualize_5ax.py` opens a 3D window in the style of a slicer preview.
+It shows the toolpath as lines and has these controls:
+
+- a slider that scrubs through the print in the printer's order;
+- a Z-height clip for looking inside the part;
+- buttons that colour the lines by tilt, tilt direction, bead width or
+  height, feed rate, unsupported points (the P0.8 metric) or a shell/infill
+  guess;
+- the part's STL drawn over the lines, and a cone showing the nozzle's tilt at
+  the current point.
+
+It reads a toolpath `.npz` or the final G-code:
+
+```powershell
+python tools/visualize_5ax.py data/toolpath/ramp60_xs_smoothed.npz
+python tools/visualize_5ax.py reports/toolpaths/ramp60_s_ms30.npz --mode azimuth
+python tools/visualize_5ax.py data/gcode/ramp60_xs.gcode
+```
+
+**Mouse:** left-drag rotates, scroll zooms, shift+drag pans.
+
+**Keys:** Left/Right step one point, `,` and `.` step 1 %, Space plays and
+pauses, `v` returns to the isometric view, `q` quits.
+
+**Screenshot:** `--screenshot out.png` saves a picture without opening a
+window. Run `--help` for every option, and see the tool's docstring for which
+file to open when.
+
 ### Visualize
 
 After using the atomizer, you can visualize the generated `<toolpath>` with:

@@ -5,7 +5,8 @@ with no prior conversation.
 
 **Keep this file updated as the work progresses.**
 
-Last updated: 2026-09-22. **Phase P0 is complete**; 368 unit tests pass.
+Last updated: 2026-09-22. **Phase P0 is complete**; P5.4a (toolpath viewer) is
+built. 420 unit tests pass.
 The P0.8 matrix is being re-run against corrected metrics.
 
 ---
@@ -69,8 +70,10 @@ Setup pain already solved, all documented in `README.md`:
 
 ## 4. Repository conventions
 
-- **Branch:** everything on `claude/new-session-l8g46d`. `main` is untouched and
-  holds the golden baseline commit. Never push elsewhere without asking.
+- **Branch:** P0 is on `claude/new-session-l8g46d`. `main` is untouched and
+  holds the golden baseline commit. P5.4 is on `claude/wonderful-hypatia-iwzai1`,
+  which starts from the P0 branch's last commit (`84bae2e`), so merging it
+  brings P0 along. Never push elsewhere without asking.
 - **Commits:** one per build-plan task, subject line `P0.7: <what>`. Explain
   *why*, and record anything surprising that was discovered.
 - **Tests:** three tiers, in `pytest.ini` and `tests/conftest.py`.
@@ -103,8 +106,10 @@ baseline matrix is being re-run against corrected metrics.
 | P0.6 Tilt contracts and conventions | **Done**. `atom.tilt`, `atom.contracts`, `docs/conventions.md` |
 | P0.7 Benchmark meshes | **Done**. 36 meshes, 9 parts x 4 sizes |
 | P0.8 Overhang metrics | Tooling done and validated. **Matrix re-running** (2026-09-22); see section 7b |
+| P5.4a Toolpath viewer | **Built**, pulled forward at the operator's request (`plan_corrections.md` 2.11). Laptop check pending. P5.4b (bed animation) next |
 
-368 unit tests pass; 6 skipped (the `pipeline` and `benchmark` tiers).
+420 unit tests pass; 7 skipped (the `pipeline` and `benchmark` tiers, plus
+the viewer's render smoke test when there is no display).
 
 ### Verification status
 
@@ -174,6 +179,7 @@ at a time.
 | `tilt.py` | Tilt angles, rotations and limits. Pure numpy. `rotate_toward` is the operation P2.2 performs. |
 | `contracts.py` | `MachineToolpath`: a toolpath plus the machine state it implies. Runs the IK over every point and marks failures rather than aborting, which is what P3.3, P4 and P5.4 are built on. Verified against the golden toolpath: 46 773 points, 0 unreachable, and the Z/U/V maxima match the written G-code exactly. |
 | `ti_env.py` | One switch for the Taichi backend across every stage. |
+| `toolpath_view.py` | Everything the toolpath viewer shows that can be tested without a display: visible segments, the colour modes, the shell/infill guess, the unsupported mask (exactly the P0.8 metric). numpy + scipy only. |
 
 ### New tools (`tools/`)
 
@@ -181,6 +187,7 @@ at a time.
 |---|---|
 | `gcode_stats.py` | G-code to a stable JSON record (hash, counts, axis ranges, extrusion). The golden comparison. |
 | `make_benchmarks.py` | Generates the benchmark meshes and parameter files; prints estimated runtime before writing. |
+| `visualize_5ax.py` | **Look at the output.** A slicer-style 3D preview of a toolpath `.npz` or the G-code: print-order slider, Z clip, colour by tilt / tilt direction / bead size / feed / unsupported / shell-infill, STL overlay, nozzle cone. `--screenshot` saves a PNG. G-code is mapped back through the forward kinematics and paired with its `.npz` (matches within 0.0001 mm on the golden cube). |
 | `overhang_report.py` | Runs a part at a chosen `max_slope`, measures it, writes a JSON report, and archives the toolpath. `--summarize` builds the comparison table; `--reanalyse` re-scores every archived run against the current metrics in seconds. |
 
 ### Configuration and scripts
