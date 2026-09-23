@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "metrics_version": 2,
   "part": "tshape_xs",
   "max_slope_deg": 15.0,
   "overhang_aware": false,
@@ -7,6 +8,7 @@
   "mesh": {
     "volume_mm3": 4738.5,
     "face_count": 28,
+    "sampled_face_count": 34816,
     "extents_mm": [
       30.0,
       13.5,
@@ -18,30 +20,30 @@
     "deposition_count": 19975
   },
   "runtime": {
-    "total_s": 348.1678002000008,
+    "total_s": 347.71754240000155,
     "stages": {
-      "Direction computation": 7.3,
-      "Implicit layer computation": 8.9,
+      "Direction computation": 7.1,
+      "Implicit layer computation": 8.8,
       "Tangent computation": 13.2,
-      "Atoms alignment": 25.7,
+      "Atoms alignment": 25.4,
       "Extracting explicit atoms": 0.8,
-      "Toolpath planner": 241.1
+      "Toolpath planner": 241.6
     }
   },
   "metrics": {
     "max_tool_tilt_deg": 4.547862675832774,
-    "unsupported_fraction_overall": 0.07549436795994993,
-    "unsupported_fraction_near_overhangs": 0.4218009478672986,
-    "deposition_points_near_overhangs": 211,
+    "unsupported_fraction_overall": 0.03529411764705882,
+    "unsupported_fraction_near_overhangs": 0.2011852776044916,
+    "deposition_points_near_overhangs": 3206,
     "surfaces": [
       {
         "geometric_angle_deg": 90.0,
         "area_mm2": 283.5,
-        "face_count": 4,
-        "sample_count": 17,
+        "face_count": 4096,
+        "sample_count": 18653,
         "max_effective_deg": 90.0,
-        "mean_effective_deg": 89.9353365286479,
-        "max_tilt_used_deg": 0.15576635936332264
+        "mean_effective_deg": 89.59541006289673,
+        "max_tilt_used_deg": 3.399609052054038
       }
     ]
   },

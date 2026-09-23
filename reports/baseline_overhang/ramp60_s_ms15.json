@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "metrics_version": 2,
   "part": "ramp60_s",
   "max_slope_deg": 15.0,
   "overhang_aware": false,
@@ -7,6 +8,7 @@
   "mesh": {
     "volume_mm3": 29757.33221769333,
     "face_count": 20,
+    "sampled_face_count": 63488,
     "extents_mm": [
       50.0,
       22.5,
@@ -18,36 +20,36 @@
     "deposition_count": 103669
   },
   "runtime": {
-    "total_s": 2685.220984300002,
+    "total_s": 2685.219744000002,
     "stages": {
       "Direction computation": 8.3,
-      "Implicit layer computation": 9.7,
-      "Tangent computation": 15.0,
-      "Atoms alignment": 28.5,
+      "Implicit layer computation": 10.0,
+      "Tangent computation": 15.4,
+      "Atoms alignment": 28.9,
       "Extracting explicit atoms": 1.4,
-      "Toolpath planner": 2501.5
+      "Toolpath planner": 2501.4
     }
   },
   "metrics": {
     "max_tool_tilt_deg": 4.818165704688747,
-    "unsupported_fraction_overall": 0.04690891201805747,
-    "unsupported_fraction_near_overhangs": 0.2872340425531915,
-    "deposition_points_near_overhangs": 94,
+    "unsupported_fraction_overall": 0.005980572784535397,
+    "unsupported_fraction_near_overhangs": 0.04895104895104895,
+    "deposition_points_near_overhangs": 3432,
     "surfaces": [
       {
         "geometric_angle_deg": 60.0,
-        "area_mm2": 389.7114259310262,
-        "face_count": 2,
-        "sample_count": 8,
-        "max_effective_deg": 64.17649087335435,
-        "mean_effective_deg": 64.0633109102576,
-        "max_tilt_used_deg": 4.176498460470031
+        "area_mm2": 389.71142593102627,
+        "face_count": 2048,
+        "sample_count": 7919,
+        "max_effective_deg": 64.81816528173036,
+        "mean_effective_deg": 63.332809245485066,
+        "max_tilt_used_deg": 4.818165704688747
       }
     ]
   },
   "verdict": {
     "printable": false,
-    "worst_effective_deg": 64.17649087335435,
+    "worst_effective_deg": 64.81816528173036,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
       "max_unsupported_fraction": 0.01,
