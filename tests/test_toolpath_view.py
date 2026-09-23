@@ -367,3 +367,64 @@ def test_point_fields_for_the_side_panel():
 
     view.machine = np.array([[0, 0, 75, 75, 75], [1, 2, 80, 70, 76]], float)
     assert dict(tv.point_fields(view, 1))["Screws Z, U, V"] == "80.00, 70.00, 76.00"
+
+
+# --------------------------------------------------------------------------
+# Collisions (P4.2 / P4.3), drawn by the viewer
+# --------------------------------------------------------------------------
+
+
+def _nozzle_result(index, depth, axial):
+    index = np.asarray(index, dtype=np.int64)
+    return SimpleNamespace(index=index, depth_mm=np.asarray(depth, float),
+                           axial_mm=np.asarray(axial, float), count=len(index))
+
+
+def _swept_result(rows, skipped=0):
+    return SimpleNamespace(violations=rows, skipped_moves=skipped)
+
+
+def test_collision_marks_flag_the_point_and_the_move_to_it():
+    nozzle = _nozzle_result([2], [0.5], [3.0])
+    swept = _swept_result([{"move": 4, "kind": "nozzle_vs_material", "body": "nozzle",
+                            "clearance_mm": -2.57, "fraction": 0.3333}])
+    marks = tv.collision_marks(6, nozzle, swept)
+
+    np.testing.assert_array_equal(marks.flagged, [0, 0, 1, 0, 1, 0])
+    assert marks.notes[2] == ["material 0.50 mm inside the nozzle, 3.0 mm above the tip (P4.3)"]
+    assert marks.notes[4] == ["nozzle vs material: 2.57 mm in, 33 % along the move (P4.2)"]
+    bed = tv.collision_marks(6, swept=_swept_result([{
+        "move": 1, "kind": "bed", "body": "gantry", "clearance_mm": -0.036, "fraction": 1.0}]))
+    assert bed.notes[1] == ["bed vs gantry: 0.04 mm in, 100 % along the move (P4.2)"]
+    assert marks.summary[0] == "P4.3 nozzle vs printed material: 1 positions"
+    assert marks.summary[1] == "P4.2 swept check between points: 1 moves"
+    assert "P1.4" in marks.summary[-1]
+
+
+def test_clear_results_say_so():
+    marks = tv.collision_marks(3, _nozzle_result([], [], []), _swept_result([], skipped=2))
+    assert not marks.flagged.any()
+    assert marks.summary[0].endswith("0 positions, clear")
+    assert marks.summary[1].endswith("0 moves, clear")
+    assert "2 moves to unreachable points skipped" in marks.summary[2]
+
+
+def test_collision_mode_needs_the_checks_run_first():
+    view = make_view([[0, 0, 0], [1, 0, 0], [2, 0, 0]])
+    assert tv.mode_unavailable_reason(view, "collision", has_mesh=False) is None
+    with pytest.raises(ValueError, match="P4 checks"):
+        tv.point_scalars(view, "collision")
+
+    view._cache["collisions"] = tv.collision_marks(3, _nozzle_result([1], [0.2], [1.0]))
+    np.testing.assert_array_equal(tv.point_scalars(view, "collision"), [0, 1, 0])
+
+
+def test_the_current_point_names_its_collision():
+    view = make_view([[0, 0, 0], [1, 0, 0], [2, 0, 0]])
+    view._cache["collisions"] = tv.collision_marks(3, _nozzle_result([1], [0.2], [1.0]))
+
+    assert ("Collision", "none here") in tv.point_fields(view, 0)
+    rows = [value for label, value in tv.point_fields(view, 1) if label == "Collision"]
+    assert rows == ["material 0.20 mm inside the nozzle, 1.0 mm above the tip (P4.3)"]
+    assert "COLLISION: material 0.20 mm" in tv.describe_point(view, 1)
+    assert "COLLISION" not in tv.describe_point(view, 2)

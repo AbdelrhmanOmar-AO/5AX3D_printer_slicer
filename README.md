@@ -363,6 +363,31 @@ view. Hover over any control for a tooltip.
 window. Run `--help` for every option, and see the tool's docstring for which
 file to open when.
 
+### Check a toolpath for collisions (this fork, build plan P4)
+
+`tools/check_motion_safety.py` checks what the printer would hit:
+
+- **nozzle** (P4.3): at every point, is material printed earlier inside the
+  nozzle? The nozzle is a 40-degree cone up to the gantry.
+- **swept** (P4.2): every machine state *between* the points too, for moves
+  that turn the tool and for travel: the part printed so far and the bed
+  corners against the gantry, and the nozzle against printed material.
+
+```powershell
+python tools/check_motion_safety.py data/toolpath/ramp60_xs_platform.npz
+python tools/check_motion_safety.py "reports/toolpaths/*_xs_*.npz" --json reports/motion_safety/xs.json
+```
+
+It prints one line per file and exits 1 if anything collides. On a toolpath
+from before `add_platform` (`_smoothed`, or the P0.8 archive), bed-corner hits
+are mostly the lift the platform stage adds; check the `_platform` toolpath.
+Axis ranges and the tilt limit between points are not checked yet (they come
+from the G-code validator, P1.4).
+
+In the viewer, the colour mode **Collisions (P4)** runs the same checks and
+marks each flagged point with a red dot; the current-point card says what was
+hit and how deep, and in the machine view the bed turns red there.
+
 ### Visualize
 
 After using the atomizer, you can visualize the generated `<toolpath>` with:

@@ -112,13 +112,77 @@ section 5.
 
 | Task | Status |
 |---|---|
-| P4.1 Clearance model | **Built**: `src/atom/clearance.py`, `tests/test_clearance.py` (39 tests). Reference proxy (nozzle cone 40 degrees half-angle up to 70 mm, gantry half-space above) plus the box format for M3. Agrees with the IK's own bed-corner lift to 0.002 mm. |
-| P4.3 Nozzle vs printed material | **Built**: `src/atom/nozzle_material_check.py`, `tools/check_motion_safety.py`, tests (23, plus 7 for the tool). Every nozzle position against earlier material, exact, about 2 s for the golden cube, which is clear. Not yet run on large-tilt toolpaths (the P0.8 archive is on the laptop). |
-| P4.2 Swept check | **Built (collision part)**: `src/atom/tilt_motion_check.py`, added to `tools/check_motion_safety.py` (`--checks swept`), tests (13). Golden cube: 0 violations over 49 063 states. **Axis-range and tilt-limit checks between points wait for P1.4 in `main`**, then this task is finished. |
-| P4.4 Safe travel | Only if P4.2/P4.3 find problems |
-| Viewer wiring | After P4.2 |
+| P4.1 Clearance model | **Built**: `src/atom/clearance.py`, `tests/test_clearance.py` (39). Reference proxy (nozzle cone 40 degrees half-angle up to 70 mm, gantry half-space above) plus the box format for M3. Agrees with the IK's own bed-corner lift to 0.002 mm. |
+| P4.3 Nozzle vs printed material | **Built**: `src/atom/nozzle_material_check.py`, `tools/check_motion_safety.py`, tests (24, plus 9 for the tool). Every nozzle position against earlier material; the golden cube is clear. |
+| P4.2 Swept check | **Built (collision part)**: `src/atom/tilt_motion_check.py`, in the same tool, tests (14). Golden cube: 0 violations over 49 063 states. **Axis-range and tilt-limit checks between points wait for P1.4 in `main`**; then this task is finished. |
+| P4.4 Safe travel | **Not needed so far**: nothing found calls for it (see findings). Built only if P4.2/P4.3 find real travel problems. |
+| Viewer wiring | **Built**: colour mode "Collisions (P4)", red bed in the machine view, collision rows in the card. Tested here under a virtual display, Qt window included. Laptop check pending. |
 
-Unit suite on the branch: 534 passed, 13 skipped.
+Tool: `python tools/check_motion_safety.py <toolpath .npz, directory or "pattern">`
+runs both checks; `README.md` has a section on it. Speed measured here: golden
+cube about 6 s, a 38 000-point `ramp60_xs` at 30 degrees about 9 s,
+150 000 points about 42 s.
+
+**Findings so far** (details in `plan_corrections.md` 7b):
+
+* **P4-4, for the operator to decide:** the platform is sized in one frame and
+  the G-code written in another, so a part near the bed-gantry limit can
+  make `toolpath_to_gcode` abort ("Fatal Error: collision found!") over a
+  0.04 mm lift. Found on a 30-degree `ramp60_xs` run made in the session
+  container (with a stand-in for Blender, so not a reportable number). The
+  code is vendored and partly the P1 session's; not fixed here. The laptop
+  logs can show whether the P0.8 30-degree runs hit it (request below).
+* The reference machine's bed corners reach the gantry at large tilts near the
+  bed (20 degrees toward a diagonal 5 mm up). The IK already asks for that lift
+  and `add_platform` provides it. Relevant to gate M2.
+* A nozzle buried in material is resolved from the first material up the
+  nozzle, so a badly colliding toolpath takes minutes, not hours (P4-2).
+
+**Open questions for the operator:**
+
+1. P4-4: who fixes the platform/G-code frame mismatch, and how (options in
+   `plan_corrections.md` P4-4)?
+2. The golden-cube tests for P4.2 (about 3.6 s) and P4.3 (about 2 s) sit in
+   the unit tier, above its "~2 s" guideline, so CI guards them. Keep them
+   there, or move them to `pipeline`?
+
+**Laptop request (one sitting, about 35 minutes, CPU only; not while a P1
+timing run is going).** In PowerShell:
+
+```powershell
+cd "$HOME\5AX3D_printer_slicer"
+conda activate atomizer
+git fetch origin
+git checkout claude/phase-p4-build-fzqw55
+git pull
+
+# 1. Unit tests, about 1 minute. Expected: 0 failed.
+python -m pytest
+
+# 2. Both checks on the whole P0.8 archive, about 25 minutes.
+#    Expected: nozzle clear nearly everywhere; "bed" hits on the 30-degree
+#    files are the lift add_platform adds (the tool says so). Paste the
+#    48 summary lines back.
+python tools/check_motion_safety.py reports/toolpaths --json reports/motion_safety/p08_archive.json
+
+# 3. Did any P0.8 run abort its G-code (P4-4)? Seconds. Paste the output.
+Select-String -Path logs\baseline-matrix-*.txt -Pattern "Solid name:|max slope angle|collision found" | ForEach-Object { $_.Line }
+
+# 4. The viewer, about 5 minutes. Pick "Collisions (P4)" in the dropdown
+#    (the checks take about a minute on an s part), then switch on Machine
+#    view and press Play. Say whether the notes panel shows the P4.3/P4.2
+#    totals and the card shows "Collision" rows where there are red dots.
+python tools/visualize_5ax.py reports/toolpaths/ramp60_s_ms30.npz
+```
+
+Afterwards, `git checkout main` returns the laptop to `main`.
+
+**Next, in order:** when P1.4 is in `main`, merge `main` into this branch and
+add the axis-range and tilt-limit checks between points from P1.4's code
+(finishes P4.2); act on the laptop results; P4.4 only if they call for it.
+
+Unit suite on the branch: 565 passed, 6 skipped under a virtual display with
+PySide6 installed (544 passed, 15 skipped without a display, as in CI).
 
 ---
 

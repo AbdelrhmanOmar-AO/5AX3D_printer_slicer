@@ -372,3 +372,76 @@ def test_moving_through_the_print_updates_the_scene_in_place(ti_cpu, tmp_path, m
     assert viewer._polys["deposit"].n_cells > shown
     assert "Point 301 of 600" in viewer._status_actor.get_text(3)
     viewer.plotter.close()
+
+
+# --------------------------------------------------------------------------
+# The P4 collision checks in the viewer
+# --------------------------------------------------------------------------
+
+
+def _write_travel_through_block(path):
+    """A 10 x 10 x 5 mm block, then a travel straight through it 1 mm up."""
+    from test_tilt_motion_check import travel_case
+
+    tp, crossing = travel_case(1.0)
+    count = tp.point_count
+    np.savez(path, point=tp.point, travel_type=tp.travel_type,
+             tool_orientation=tp.tool_orientation, width=np.full(count, 0.9, np.float32),
+             height=np.full(count, 0.45, np.float32), point_count=np.array(count),
+             platform_height=np.array(0))
+    return crossing
+
+
+def test_collisions_are_computed_once_and_marked_where_the_checks_say(ti_cpu, tmp_path):
+    crossing = _write_travel_through_block(tmp_path / "block_smoothed.npz")
+    view = vt.load_npz_view(tmp_path / "block_smoothed.npz", [])
+
+    marks = vt.compute_collisions(view)
+
+    assert np.flatnonzero(marks.flagged).tolist() == [crossing]
+    assert "nozzle vs material" in marks.notes[crossing][0]
+    assert vt.compute_collisions(view) is marks
+    np.testing.assert_array_equal(tv.point_scalars(view, "collision"), marks.flagged)
+
+
+def test_collisions_of_gcode_use_the_written_screw_values(ti_cpu, repo_root):
+    """The golden cube's G-code head: the printer's own axis values, all clear."""
+    view = vt.load_gcode_view(repo_root / FIXTURE, repo_root / GOLDEN, [])
+
+    marks = vt.compute_collisions(view)
+
+    assert not marks.flagged.any()
+    assert marks.summary[:2] == ["P4.3 nozzle vs printed material: 0 positions, clear",
+                                 "P4.2 swept check between points: 0 moves, clear"]
+
+
+@pytest.mark.skipif(
+    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
+    reason="needs a display (run under xvfb-run on Linux)",
+)
+@pytest.mark.parametrize("machine_view", [False, True])
+def test_collision_mode_draws_the_flagged_points_and_reddens_the_bed(ti_cpu, tmp_path,
+                                                                    machine_view):
+    pytest.importorskip("pyvista")
+    crossing = _write_travel_through_block(tmp_path / "block_smoothed.npz")
+    view = vt.load_npz_view(tmp_path / "block_smoothed.npz", [])
+    viewer = vt.Viewer(view, mode="collision", end=crossing, machine_view=machine_view)
+    viewer.build(off_screen=True)
+
+    # The one flagged point is a travel point, drawn as a dot.
+    assert viewer._polys["unsupported_dots"].n_verts == 1
+    assert any("P4.2 swept check" in line for line in viewer.header_lines())
+    assert "COLLISION" in viewer._status_actor.get_text(3)
+    if machine_view:
+        import pyvista as pv
+
+        # The point is reachable and the bed clear of the gantry: only the P4
+        # checks make the bed red here.
+        assert viewer.machine_state().valid[crossing]
+        assert viewer._bed_clearance(crossing) > 0
+        assert viewer._actors["bed"].prop.color == pv.Color("#c0392b")
+    viewer._move_to(crossing - 1)
+    assert viewer._polys["unsupported_dots"].n_verts == 0
+    if machine_view:
+        assert viewer._actors["bed"].prop.color == pv.Color("#5b6676")
+    viewer.plotter.close()

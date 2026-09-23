@@ -94,6 +94,9 @@ class SweptCheckSettings:
     tolerance_mm: float = 0.01
     #: Voxel size for thinning material in the nozzle check; None = every point.
     material_subsample_mm: float | None = None
+    #: Passed to the nozzle check: a state buried in material is resolved from
+    #: the first slab up the nozzle (`nozzle_material_check.cone_hits`).
+    exhaustive_limit: int | None = 4096
 
 
 @dataclass
@@ -124,8 +127,10 @@ class SweptResult:
     ``violations`` rows hold: ``move`` (toolpath index the move ends at),
     ``fraction`` (where along it the worst state is), ``kind``, ``body``,
     ``clearance_mm`` (signed; negative = inside), ``point_bed`` (the
-    offending point in the bed frame, mm), ``tilt_deg`` (at that state) and
-    ``deposit`` (whether the move prints).
+    offending point in the bed frame, mm), ``tilt_deg`` (at that state),
+    ``deposit`` (whether the move prints) and ``first_slab_only`` (True when
+    the nozzle there was buried in material, so the depth is that of the
+    first material up the nozzle, not the deepest).
     """
 
     points: int
@@ -291,12 +296,12 @@ class _PartProxy:
 
     def hull(self, epoch: int) -> np.ndarray:
         """Point indices of the hull vertices of the first ``epoch * every``
-        material points, built on the previous epoch's vertices."""
-        if epoch not in self._hulls:
-            previous = self.hull(epoch - 1)
-            new = self.order[(epoch - 1) * self.every: epoch * self.every]
-            candidates = np.concatenate([previous, new])
-            self._hulls[epoch] = candidates[_hull_vertices(self.points[candidates])]
+        material points, each built on the previous epoch's vertices."""
+        built = max(e for e in self._hulls if e <= epoch)
+        for e in range(built + 1, epoch + 1):  # a loop, not recursion: large parts
+            new = self.order[(e - 1) * self.every: e * self.every]
+            candidates = np.concatenate([self._hulls[e - 1], new])
+            self._hulls[e] = candidates[_hull_vertices(self.points[candidates])]
         return self._hulls[epoch]
 
 
@@ -404,18 +409,19 @@ def check(machine_toolpath: contracts.MachineToolpath, profile=None, model=None,
     if len(interior):
         nozzle_settings = nm.NozzleCheckSettings.for_profile(
             profile, subsample_mm=settings.material_subsample_mm,
-            tolerance_mm=settings.tolerance_mm)
-        which, blocker, depth, _ = nm.cone_hits(
+            tolerance_mm=settings.tolerance_mm, exhaustive_limit=settings.exhaustive_limit)
+        which, blocker, depth, _, buried = nm.cone_hits(
             tip[interior] + nozzle_settings.apex_offset_mm * axis[interior],
             axis[interior], nozzle_time[interior], points, time, nozzle_settings)
         if len(which):
             order = np.lexsort((-depth, which))
             first = np.ones(len(order), dtype=bool)
             first[1:] = which[order][1:] != which[order][:-1]
+            buried = set(buried.tolist())
             for w, k, d in zip(which[order][first], blocker[order][first],
                                depth[order][first]):
                 found.append((int(interior[w]), "nozzle_vs_material", "nozzle",
-                              -float(d), points[k]))
+                              -float(d), points[k], int(w) in buried))
 
         for s in interior[tip[interior, 2] < threshold]:
             found.append((int(s), "nozzle_below_bed", "bed", float(tip[s, 2]), tip[s]))
@@ -451,12 +457,13 @@ def _chunks(count: int, size: int):
 def _worst_per_move(found, states: States, tilt, deposit) -> list:
     """One row per (move, kind, body): the deepest state of that move."""
     worst = {}
-    for state_index, kind, body, clearance_mm, point in found:
+    for state_index, kind, body, clearance_mm, point, *flag in found:
         key = (int(states.move[state_index]), kind, body)
         if key not in worst or clearance_mm < worst[key][2]:
-            worst[key] = (state_index, point, clearance_mm)
+            worst[key] = (state_index, point, clearance_mm, bool(flag and flag[0]))
     rows = []
-    for (move, kind, body), (state_index, point, clearance_mm) in sorted(worst.items()):
+    for (move, kind, body), (state_index, point, clearance_mm, partial) in sorted(
+            worst.items()):
         rows.append({
             "move": move,
             "fraction": float(states.fraction[state_index]),
@@ -466,6 +473,7 @@ def _worst_per_move(found, states: States, tilt, deposit) -> list:
             "point_bed": np.asarray(point, dtype=np.float64).tolist(),
             "tilt_deg": float(tilt[state_index]),
             "deposit": bool(deposit[move]),
+            "first_slab_only": partial,
         })
     return rows
 

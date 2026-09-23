@@ -894,6 +894,22 @@ P4.3 says "for each deposition point, test earlier deposited points
   earliest point per voxel, so everything it reports is a real collision.
 * The cone is `atom.clearance`'s nozzle (40 degrees, capped at
   `nozzle_to_gantry`), so P4.1, P4.2 and P4.3 share one nozzle.
+* **A nozzle buried in material stops early.** The first version examined
+  every blocker of every position. On a stand-in where four copies of a part
+  stood 5.7 mm apart, nearly every position of copies 2–4 had thousands of
+  genuine blockers, and the check did not finish in ten minutes. Each nozzle is
+  now searched slab by slab from the tip, and one that has already hit
+  material *and* examined more than `exhaustive_limit` (4 096) candidates
+  stops there. Whether a position collides stays exact (a nozzle with no hit
+  searches every slab; a test forces this path everywhere and compares with
+  the exhaustive answer). Only its depth and blocker count then describe the
+  first material up the nozzle, and the report says so
+  (`first_slab_only`, `collisions_summarised_from_the_first_slab`). Cost:
+  about 9 ms per buried position. A file that collides almost everywhere
+  takes minutes, not hours, and one that is clear takes seconds.
+* **Measured speed** (session container, both P4.2 and P4.3): golden cube
+  about 6 s; a 38 000-point 30-degree `ramp60_xs` about 9 s; 150 000 points
+  (the size of an `s` part) about 42 s.
 
 **Checked against known answers.** The golden cube is clear. The zero means
 something: the top 3 000 points printed in reverse order (top down) collide at
@@ -979,3 +995,72 @@ where this matters.
 container (the P4.3 one about 2 s), above the unit tier's "~2 s". They are
 kept in the unit tier so CI guards them; the operator may prefer them in
 `pipeline`.
+
+#### P4-4 The platform is sized in one frame and the G-code written in another, so large tilts can abort the G-code (hazard, vendored code, not fixed)
+
+Found by running the P4 checks on a 30-degree stock toolpath. `toolpath_to_gcode`
+printed `Fatal Error: collision found!` and wrote no G-code for `ramp60_xs`
+at `max_slope 30`, although every point is reachable.
+
+The cause, measured:
+
+1. `add_platform` sizes the platform with `kinematics3z.get_plaftorm_size`,
+   which re-centres the **part's** bounding box on the bed and raises the
+   part until no point asks for lift.
+2. The platform it then adds starts at x = 0, y = 0, so the **part plus
+   platform** has a different bounding box: here x from 0 instead of 0.401.
+3. `toolpath_to_gcode` re-centres **that** box, 0.187 mm away in x from the
+   frame the platform was sized in. Re-centring changes screw heights
+   non-uniformly (hazard 7), so near the limit the bed corners come back:
+   solved in the sizing frame the largest lift is 0.000 mm; in the G-code
+   frame it is 0.036 mm, at points 7892–7895 (29.4 degrees of tilt).
+4. `kinematics3z.toolpath_from_cartesian_toolpath` treats **any** non-zero
+   lift as invalid (`collision != 0`), so 0.036 mm aborts the whole file.
+
+P4.2 reports the same three moves (7893–7895) as `bed` vs `gantry`, 0.015 to
+0.036 mm deep, and nothing else; P4.3 is clear. So this toolpath is safe to
+within a few hundredths of a millimetre, and the abort is a frame mismatch,
+not a collision.
+
+**Caveat:** this run was made in the session container with a stand-in for
+the Blender remesh and every stage on the CPU (development only; no number
+from it is reported anywhere). The mechanism is independent of both: it
+needs only a part whose bed corners are near the gantry at its largest tilt,
+which becomes common at a 30-degree budget and is exactly where P2 works.
+The P0.8 reports do not record whether G-code was written, so whether the
+laptop's `max_slope 30` runs hit it is unknown; the pipeline logs on the
+laptop would show "Fatal Error: collision found!".
+
+**Not fixed here.** The code is vendored (`tools/add_platform.py`,
+`kinematics3z.get_plaftorm_size`) and `tools/toolpath_to_gcode.py` belongs to
+the P1 session. Options for whoever owns it, each behind the golden test:
+size the platform in the frame the G-code will use (compute the platform's
+footprint first); or add a small margin to the platform height; or let
+`toolpath_to_gcode` accept a lift below a stated tolerance. The operator
+decides.
+
+#### P4-5 The viewer shows the P4 checks (P5.4's open item, as built)
+
+P5.4 left "the full clearance model arrives with P4.1, then wire it in". The
+operator asked for it after P4.2, so the viewer shows exactly what
+`tools/check_motion_safety.py` reports rather than a separate reading of the
+model:
+
+* a colour mode **Collisions (P4)**: a point is red when the nozzle there has
+  earlier material inside it (P4.3), or when the move to it clashes between
+  the points (P4.2). Flagged points are also drawn as dots, travel included,
+  since a single red segment is easy to miss;
+* the current-point card and the status line name each collision (kind,
+  depth, how far along the move);
+* in the machine view the bed turns red on a flagged move, as well as on the
+  two conditions it already showed (IK rejection, bed corner above the
+  gantry); the notes panel gives the totals and says what is not checked yet.
+
+The checks run once per file, when the collision mode or the machine view is
+first opened (a few seconds for the golden cube). G-code is checked with the
+screw values as written; a toolpath is solved re-centred on the bed, as for
+the machine view. Code: `toolpath_view.CollisionMarks` / `collision_marks`
+(numpy, tested without a display) and `visualize_5ax.compute_collisions`.
+The Qt window needed no change: its dropdown and card are built from the
+same lists. Checked here under a virtual display (Qt window included); the
+laptop check is still to do.

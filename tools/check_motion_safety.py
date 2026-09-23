@@ -24,6 +24,7 @@ Usage
 -----
     python tools/check_motion_safety.py data/toolpath/ramp60_s_platform.npz
     python tools/check_motion_safety.py reports/toolpaths --json reports/motion_safety/stock.json
+    python tools/check_motion_safety.py "reports/toolpaths/*_xs_*.npz"
     python tools/check_motion_safety.py part.npz --checks nozzle
 
 Exit status: 0 when every file is clear, 1 when any collision is found, 2 on
@@ -58,11 +59,18 @@ CHECKS = ("nozzle", "swept")
 
 
 def expand_inputs(paths) -> list[Path]:
-    """Files as given, and every ``.npz`` inside a directory, sorted."""
+    """Files as given, every ``.npz`` inside a directory, and wildcard
+    patterns such as ``reports/toolpaths/*_xs_*.npz`` (PowerShell passes
+    those to Python unexpanded). Sorted within each argument."""
+    import glob
+
     files = []
-    for path in map(Path, paths):
+    for text in map(str, paths):
+        path = Path(text)
         if path.is_dir():
             files.extend(sorted(path.glob("*.npz")))
+        elif any(char in text for char in "*?["):
+            files.extend(sorted(Path(match) for match in glob.glob(text)))
         else:
             files.append(path)
     return files
@@ -114,6 +122,18 @@ def check_file(path: Path, profile, settings: dict, limit: int,
     return entry
 
 
+#: Printed after bed-corner hits on a toolpath from before `add_platform`.
+BED_HINT = ("bed hits before add_platform are mostly the lift the platform adds; "
+            "check the _platform toolpath")
+
+
+def before_platform(path) -> bool:
+    """True for a toolpath from before `add_platform`: the P0.8 archive
+    (``<part>_ms<deg>.npz``) and ``_smoothed`` / ``_smoothed_tesselated``."""
+    name = Path(path).name
+    return "_platform" not in name and name != "calibration_cube.toolpath.npz"
+
+
 def summary_line(entry: dict) -> str:
     parts = []
     seconds = 0.0
@@ -129,6 +149,8 @@ def summary_line(entry: dict) -> str:
         else:
             kinds = ", ".join(f"{kind} {n}" for kind, n in check["violations_by_kind"].items())
             parts.append(f"swept: {check['violations']} moves ({kinds})")
+            if "bed" in check["violations_by_kind"] and before_platform(entry["file"]):
+                parts.append(BED_HINT)
     verdict = "clear" if entry["ok"] else "COLLISION  " + "; ".join(parts)
     return (f"{Path(entry['file']).name:<34} {entry['points']:>8} pts  "
             f"tilt <= {entry['max_tilt_deg']:5.1f} deg  "

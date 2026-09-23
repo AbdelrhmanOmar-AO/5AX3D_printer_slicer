@@ -90,6 +90,13 @@ def test_settings_reach_the_check(toolpaths, tmp_path):
     assert settings["height_mm"] == 70.0
 
 
+def test_wildcards_are_expanded_by_the_tool(toolpaths):
+    """PowerShell hands `*` to Python as it is."""
+    files = cms.expand_inputs([str(toolpaths["folder"] / "*_clear.npz")])
+    assert [path.name for path in files] == ["b_clear.npz"]
+    assert cms.expand_inputs([str(toolpaths["folder"] / "*.nothing")]) == []
+
+
 def test_missing_input_exits_two(tmp_path, capsys):
     assert cms.main([str(tmp_path / "nothing.npz")]) == 2
     assert "No such toolpath" in capsys.readouterr().err
@@ -125,3 +132,17 @@ def _directions(spherical):
     theta, phi = spherical[:, 0].astype(float), spherical[:, 1].astype(float)
     return np.column_stack([np.cos(phi) * np.sin(theta), np.sin(phi) * np.sin(theta),
                             np.cos(theta)])
+
+
+def test_bed_hits_before_the_platform_come_with_a_hint():
+    assert cms.before_platform("reports/toolpaths/ramp60_s_ms30.npz")
+    assert cms.before_platform("data/toolpath/ramp60_s_smoothed.npz")
+    assert not cms.before_platform("data/toolpath/ramp60_s_platform.npz")
+    assert not cms.before_platform("tests/golden/calibration_cube.toolpath.npz")
+
+    entry = {"file": "ramp60_s_ms30.npz", "points": 10, "max_tilt_deg": 29.4, "ok": False,
+             "checks": {"swept": {"ok": False, "seconds": 1.0, "violations": 2,
+                                  "violations_by_kind": {"bed": 2}}}}
+    assert cms.BED_HINT in cms.summary_line(entry)
+    entry["file"] = "ramp60_s_platform.npz"
+    assert cms.BED_HINT not in cms.summary_line(entry)

@@ -94,6 +94,29 @@ def test_choosing_a_colour_mode_recolours_the_scene(window):
     assert window.viewer.mode == "progress"
 
 
+def test_the_collision_mode_names_what_the_p4_checks_found(ti_cpu, app, tmp_path):
+    """Pick "Collisions (P4)" from the dropdown on a travel through a block:
+    the card names the collision at that point, the notes give the totals."""
+    from test_visualize_5ax import _write_travel_through_block
+
+    crossing = _write_travel_through_block(tmp_path / "block_smoothed.npz")
+    viewer = vt.Viewer(vt.load_npz_view(tmp_path / "block_smoothed.npz", []), mode="tilt",
+                       end=crossing)
+    win = viewer_qt.ViewerWindow(viewer)
+    win.show()
+    app.processEvents()
+    try:
+        keys = [win.mode_combo.itemData(i) for i in range(win.mode_combo.count())]
+        win.mode_combo.setCurrentIndex(keys.index("collision"))
+        app.processEvents()
+
+        assert viewer.mode == "collision"
+        assert "nozzle vs material" in win.info.text()
+        assert "P4.2 swept check between points: 1 moves" in win.notes.text()
+    finally:
+        win.close()
+
+
 def test_play_advances_on_the_qt_timer_and_pause_stops_it(app, window):
     window.speed_slider.setValue(window._speed_to_slider(1000.0))
     window.toggle_play()

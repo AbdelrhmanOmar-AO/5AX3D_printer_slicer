@@ -407,6 +407,14 @@ COLOUR_MODES = (
         ("infill", "shell", "platform"),
         ("#4e79a7", "#f28e2b", "#9c9c9c"),
     ),
+    ColourMode(
+        "collision",
+        "Collisions (P4)",
+        "Collision check (P4.2 / P4.3)",
+        "",
+        ("clear", "collision"),
+        ("#c8c8c8", "#e31a1c"),
+    ),
 )
 
 MODES_BY_KEY = {mode.key: mode for mode in COLOUR_MODES}
@@ -455,7 +463,77 @@ def point_scalars(view: ViewData, key: str, shell: np.ndarray | None = None) -> 
         codes = np.where(shell, 1, 0)
         codes[view.is_platform] = 2
         return codes.astype(np.int64)
+    if key == "collision":
+        marks = view._cache.get("collisions")
+        if marks is None:
+            raise ValueError("the collision mode needs the P4 checks run first "
+                             "(tools/visualize_5ax.compute_collisions)")
+        return marks.flagged.astype(np.int64)
     raise KeyError(f"unknown colour mode {key!r}")
+
+
+# --------------------------------------------------------------------------
+# Collisions (build plan P4.2 / P4.3)
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class CollisionMarks:
+    """What the P4 collision checks found, per point, for the viewer.
+
+    Point ``i`` is flagged when the nozzle at ``i`` has earlier material
+    inside it (P4.3), or when the move *to* ``i`` passes through a clash
+    between the points (P4.2), matching how a segment takes its end point's
+    attributes.
+    """
+
+    #: ``(N,)`` True where something was found.
+    flagged: np.ndarray
+    #: Descriptions per flagged point index, one line each.
+    notes: dict
+    #: Lines for the window's header / notes panel.
+    summary: list
+
+
+def collision_marks(count: int, nozzle=None, swept=None) -> CollisionMarks:
+    """Turn check results into per-point marks.
+
+    ``nozzle`` is a `nozzle_material_check.NozzleCollisions` and ``swept`` a
+    `tilt_motion_check.SweptResult`; either may be None. Only their plain
+    attributes are read, so this module stays free of Taichi.
+    """
+    flagged = np.zeros(count, dtype=bool)
+    notes: dict = {}
+    summary = []
+
+    if nozzle is not None:
+        for index, depth, height in zip(nozzle.index, nozzle.depth_mm, nozzle.axial_mm):
+            flagged[index] = True
+            notes.setdefault(int(index), []).append(
+                f"material {depth:.2f} mm inside the nozzle, {height:.1f} mm above the tip (P4.3)")
+        summary.append(f"P4.3 nozzle vs printed material: {nozzle.count:,} positions"
+                       + ("" if nozzle.count else ", clear"))
+
+    if swept is not None:
+        moves = set()
+        for row in swept.violations:
+            index = int(row["move"])
+            moves.add(index)
+            flagged[index] = True
+            # "part vs gantry", "bed vs gantry"; the nozzle kinds name both sides.
+            what = row["kind"].replace("_", " ")
+            if row["kind"] in ("part", "bed"):
+                what += f" vs {row['body']}"
+            notes.setdefault(index, []).append(
+                f"{what}: {-row['clearance_mm']:.2f} mm in, "
+                f"{100 * row['fraction']:.0f} % along the move (P4.2)")
+        summary.append(f"P4.2 swept check between points: {len(moves):,} moves"
+                       + ("" if moves else ", clear"))
+        if swept.skipped_moves:
+            summary.append(f"  ({swept.skipped_moves:,} moves to unreachable points skipped)")
+        summary.append("Not checked yet: axis range and tilt limit between points (P1.4).")
+
+    return CollisionMarks(flagged=flagged, notes=notes, summary=summary)
 
 
 def _require(values, key):
@@ -567,6 +645,12 @@ def point_fields(view: ViewData, index: int) -> list[tuple[str, str]]:
     if view.machine is not None:
         _, _, z0, z1, z2 = view.machine[index]
         fields.append(("Screws Z, U, V", f"{z0:.2f}, {z1:.2f}, {z2:.2f}"))
+    marks = view._cache.get("collisions")
+    if marks is not None:
+        found = marks.notes.get(index, [])
+        fields.extend(("Collision", note) for note in found)
+        if not found:
+            fields.append(("Collision", "none here"))
     return fields
 
 
@@ -603,4 +687,7 @@ def describe_point(view: ViewData, index: int) -> str:
         extras.append(f"screws Z {z0:.2f} U {z1:.2f} V {z2:.2f}")
     if extras:
         lines.append("   ".join(extras))
+    marks = view._cache.get("collisions")
+    if marks is not None:
+        lines.extend(f"COLLISION: {note}" for note in marks.notes.get(index, []))
     return "\n".join(lines)

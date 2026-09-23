@@ -210,9 +210,10 @@ def test_a_shorter_tower_stays_below_the_gantry(ti_cpu, reference):
 def test_a_travel_without_lift_through_a_part_is_caught(ti_cpu, reference):
     """Both ends of the travel are clear, so no check at the points can see
     it (P4.3 finds nothing). Between them the nozzle passes through the
-    block, with its top face 4 mm above the tip: (4 - 0.001) sin 40 deep."""
+    block, with its top face 4 mm above the tip: (4 - 0.001) sin 40 deep,
+    when every blocker is examined."""
     tp, crossing = travel_case(1.0)
-    result = tmc.check_toolpath(tp, reference)
+    result = tmc.check_toolpath(tp, reference, exhaustive_limit=None)
 
     assert kinds(result) == {("nozzle_vs_material", "nozzle")}
     (row,) = result.violations
@@ -220,7 +221,21 @@ def test_a_travel_without_lift_through_a_part_is_caught(ti_cpu, reference):
     assert 0 < row["fraction"] < 1
     assert row["clearance_mm"] == pytest.approx(-(4.0 - 0.001) * math.sin(math.radians(40)),
                                                 abs=1e-3)
+    assert not row["first_slab_only"]
     assert nm.check_toolpath(tp, reference).ok
+
+
+def test_a_buried_nozzle_is_still_caught_and_says_its_depth_is_partial(ti_cpu, reference):
+    """By default a nozzle deep inside the block (thousands of blockers)
+    stops at the first material up the nozzle: the move is flagged just the
+    same, and the row says its depth is only the first slab's."""
+    tp, crossing = travel_case(1.0)
+    result = tmc.check_toolpath(tp, reference)
+
+    (row,) = result.violations
+    assert row["move"] == crossing and row["kind"] == "nozzle_vs_material"
+    assert row["first_slab_only"]
+    assert 0 < -row["clearance_mm"] <= (4.0 - 0.001) * math.sin(math.radians(40)) + 1e-9
 
 
 def test_the_same_travel_above_the_part_is_clear(ti_cpu, reference):

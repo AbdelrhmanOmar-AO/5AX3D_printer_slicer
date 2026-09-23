@@ -96,6 +96,11 @@ class NozzleCheckSettings:
     subsample_mm: float | None = None
     #: Nozzle positions per KD-tree rebuild.
     block_size: int = 512
+    #: A position with more candidate material than this near its nozzle is
+    #: buried in material; it is resolved slab by slab from the tip and stops
+    #: at the first slab holding material (see `cone_hits`). None examines
+    #: everything, always.
+    exhaustive_limit: int | None = 4096
 
     @classmethod
     def for_profile(cls, profile, **overrides) -> "NozzleCheckSettings":
@@ -126,6 +131,11 @@ class NozzleCollisions:
         ``(K,)`` how many earlier material points are inside.
     tilt_deg
         ``(K,)`` the tool's tilt from vertical at that position.
+    partial
+        ``(K,)`` True where the position was buried in material (more than
+        ``exhaustive_limit`` candidates): whether it collides is exact, but
+        ``blocker``, ``depth_mm`` and ``blocker_count`` describe only the
+        first slab up the nozzle where material was found.
     """
 
     checked: int
@@ -136,6 +146,7 @@ class NozzleCollisions:
     axial_mm: np.ndarray
     blocker_count: np.ndarray
     tilt_deg: np.ndarray
+    partial: np.ndarray = None
     settings: NozzleCheckSettings = field(repr=False, default=None)
 
     @property
@@ -158,6 +169,8 @@ class NozzleCollisions:
             "collisions_while_printing": int(np.count_nonzero(self.deposit)),
             "collisions_while_travelling": int(np.count_nonzero(~self.deposit)),
             "max_depth_mm": float(self.depth_mm.max()) if self.count else 0.0,
+            "collisions_summarised_from_the_first_slab": (
+                int(np.count_nonzero(self.partial)) if self.partial is not None else 0),
             "settings": asdict(self.settings) if self.settings else None,
             "deepest": [
                 {
@@ -168,6 +181,8 @@ class NozzleCollisions:
                     "height_above_tip_mm": round(float(self.axial_mm[k]), 4),
                     "blockers": int(self.blocker_count[k]),
                     "tilt_deg": round(float(self.tilt_deg[k]), 3),
+                    "first_slab_only": bool(self.partial[k]) if self.partial is not None
+                    else False,
                 }
                 for k in listed
             ],
@@ -271,8 +286,21 @@ def cone_hits(apex, axis, nozzle_time, material_points, material_time_of,
         ``(M, 3)`` and ``(M,)``: candidate material and the move from which
         each point exists.
 
-    Returns ``(nozzle index, material index, depth mm, axial mm)``, one row
-    per pair found, unordered.
+    Returns ``(nozzle index, material index, depth mm, axial mm, buried)``:
+    one row per pair found, unordered, and the nozzle indices that were
+    buried in material.
+
+    Cost and the buried case
+    ------------------------
+    Each nozzle is searched slab by slab, outward from the tip. Examining
+    every pair is cheap while collisions are rare, as they are in a toolpath
+    Atomizer planned. A nozzle working inside or beside material would instead
+    pull thousands of blockers into every slab, and a toolpath full of such
+    positions would never finish. So once a nozzle has a hit **and** has
+    examined more than ``settings.exhaustive_limit`` candidates, it stops:
+    it is buried. Whether it collides is still exact (a nozzle without a hit
+    always searches every slab); its pairs then come from the slabs up to the
+    first material only.
     """
     apex = np.asarray(apex, dtype=np.float64).reshape(-1, 3)
     axis = np.asarray(axis, dtype=np.float64).reshape(-1, 3)
@@ -297,28 +325,45 @@ def cone_hits(apex, axis, nozzle_time, material_points, material_time_of,
     material_time_sorted = material_time_of[material]
 
     slab_centre, slab_radius = cone_slabs(settings.height_mm, settings.half_angle_deg)
+    slabs = len(slab_radius)
     threshold = -float(settings.tolerance_mm)
     tan_half = np.tan(np.radians(settings.half_angle_deg))
     found = ([], [], [], [])
+    buried = []
 
     def test_pairs(i, k):
+        """Record the pairs inside the cone; return the nozzles that had one."""
         if not len(i):
-            return
+            return np.zeros(0, dtype=np.int64)
         radial, axial = cone_coordinates(apex[i], axis[i], material_points[k])
         # Cheap inside test first; the exact depth only for what is inside.
         inside = (axial > 0.0) & (axial <= settings.height_mm) & (radial <= axial * tan_half)
         if not np.any(inside):
-            return
+            return np.zeros(0, dtype=np.int64)
         i, k, radial, axial = i[inside], k[inside], radial[inside], axial[inside]
         distance = clearance.cone_signed_distance_axial(
             radial, axial, settings.half_angle_deg, settings.height_mm)
         hit = distance < threshold
-        if np.any(hit):
-            for store, values in zip(found, (i[hit], k[hit], -distance[hit], axial[hit])):
-                store.append(values)
+        for store, values in zip(found, (i[hit], k[hit], -distance[hit], axial[hit])):
+            store.append(values)
+        return np.unique(i[hit])
+
+    def gather(tree, tree_members, owners, centres, radii):
+        """Pairs (owner, material) for one sphere per owner, duplicates removed."""
+        hits = tree.query_ball_point(centres, radii, workers=1, return_sorted=False)
+        lengths = np.fromiter((len(h) for h in hits), dtype=np.int64, count=len(hits))
+        if not lengths.any():
+            return None
+        owner = np.repeat(owners, lengths)
+        member = tree_members[np.fromiter(itertools.chain.from_iterable(hits),
+                                          dtype=np.int64, count=int(lengths.sum()))]
+        # Overlapping spheres return a point more than once.
+        pairs = np.unique(owner * size + member)
+        return pairs // size, pairs % size
 
     block = max(1, int(settings.block_size))
     size = np.int64(max(len(material_points), 1))
+    limit = settings.exhaustive_limit
     for start in range(0, count, block):
         stop = min(start + block, count)
 
@@ -328,22 +373,32 @@ def cone_hits(apex, axis, nozzle_time, material_points, material_time_of,
             tree_members = material[:before]
             tree = cKDTree(material_points[tree_members])
             for chunk_start in range(start, stop, _QUERY_CHUNK):
-                chunk = np.arange(chunk_start, min(chunk_start + _QUERY_CHUNK, stop))
-                centres = (apex[chunk, None, :]
-                           + axis[chunk, None, :] * slab_centre[None, :, None])
-                radii = np.broadcast_to(slab_radius, (len(chunk), len(slab_radius)))
-                hits = tree.query_ball_point(centres.reshape(-1, 3), radii.ravel(),
-                                             workers=1, return_sorted=False)
-                lengths = np.fromiter((len(h) for h in hits), dtype=np.int64,
-                                      count=len(hits))
-                if not lengths.any():
-                    continue
-                owner = np.repeat(np.repeat(chunk, len(slab_radius)), lengths)
-                member = tree_members[np.fromiter(itertools.chain.from_iterable(hits),
-                                                  dtype=np.int64, count=int(lengths.sum()))]
-                # Overlapping spheres return a point more than once.
-                pairs = np.unique(owner * size + member)
-                test_pairs(pairs // size, pairs % size)
+                chunk_stop = min(chunk_start + _QUERY_CHUNK, stop)
+                examined = np.zeros(chunk_stop - chunk_start, dtype=np.int64)
+                collided = np.zeros(chunk_stop - chunk_start, dtype=bool)
+                pending = np.arange(chunk_start, chunk_stop)
+                # Slab by slab, outward from the tip. A nozzle with no hit
+                # searches every slab (detection stays exact); one that has
+                # hit and already examined more than `limit` candidates is
+                # buried in material and stops there.
+                for slab in range(slabs):
+                    if not len(pending):
+                        break
+                    pairs = gather(tree, tree_members, pending,
+                                   apex[pending] + axis[pending] * slab_centre[slab],
+                                   np.full(len(pending), slab_radius[slab]))
+                    if pairs is None:
+                        continue
+                    examined += np.bincount(pairs[0] - chunk_start,
+                                            minlength=len(examined))
+                    collided[test_pairs(*pairs) - chunk_start] = True
+                    if limit is not None and slab < slabs - 1:
+                        done = collided & (examined > limit)
+                        stopping = pending[done[pending - chunk_start]]
+                        if len(stopping):
+                            buried.append(stopping)
+                            pending = np.setdiff1d(pending, stopping, assume_unique=True)
+                            collided[stopping - chunk_start] = False  # recorded once
 
         # Material laid during the block: pairwise, respecting print order.
         late = material[before:np.searchsorted(material_time_sorted, nozzle_time[stop - 1],
@@ -353,10 +408,14 @@ def cone_hits(apex, axis, nozzle_time, material_points, material_time_of,
             visible = material_time_of[k] <= nozzle_time[i]
             test_pairs(i[visible], k[visible])
 
+    buried = np.unique(np.concatenate(buried)) if buried else np.zeros(0, dtype=np.int64)
     if not found[0]:
         empty = np.zeros(0, dtype=np.int64)
-        return empty, empty, np.zeros(0), np.zeros(0)
-    return tuple(np.concatenate(values) for values in found)
+        return empty, empty, np.zeros(0), np.zeros(0), buried
+    nozzle, member, depth, axial = (np.concatenate(values) for values in found)
+    # Neighbouring slabs' spheres overlap, so a pair can be found twice.
+    _, first = np.unique(nozzle * size + member, return_index=True)
+    return nozzle[first], member[first], depth[first], axial[first], buried
 
 
 def check(points, directions, deposit, settings: NozzleCheckSettings) -> NozzleCollisions:
@@ -381,9 +440,11 @@ def check(points, directions, deposit, settings: NozzleCheckSettings) -> NozzleC
         raise ValueError("points, directions and deposit must have the same length")
 
     # The nozzle at p[i] sees material from moves up to i - 1.
-    found = cone_hits(points + settings.apex_offset_mm * directions, directions,
-                      np.arange(count) - 1, points, material_time(deposit), settings)
-    return _collect(*found, deposit, directions, count, settings)
+    *found, buried = cone_hits(points + settings.apex_offset_mm * directions, directions,
+                               np.arange(count) - 1, points, material_time(deposit), settings)
+    result = _collect(*found, deposit, directions, count, settings)
+    result.partial = np.isin(result.index, buried)
+    return result
 
 
 def _collect(nozzle, blocker, depth, axial, deposit, directions, count, settings):
@@ -392,7 +453,7 @@ def _collect(nozzle, blocker, depth, axial, deposit, directions, count, settings
         empty_int = np.zeros(0, dtype=np.int64)
         empty = np.zeros(0)
         return NozzleCollisions(count, empty_int, np.zeros(0, bool), empty_int, empty, empty,
-                                empty_int, empty, settings)
+                                empty_int, empty, np.zeros(0, bool), settings)
 
     # Deepest blocker per nozzle position.
     order = np.lexsort((-depth, nozzle))

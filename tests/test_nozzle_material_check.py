@@ -248,6 +248,29 @@ def test_fast_check_equals_brute_force(block_size):
     np.testing.assert_array_equal(result.blocker_count, [expected[i][1] for i in result.index])
 
 
+def test_buried_nozzles_are_detected_exactly_but_summarised_from_the_first_slab():
+    """Forcing the buried path everywhere (limit 10): the colliding
+    positions are exactly the exhaustive ones; only depth and count are
+    partial, and never deeper than the truth."""
+    rng = np.random.default_rng(11)
+    count = 400
+    points = rng.uniform(0, 5, size=(count, 3)) * [1.0, 1.0, 1.6]
+    directions = om.spherical_to_cartesian(np.column_stack([
+        np.radians(rng.uniform(0, 60, count)), np.radians(rng.uniform(0, 360, count))]))
+    deposit = rng.uniform(size=count) < 0.7
+    exact = nm.check(points, directions, deposit,
+                     nm.NozzleCheckSettings(height_mm=6.0, block_size=64, exhaustive_limit=None))
+    fast = nm.check(points, directions, deposit,
+                    nm.NozzleCheckSettings(height_mm=6.0, block_size=64, exhaustive_limit=10))
+
+    np.testing.assert_array_equal(fast.index, exact.index)
+    assert not exact.partial.any()
+    assert fast.partial.sum() > 100
+    assert np.all(fast.depth_mm <= exact.depth_mm + 1e-12)
+    assert np.all(fast.blocker_count <= exact.blocker_count)
+    assert fast.to_dict()["collisions_summarised_from_the_first_slab"] == fast.partial.sum()
+
+
 def test_subsampling_only_reports_real_collisions():
     """Thinned material keeps the earliest point of each voxel, so everything
     it finds is also found without thinning."""
