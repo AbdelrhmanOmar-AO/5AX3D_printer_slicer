@@ -966,6 +966,46 @@ with the operator on 2026-09-23 unless marked:
   consistent table. Both remain readable next to the per-run JSON, which does
   carry it.
 
+#### P1-8 The direction round trip is 4.5e-4 rad in 32-bit floats, not 1e-4 ★ PLAN EDIT
+
+*Factual error in a tolerance.* P1.1 step 2 asks the IK->FK round trip to
+return the build direction within **1e-4 rad**. On the CPU backend, in the
+32-bit floats the pipeline uses, it comes back within **4.5e-4 rad** (0.026
+degrees; 99th percentile 3.8e-4). The error is about the same at every tilt,
+from 0 to 29 degrees.
+
+It is rounding, not the maths. The same kernels run with Taichi's
+`default_fp=f64` return the direction to 3e-16 rad, positions to 1e-13 mm and
+screws to 9e-14 mm. The other two round trips meet the plan in 32-bit floats:
+screws 1.2e-4 mm, positions 7.8e-5 mm, against 1e-3 mm.
+
+For scale: 0.026 degrees is 40 times below the 1-degree tessellation step, a
+fifth of the 0.14-degree pose gap (1.9), and about 0.05 mm at the nozzle for a
+point 100 mm from the pivot. It does not matter for printing.
+
+Decided with the operator on 2026-09-23: test both precisions.
+`tests/test_kinematics3z.py` asserts 1e-3 rad in 32-bit floats, and
+`tests/kinematics_f64_roundtrip.py` (run in its own process, since the
+precision is fixed when Taichi starts) asserts the plan's 1e-4 rad and, beyond
+it, 1e-9. The kinematics maths is unchanged.
+
+The plan should state the direction tolerance per precision: 1e-3 rad in
+32-bit floats on the CPU, 1e-4 rad (in fact exact) in 64-bit. CUDA's 32-bit
+rounding has not been measured; it runs on the laptop only.
+
+#### P1-9 A positive `offset` is a first estimate of the lift, not the exact lift
+
+*Factual error in `docs/conventions.md`, corrected.* The document said a
+positive `offset` is "how much the part must be raised". It is how much to
+raise it before solving again. Raising the part moves the tilted bed's corners
+by less than the lift, so one step falls short. At 20 degrees of tilt near the
+bed: 6.10 mm, then 0.37, 0.022, 0.0013, 0.00008, then 0, which is 6.49 mm in
+total over five steps. `kinematics3z.get_plaftorm_size` already loops until the
+offset is zero, so the pipeline is right. Only the description was wrong.
+Anything else that uses `offset` as a lift (P3.3's diagnostics, P4.4's
+safe-travel insertion) must iterate the same way. `tests/test_kinematics3z.py`
+pins that the loop converges.
+
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
 None yet.

@@ -82,19 +82,22 @@ edits. P4 is mostly synthetic and CPU-only.
 
 *Edited by the P1 session only.*
 
-Branch `claude/vibrant-rubin-waln7y`, started from `main` at `4986f61`; rebased onto `main` at `fab657f` after P1.4 was merged. The
-operator chose **P1.4 first**. The rest of the order is still to be confirmed
-(proposed: P1.7, then P1.1, P1.2, P1.3, P1.6; P1.5 stays open until gate E1).
+Branch `claude/vibrant-rubin-waln7y`. After each merge it restarts from `main`;
+most recently from `31074f2`, after P1.7 was merged. The operator chose the
+order P1.4, P1.7, P1.1. Proposed next: P1.2, P1.3, P1.6. P1.5 stays open until
+gate E1 is answered.
 
-The run took **784 s**, against 457 s when the baseline was recorded. The
-test does not time anything and the hash matched, so the output is unaffected.
+The P1.4 golden run took **784 s**, against 457 s when the baseline was
+recorded. The test does not time anything and the hash matched, so the output
+is unaffected.
 Whether the laptop was busy or hot at the time is not known. Worth watching
 before P1.6, which measures `order_atoms` timings.
 
 | Task | Status |
 |---|---|
 | P1.4 G-code validator | **Done** (`58d2fe7`), verified on the laptop 2026-09-23: `pytest --run-pipeline tests/test_golden.py` gave **5 passed, 1 skipped** in 784 s. Golden SHA unchanged, and the real golden G-code validates with zero violations. (The P1.4 commit message expected 4 passed; that miscounted the file's unit tests.) **Merged into `main`** (pull request #4, `fab657f`), so the P4 session can bring it in |
-| P1.7 Provenance on reports | **Done**, verified on the laptop 2026-09-23. Every overhang report records its machine, backend (each stage's actual one), Taichi version, profile and commit (`atom.provenance`). All 48 baseline reports are backfilled (`tools/backfill_provenance.py`). `--summarize` states the origin above the table and warns on a mixed table. Not yet in `main` |
+| P1.1 Kinematics test suite | **Built.** `tests/test_kinematics3z.py` (24 tests) plus `tests/kinematics_f64_roundtrip.py`. No laptop run needed (CPU only). Two findings: the direction round trip is 4.5e-4 rad in 32-bit floats but exact in 64-bit (P1-8, both now tested), and a positive `offset` is a first estimate of the lift (P1-9, `docs/conventions.md` corrected). Not yet in `main` |
+| P1.7 Provenance on reports | **Done**, verified on the laptop 2026-09-23. Every overhang report records its machine, backend (each stage's actual one), Taichi version, profile and commit (`atom.provenance`). All 48 baseline reports are backfilled (`tools/backfill_provenance.py`). `--summarize` states the origin above the table and warns on a mixed table. In `main` (pull request #5) |
 
 **The P1.7 laptop check** was the known-answer run (`ramp45_xs` at 7 degrees:
 0.24 % unsupported, printable). All 14 stages reported exactly the backends
