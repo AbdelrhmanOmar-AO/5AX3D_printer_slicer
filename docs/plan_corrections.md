@@ -919,6 +919,45 @@ filament is currently retracted and flags three things: a prime with nothing
 retracted, a prime larger than what is retracted, and a printing move while
 filament is still retracted. Ending the file retracted is correct.
 
+#### P1-7 How provenance is recorded, and what the plan did not specify
+
+*Deliberate deviations and definitions for P1.7.* The block's fields and their
+meaning are in `atom.provenance`. Decisions beyond the plan text, all agreed
+with the operator on 2026-09-23 unless marked:
+
+* **Each stage's actual backend is recorded by the stage itself.**
+  `atom.ti_env.init_taichi` appends `{stage, requested, actual}` to the file
+  named by `ATOM_TI_ARCH_LOG` after `ti.init`. `tools/overhang_report.py`
+  sets it for the pipeline it launches. Unset, nothing happens. This is an
+  edit to a shared file, approved by the operator. The alternative, parsing
+  Taichi's console lines, cannot tell which stage printed which line.
+* **Machine name** is the host name (`platform.node()`), compared
+  case-insensitively.
+* **Comparability**: machine, backend (`ATOM_TI_ARCH` plus every stage's
+  actual backend), Taichi version, and machine profile. The git commit is
+  recorded but does not split groups, since code changes between runs are what
+  a comparison is for.
+* **`scored` is separate from the run.** `--reanalyse` re-scores an archived
+  toolpath, possibly elsewhere and at another commit, and keeps the block that
+  describes the run which produced it. *(Not specified by the plan.)*
+* **`source`** says whether the tool ran the pipeline itself, measured a
+  toolpath already on disk (`--skip-pipeline`: origin unknown, flagged in the
+  summary), or was backfilled. *(Not specified by the plan.)*
+* **Backfill**: all 48 baseline reports got the laptop's host name
+  (`Abdelrahman-personal-laptop`, given by the operator), the stock mix and
+  the reference profile. `stage_arches` is **inferred** from each stage's
+  default backend, with the GPU stages on CUDA because the laptop's CUDA works.
+  The commit and run times were not recorded and are `null`. The next real run
+  on the laptop records the true values; if they differ, the summary warns.
+* **`schema_version` stays 1.** `provenance` is an added key, and bumping the
+  version would make `load_reports` skip every existing report.
+* **Not given a provenance block** *(not specified by the plan)*:
+  `tests/golden/*.stats.json`, which is the golden record itself, with its
+  environment in `tests/golden/baseline.md`; and
+  `reports/matrix_progress.csv`, which keeps its columns so the file stays one
+  consistent table. Both remain readable next to the per-run JSON, which does
+  carry it.
+
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
 None yet.
