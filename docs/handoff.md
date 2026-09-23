@@ -91,7 +91,14 @@ P1.5 stays open until gate E1 is answered.
 
 *Edited by the P4 session only.* Record the branch name here first.
 
-Not started.
+Branch **`claude/phase-p4-build-fzqw55`**, started from `main` at `4986f61`
+(the merge of pull request #3, which contains `d2d39c3`). Session started
+2026-09-23. Unit suite on the branch at start: 451 passed, 13 skipped, matching
+section 5.
+
+Nothing built yet. P1.4 (the validator) is not in `main` yet; the P1 branch
+has no commits beyond `main` so far. The task order is waiting on the
+operator (section 0, "The one dependency between them").
 
 ---
 
