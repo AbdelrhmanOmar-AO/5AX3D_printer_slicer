@@ -62,7 +62,7 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from . import screw_tilt, tilt
+from . import gcode_templates, screw_tilt, tilt
 
 # --------------------------------------------------------------------------
 # Tokeniser (shared with tools/gcode_stats.py)
@@ -142,15 +142,10 @@ TILT_TOLERANCE_DEG = 1e-4
 #: count as equal.
 EXTRUSION_TOLERANCE_MM = 1e-6
 
-#: The macro calls that switch the three screws on and off, per dialect. They
-#: must match ``kinematics3z.HEADER`` and ``FOOTER``, which
-#: ``tests/test_gcode_check.py`` asserts. Klipper is gate E1.
-STRUCTURE_MARKERS = {
-    "rrf": {
-        "enable_3z": 'M98 P"/macros/enable3Z.g"',
-        "disable_3z": 'M98 P"/macros/disable3Z.g"',
-    },
-}
+#: The macro calls that switch the three screws on and off, per dialect: the
+#: very strings `atom.gcode_templates` writes into the header and footer.
+#: Klipper is gate E1.
+STRUCTURE_MARKERS = gcode_templates.MACRO_CALLS
 
 SCREW_WORDS = ("Z", "U", "V")
 MOTION_WORDS = frozenset({"X", "Y", "Z", "U", "V"})

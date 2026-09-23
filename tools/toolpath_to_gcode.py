@@ -8,6 +8,7 @@ import numpy as np
 
 import atom.toolpath3
 import atom.kinematics3z
+from atom.gcode_templates import DEFAULT_BED_TEMP_C, DEFAULT_NOZZLE_TEMP_C, make_header
 
 init_taichi("gpu")
 
@@ -64,7 +65,7 @@ def calculate_retract(point: ti.types.ndarray(), travel_type: ti.types.ndarray()
                     break
                 j += 1
        
-def toolpath_to_gcode(toolpath, gcode_path, width, height):
+def toolpath_to_gcode(toolpath, gcode_path, width, height, header=None):
     if width > 0:
         if height == -1:
             height = 0.5*width
@@ -90,7 +91,7 @@ def toolpath_to_gcode(toolpath, gcode_path, width, height):
     calculate_retract(toolpath.point, toolpath.travel_type, retract)
 
     with open(gcode_path, "w") as file:
-        file.write(atom.kinematics3z.HEADER)
+        file.write(atom.kinematics3z.HEADER if header is None else header)
         is_fan_on = False
         need_prime = True
         for i in tqdm(range(toolpath.point_count)):
@@ -125,7 +126,21 @@ if __name__ == "__main__":
     parser.add_argument("gcode_path", help="The path to the output G-code.")
     parser.add_argument("width_override", nargs="?", default="-1", help="The override for the deposition width.")
     parser.add_argument("height_override", nargs="?", default="-1", help="The override for the deposition height.")
+    # Build plan P1.2: optional temperatures. Without them the header is
+    # kinematics3z.HEADER, byte-identical to upstream.
+    parser.add_argument("--bed-temp", type=float, default=None, help=f"Bed temperature in deg C (default {DEFAULT_BED_TEMP_C}).")
+    parser.add_argument("--nozzle-temp", type=float, default=None, help=f"Nozzle temperature in deg C (default {DEFAULT_NOZZLE_TEMP_C}).")
     args = parser.parse_args()
+
+    header = None
+    if args.bed_temp is not None or args.nozzle_temp is not None:
+        # The profile kinematics3z imported, so the header matches the machine
+        # the kernels solve for.
+        header = make_header(
+            atom.kinematics3z._PROFILE,
+            bed_temp=DEFAULT_BED_TEMP_C if args.bed_temp is None else args.bed_temp,
+            nozzle_temp=DEFAULT_NOZZLE_TEMP_C if args.nozzle_temp is None else args.nozzle_temp,
+        )
 
     toolpath_path = args.toolpath_path
     toolpath = atom.toolpath3.Toolpath()
@@ -136,5 +151,5 @@ if __name__ == "__main__":
     height = float(args.height_override)
 
     start = time.perf_counter()
-    toolpath_to_gcode(toolpath, gcode_path, width, height)
+    toolpath_to_gcode(toolpath, gcode_path, width, height, header)
     print(f"Toolpath to GCode took {time.perf_counter()-start:.1f} seconds.")

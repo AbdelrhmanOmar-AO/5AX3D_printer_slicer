@@ -293,6 +293,7 @@ The parameters in the JSON file are:
 * `top_lines` and `bottom_lines` (optional): paths to single-channel, 8-bit-per-pixel PNG files representing the target tangent directions for the top and bottom surfaces, respectively. The mapping is $\[0, 255] \leftarrow \[−\pi/2, \pi/2]\$. The orientation defines a 2D line in the xy-plane. The 2D line field is defined on the upper face of the solid’s bounding box and is planarly projected onto the top and bottom surfaces along the z-axis.
 * `ortho_to_wall` (optional): if true, forces the tool orientation to be parallel to the boundary. By default, this is false, as enabling this feature causes many tool orientation changes that are detrimental to surface quality.
 * `infill` (optional): if true, a gyroid pattern infills the solid.
+* `bed_temp` and `nozzle_temp` (optional, this fork): the bed and nozzle temperatures in °C written into the G-code header. Defaults 55 and 210, the upstream values; leaving them out gives exactly the upstream header. `tools/toolpath_to_gcode.py` takes the same as `--bed-temp` and `--nozzle-temp`.
 
 The inputs and outputs are:
 
