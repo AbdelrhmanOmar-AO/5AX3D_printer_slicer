@@ -88,7 +88,7 @@ operator chose **P1.4 first**. The rest of the order is still to be confirmed
 
 | Task | Status |
 |---|---|
-| P1.4 G-code validator | **Built.** Unit tests pass here. Laptop check pending: `pytest --run-pipeline tests/test_golden.py` (~7.5 min), which now also validates the G-code that run writes. Not yet in `main` |
+| P1.4 G-code validator | **Built** (`58d2fe7`). Unit tests pass here. Laptop check pending: `pytest --run-pipeline tests/test_golden.py` (~7.5 min) should give **5 passed, 1 skipped** (the P1.4 commit message says 4; that miscounts the file's unit tests). It now also validates the G-code that run writes. Not yet in `main` |
 
 **What P1.4 gives the P4 session**, once it is in `main`:
 
