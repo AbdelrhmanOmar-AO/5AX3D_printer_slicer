@@ -82,10 +82,31 @@ edits. P4 is mostly synthetic and CPU-only.
 
 *Edited by the P1 session only.*
 
-Branch `claude/vibrant-rubin-waln7y`, started from `main` at `d2d39c3`. Nothing
-built yet. Proposed order, **not yet confirmed by the operator**: P1.4 and
-P1.7 first, since P4 and P2.5 depend on them; then P1.1, P1.2, P1.3, P1.6;
-P1.5 stays open until gate E1 is answered.
+Branch `claude/vibrant-rubin-waln7y`, started from `main` at `4986f61`. The
+operator chose **P1.4 first**. The rest of the order is still to be confirmed
+(proposed: P1.7, then P1.1, P1.2, P1.3, P1.6; P1.5 stays open until gate E1).
+
+| Task | Status |
+|---|---|
+| P1.4 G-code validator | **Built.** Unit tests pass here. Laptop check pending: `pytest --run-pipeline tests/test_golden.py` (~7.5 min), which now also validates the G-code that run writes. Not yet in `main` |
+
+**What P1.4 gives the P4 session**, once it is in `main`:
+
+* `atom.gcode_check`: `check_file(path, profile, max_feed=None, max_e_mm=5.0)`
+  returns a `Report` with `ok`, `violations` (`id`, 1-based `line`, `detail`)
+  and `stats`. The IDs are `AXIS_RANGE`, `TILT_LIMIT`, `NAN`, `FEED`,
+  `EXTRUSION` and `STRUCTURE`. It is numpy only, with no Taichi.
+* The one G-code tokeniser: `gcode_check.strip_comment` and `parse_words`.
+  `tools/gcode_stats.py` now imports them from there.
+* `atom.screw_tilt`: the bed tilt implied by three screw heights, with no
+  Taichi. `total_tilt_deg(z0, z1, z2, profile)` is exact and closed-form;
+  `build_direction(...)` is a numpy port of `kinematics3z.forward`'s
+  orientation part, checked against the Taichi kernel.
+* `tools/validate_gcode.py`: the command line (exit 0 pass, 1 fail, 2 usage).
+
+Two operator decisions (2026-09-23): the feed check has **no upper limit
+unless one is passed**, because the profile has none and the golden reaches
+F10725; and the single-move extrusion limit defaults to **5 mm**.
 
 ### 0b. P4 session status
 

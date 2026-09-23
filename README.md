@@ -363,6 +363,31 @@ view. Hover over any control for a tooltip.
 window. Run `--help` for every option, and see the tool's docstring for which
 file to open when.
 
+### Check G-code before printing (this fork)
+
+`tools/validate_gcode.py` reads a G-code file and checks that the printer can
+run it safely. It never changes the file.
+
+```powershell
+python tools/validate_gcode.py data/gcode/calibration_cube.gcode
+```
+
+It checks:
+
+- every X, Y and screw (Z, U, V) value is within the machine's travel;
+- the bed tilt implied by the three screws stays within the tilt limit;
+- no value is `nan` or infinite;
+- every feed rate (F) is above zero, and below `--max-feed` if you give one;
+- no single move pushes out more than 5 mm of filament (`--max-e` changes
+  that), and retracts and primes balance;
+- the header and footer are there, with the 3Z enable and disable macros
+  around the moves.
+
+It prints `OK: no violations.` and exits with code 0 when the file passes.
+Otherwise it lists each problem with its line number and exits with 1. Add
+`--json` for the full report, or `--machine ours` to check against another
+machine profile.
+
 ### Visualize
 
 After using the atomizer, you can visualize the generated `<toolpath>` with:

@@ -122,7 +122,7 @@ vertical, not 40°. This is why the limit's shape matters:
 | `cone` | total angle from vertical ≤ limit | ✅ declared |
 | `box` | each axis ≤ limit independently | — |
 
-A box permits more on the diagonal: (25°, 25°) is 34.6° total, inside a 30° box
+A box permits more on the diagonal: (25°, 25°) is 34.78° total, inside a 30° box
 but outside a 30° cone. Which one our machine has is **gate M2**.
 `atom.tilt.within_limit`.
 

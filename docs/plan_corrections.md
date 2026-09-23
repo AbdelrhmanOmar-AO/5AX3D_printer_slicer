@@ -835,7 +835,89 @@ citation of them is updated in the same commit.
 
 ### 7a. P1 session (`claude/vibrant-rubin-waln7y`)
 
-None yet.
+#### P1-1 A plane through the balls' fixed XY under-reads the tilt ★ PLAN EDIT
+
+*Factual error.* P1.4's `TILT_LIMIT` says to take the bed tilt "through FK or
+a closed-form plane fit through the three ball points". Taken literally (the
+balls at their profile XY, `ball_2dpos_*`, heights Z, U, V), that plane is
+wrong, because the contact points slide in their slots as the bed tilts. Their
+horizontal spacing shrinks by `cos(t)`, so the fixed-XY fit reads
+`arctan(sin t)`: **26.57 degrees at a true 30**, and 9.85 at a true 10.
+
+The exact closed form keeps the bed-frame ball spacing `l1`, `l2` (rigid) and
+solves `g . l1 = z0 - z1`, `g . l2 = z0 - z2` for the in-plane gradient `g`.
+Then `tilt = arcsin(|g|)`. It agrees with `kinematics3z.forward` to 1e-7
+degrees (`atom.screw_tilt.total_tilt_deg`, `tests/test_screw_tilt.py`). On
+the golden cube it gives 5.525987 degrees; the toolpath's largest `theta` is
+5.525986.
+
+A `box` limit needs the direction of the tilt as well. `screw_tilt` ports
+`forward`'s orientation part to numpy for that. It returns the direction the
+toolpath requested, which differs from the bed's physical pose by up to 0.14
+degrees at 30 degrees of tilt (1.9). That gap is a turn about the bed's own
+normal, so the `cone` check is exact and the `box` check is exact to 0.14
+degrees. Taichi's own `forward` is 0.012 degrees off the port on random states,
+because it runs in float32.
+
+The plan should say "`arcsin` of the in-plane gradient, with the bed-frame
+ball spacing", not "plane fit through the three ball points".
+
+#### P1-2 The profile has no maximum feed rate, and the golden exceeds the travel feed ★ PLAN EDIT
+
+*Factual error.* P1.4's `FEED` check says "every F in `(0, profile max]`". The
+machine profile has no maximum feed. The highest feed it names is
+`travel_feedrate` (3000 mm/min), and the golden cube's G-code goes well
+beyond it: **F10725** at most, with 23 lines above 3000.
+
+That is by design. `toolpath_to_gcode.calculate_feedrate` scales the
+deposition feed by (machine distance over X, Y, Z, U, V, E) / (tool-tip
+distance), so a move where the screws travel much further than the nozzle tip
+gets a proportionally higher F (§1 facts; P3.4 verifies it).
+
+Decided with the operator on 2026-09-23: `FEED` always checks that F is finite
+and above zero, and applies an upper limit only when one is passed
+(`--max-feed`, `max_feed=`). A real limit needs a machine number: P3.4's
+`max_screw_speed_mm_s` (gate D3) or a `max_feedrate` from gate M1/P6. It must
+not be invented.
+
+#### P1-3 `docs/conventions.md` gave (25, 25) degrees as 34.6 in total; it is 34.78
+
+*Factual error, corrected.* `cos(total) = cos(a) cos(b)` gives
+`arccos(cos^2 25) = 34.78` degrees. `atom.tilt.total_tilt_from_tilts_deg` already
+computed 34.78, so no code was wrong. Only the document and a comment in
+`tests/test_tilt.py` were. Found when a validator test built from that figure
+disagreed by 0.2 degrees. Both are corrected.
+
+#### P1-4 The shared tokeniser moved from `tools/gcode_stats.py` into `atom.gcode_check`
+
+*Deliberate deviation.* P1.4 step 1 says to "reuse the tokeniser from
+`tools/gcode_stats.py`". The package cannot sensibly import from a script
+directory, so the direction is reversed. `strip_comment`, `parse_words` and
+the quoted-string guard now live in `atom.gcode_check`, and
+`tools/gcode_stats.py` imports them, so they are still importable from there
+(`tools/visualize_5ax.py` uses them). The code moved unchanged. The
+`gcode_stats` tests pass, and the golden statistics of a regenerated
+calibration-cube G-code are identical.
+
+#### P1-5 `Xnan` is invisible to the word parser
+
+*Hazard.* Python writes a NaN as `nan`, so a failed solve would appear in
+G-code as `Xnan`. The word pattern needs digits after the letter, so it does
+not match `Xnan` at all. The word is **silently dropped**, and the axis keeps
+its previous value, which looks perfectly valid. The validator's `NAN` check
+therefore scans the raw text for non-finite words (`nan`, `inf`, `infinity`,
+any case, with a sign) rather than looking at parsed values. Any other G-code
+reader has the same blind spot.
+
+#### P1-6 What "retracts and primes balanced" means in the validator
+
+*Definition the plan left open.* The pipeline writes retract/prime pairs of
+`retract_length` (2 mm), plus one unpaired retract in the header (E30 to E28,
+absolute) and one in the footer. The golden cube has 530 retracts and 529
+primes. So balance cannot mean equal counts. The validator tracks how much
+filament is currently retracted and flags three things: a prime with nothing
+retracted, a prime larger than what is retracted, and a printing move while
+filament is still retracted. Ending the file retracted is correct.
 
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
