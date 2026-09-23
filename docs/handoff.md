@@ -86,9 +86,14 @@ Branch `claude/vibrant-rubin-waln7y`, started from `main` at `4986f61`. The
 operator chose **P1.4 first**. The rest of the order is still to be confirmed
 (proposed: P1.7, then P1.1, P1.2, P1.3, P1.6; P1.5 stays open until gate E1).
 
+The run took **784 s**, against 457 s when the baseline was recorded. The
+test does not time anything and the hash matched, so the output is unaffected.
+Whether the laptop was busy or hot at the time is not known. Worth watching
+before P1.6, which measures `order_atoms` timings.
+
 | Task | Status |
 |---|---|
-| P1.4 G-code validator | **Built** (`58d2fe7`). Unit tests pass here. Laptop check pending: `pytest --run-pipeline tests/test_golden.py` (~7.5 min) should give **5 passed, 1 skipped** (the P1.4 commit message says 4; that miscounts the file's unit tests). It now also validates the G-code that run writes. Not yet in `main` |
+| P1.4 G-code validator | **Done** (`58d2fe7`), verified on the laptop 2026-09-23: `pytest --run-pipeline tests/test_golden.py` gave **5 passed, 1 skipped** in 784 s. Golden SHA unchanged, and the real golden G-code validates with zero violations. (The P1.4 commit message expected 4 passed; that miscounted the file's unit tests.) Not yet in `main` |
 
 **What P1.4 gives the P4 session**, once it is in `main`:
 
