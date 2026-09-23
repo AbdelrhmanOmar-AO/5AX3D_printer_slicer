@@ -1006,6 +1006,36 @@ Anything else that uses `offset` as a lift (P3.3's diagnostics, P4.4's
 safe-travel insertion) must iterate the same way. `tests/test_kinematics3z.py`
 pins that the loop converges.
 
+#### P1-10 Editors strip the trailing space the golden header depends on
+
+*Hazard.* Upstream's header and footer each contain `M400 ; wait ` **with a
+trailing space**, and that space is part of the golden G-code byte for byte.
+When the header moved into a template (`atom.gcode_templates`, P1.2), saving
+the new source file silently stripped it, and the rebuilt header stopped
+matching upstream. The byte-identity check caught it before anything was
+committed. The line is now inserted from code (`WAIT_LINE = "M400 ; wait" + " "`)
+with a comment saying why, and a test pins it. Any other text that must match
+upstream exactly should be built the same way, or stored in a fixture file
+rather than in source.
+
+#### P1-11 How P1.2 wires the temperatures
+
+*Deliberate choices within P1.2.*
+
+* **The option is added only when set.** `atomize.py` appends
+  `--bed-temp`/`--nozzle-temp` to the `toolpath_to_gcode.py` command only
+  when the parameter file has the key, so a file without them runs exactly the
+  upstream command. The logged command is unchanged too.
+* **Values are checked when the parameter file is read**, not an hour later at
+  the G-code stage. The check allows only a finite number of zero or more. No
+  upper limit is imposed: that would be a machine number, and none is given
+  (§0 rule 4).
+* **Formatting:** whole numbers are written as integers (`S60` for 60 or 60.0),
+  others as given (`S60.5`).
+* **One source for the macro strings.** `atom.gcode_check` now takes its 3Z
+  enable/disable markers from `gcode_templates.MACRO_CALLS`, the strings the
+  header writes, rather than keeping a copy.
+
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
 None yet.
