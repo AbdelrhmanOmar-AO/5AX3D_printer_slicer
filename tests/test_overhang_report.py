@@ -516,3 +516,33 @@ def test_progress_log_appends_a_row_per_run(tmp_path, monkeypatch):
     assert lines[0].startswith("finished_utc,part,max_slope_deg,metrics_version")
     assert "ramp45_xs" in lines[1]
     assert "ramp50_xs" in lines[2]
+
+
+@pytest.mark.parametrize(
+    "version,expected_exit",
+    [(overhang_report.METRICS_VERSION, 0), (overhang_report.METRICS_VERSION - 1, 1)],
+)
+def test_check_done_exit_code(tmp_path, monkeypatch, version, expected_exit):
+    """-Resume relies on the exit code, so it must be right."""
+    monkeypatch.setattr(overhang_report, "REPORT_DIR", tmp_path)
+    report = _fake_report("ramp45_s", 30.0, 40.0, 0.002, 5.5, True)
+    report["metrics_version"] = version
+    (tmp_path / "ramp45_s_ms30.json").write_text(json.dumps(report))
+
+    assert overhang_report.main(["--check-done", "ramp45_s", "30"]) == expected_exit
+
+
+def test_check_done_reports_missing_and_corrupt_as_not_done(tmp_path, monkeypatch):
+    monkeypatch.setattr(overhang_report, "REPORT_DIR", tmp_path)
+
+    assert overhang_report.main(["--check-done", "nothing_here", "7"]) == 1
+
+    (tmp_path / "broken_s_ms7.json").write_text('{"metrics_ver')
+    assert overhang_report.main(["--check-done", "broken_s", "7"]) == 1
+
+
+def test_check_done_prints_nothing(tmp_path, monkeypatch, capsys):
+    """Output would be noise in the matrix log; the exit code is the answer."""
+    monkeypatch.setattr(overhang_report, "REPORT_DIR", tmp_path)
+    overhang_report.main(["--check-done", "absent", "7"])
+    assert capsys.readouterr().out == ""

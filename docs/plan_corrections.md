@@ -253,6 +253,21 @@ Taichi 1.7.4: it does **not** raise. It logs `libcuda.so lib not found` and
 silently and runs many times slower. Any check must compare the resulting arch,
 not catch an exception.
 
+### 3.1a `conda run` rejects a multi-line `python -c`
+
+`conda run --name X python -c "<two or more lines>"` aborts with
+`NotImplementedError: Support for scripts where arguments contain newlines not
+implemented` and dumps a full conda crash report. It has now caused two bugs:
+the GPU probe in `setup_laptop.ps1`, and the `-Resume` check in
+`run_baseline_matrix.ps1`, where every check would have errored, no
+combination would have matched, and an interrupted matrix would have re-run all
+48 runs instead of the 9 outstanding — twenty hours instead of six.
+
+Pass a script file, or give the tool a flag whose **exit code** carries the
+answer (`overhang_report.py --check-done PART SLOPE`). An exit code cannot be
+confused by stray output, which matters when the command runs inside a
+`Tee-Object` pipeline.
+
 ### 3.2 `from __future__ import annotations` breaks Taichi kernels
 
 That flag turns annotations into strings; Taichi reads kernel argument

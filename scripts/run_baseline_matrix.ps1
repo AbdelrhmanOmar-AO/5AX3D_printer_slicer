@@ -121,16 +121,13 @@ foreach ($size in $Sizes) {
         }
 
         if ($Resume) {
-            $check = & conda run --name $EnvName --no-capture-output python -c @"
-import json, sys
-from pathlib import Path
-p = Path('reports/baseline_overhang/${solid}_ms$($slope -replace '\.0$','').json')
-try:
-    print('done' if json.loads(p.read_text())['metrics_version'] == 2 else 'stale')
-except Exception:
-    print('missing')
-"@ 2>$null
-            if ($check -match 'done') {
+            # A single-line invocation on purpose: `conda run` rejects a
+            # multi-line `python -c` with "Support for scripts where arguments
+            # contain newlines not implemented". The exit code carries the
+            # answer, so stray output cannot be mistaken for it.
+            & conda run --name $EnvName --no-capture-output python `
+                tools/overhang_report.py --check-done $solid $slope *> $null
+            if ($LASTEXITCODE -eq 0) {
                 $skipped++
                 Write-Host "[$index/$total] SKIP $solid at $slope deg - already done" -ForegroundColor DarkGray
                 continue

@@ -629,6 +629,15 @@ def main(argv=None):
         help="Collect every report into reports/baseline_overhang.md.",
     )
     parser.add_argument(
+        "--check-done", nargs=2, metavar=("PART", "SLOPE"), default=None,
+        help=(
+            "Exit 0 if that combination already has a result from the current "
+            "metrics, 1 otherwise. Prints nothing. Used by the matrix script's "
+            "-Resume; the exit code is the answer, so it cannot be confused by "
+            "stray output."
+        ),
+    )
+    parser.add_argument(
         "--status", nargs="*", metavar="SIZE", default=None,
         help=(
             "Report which matrix combinations already have results and which "
@@ -644,6 +653,15 @@ def main(argv=None):
         ),
     )
     args = parser.parse_args(argv)
+
+    if args.check_done is not None:
+        part, slope_text = args.check_done
+        try:
+            path = report_path(part, float(slope_text))
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return 1
+        return 0 if data.get("metrics_version") == METRICS_VERSION else 1
 
     if args.status is not None:
         sizes = args.status or ["xs", "s"]
