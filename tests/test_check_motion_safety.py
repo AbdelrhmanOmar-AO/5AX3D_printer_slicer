@@ -4,7 +4,7 @@ The checks themselves are tested in their own modules; these test the tool
 around them: inputs, exit status and the JSON report.
 """
 
-from __future__ import annotations  # no Taichi kernels in this test module
+# No `from __future__ import annotations`: the swept tests drive Taichi kernels.
 
 import json
 
@@ -47,13 +47,14 @@ def toolpaths(tmp_path):
 
 
 def test_a_clear_toolpath_exits_zero(toolpaths, capsys):
-    assert cms.main([str(toolpaths["clear"])]) == 0
+    assert cms.main([str(toolpaths["clear"]), "--checks", "nozzle"]) == 0
     assert "clear" in capsys.readouterr().out
 
 
 def test_a_collision_exits_one_and_is_reported(toolpaths, tmp_path, capsys):
     report_path = tmp_path / "out" / "report.json"
-    status = cms.main([str(toolpaths["collides"]), "--json", str(report_path), "--limit", "2"])
+    status = cms.main([str(toolpaths["collides"]), "--checks", "nozzle",
+                       "--json", str(report_path), "--limit", "2"])
     assert status == 1
     assert "COLLISION" in capsys.readouterr().out
 
@@ -73,15 +74,16 @@ def test_a_directory_is_expanded_in_order(toolpaths, tmp_path):
     assert [path.name for path in files] == ["a_collides.npz", "b_clear.npz"]
 
     report_path = tmp_path / "report.json"
-    assert cms.main([str(toolpaths["folder"]), "--json", str(report_path)]) == 1
+    assert cms.main([str(toolpaths["folder"]), "--checks", "nozzle",
+                     "--json", str(report_path)]) == 1
     report = json.loads(report_path.read_text())
     assert [entry["ok"] for entry in report["files"]] == [False, True]
 
 
 def test_settings_reach_the_check(toolpaths, tmp_path):
     report_path = tmp_path / "report.json"
-    cms.main([str(toolpaths["collides"]), "--tolerance", "0.5", "--subsample", "0.25",
-              "--json", str(report_path)])
+    cms.main([str(toolpaths["collides"]), "--checks", "nozzle", "--tolerance", "0.5",
+              "--subsample", "0.25", "--json", str(report_path)])
     settings = json.loads(report_path.read_text())["files"][0]["checks"]["nozzle"]["settings"]
     assert settings["tolerance_mm"] == 0.5
     assert settings["subsample_mm"] == 0.25
@@ -91,3 +93,35 @@ def test_settings_reach_the_check(toolpaths, tmp_path):
 def test_missing_input_exits_two(tmp_path, capsys):
     assert cms.main([str(tmp_path / "nothing.npz")]) == 2
     assert "No such toolpath" in capsys.readouterr().err
+
+
+def test_unknown_checks_exit_two(toolpaths, capsys):
+    assert cms.main([str(toolpaths["clear"]), "--checks", "nozzle,bogus"]) == 2
+    assert "bogus" in capsys.readouterr().err
+
+
+def test_both_checks_run_by_default_and_record_the_backend(ti_cpu, tmp_path):
+    """The travel through a block: clear at the points, caught between them."""
+    from test_tilt_motion_check import travel_case
+
+    tp, crossing = travel_case(1.0)
+    path = write_toolpath(tmp_path / "travel.npz", tp.point.astype(float),
+                          _directions(tp.tool_orientation), tp.travel_type == 0)
+    report_path = tmp_path / "report.json"
+
+    assert cms.main([str(path), "--json", str(report_path)]) == 1
+
+    report = json.loads(report_path.read_text())
+    assert report["checks"] == ["nozzle", "swept"]
+    assert report["taichi_backend"] == "x64"
+    checks = report["files"][0]["checks"]
+    assert checks["nozzle"]["ok"] is True
+    assert checks["swept"]["ok"] is False
+    assert checks["swept"]["worst"][0]["move"] == crossing
+    assert checks["swept"]["worst"][0]["kind"] == "nozzle_vs_material"
+
+
+def _directions(spherical):
+    theta, phi = spherical[:, 0].astype(float), spherical[:, 1].astype(float)
+    return np.column_stack([np.cos(phi) * np.sin(theta), np.sin(phi) * np.sin(theta),
+                            np.cos(theta)])

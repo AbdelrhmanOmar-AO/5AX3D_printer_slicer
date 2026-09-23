@@ -853,7 +853,10 @@ head-frame points work unchanged.
 Three additions to the plan's interface, all needed by P4.2's report:
 `body_distances` (signed distance to each named body: `nozzle`, `gantry`),
 `nearest_body` (which one is closest) and `describe` (the parameters, for a
-report's provenance). Distances are exact, not bounds: the cone's is computed
+report's provenance). Two more came with P4.2, which scores thousands of
+machine states in one call: `head_xy` may be one row per point, and
+`body_distances(..., bodies=[...])` computes only the bodies asked for (the
+swept check never scores the hull against the nozzle, see P4-3). Distances are exact, not bounds: the cone's is computed
 in its meridian plane against a triangle, and a test checks it against a
 brute-force sampling of the surface.
 
@@ -915,3 +918,64 @@ narrow cone plus boxes (P6.2) rather than as one wide cone.
 outputs", which do not exist. The P0.8 archive on the laptop
 (`reports/toolpaths/`, stock toolpaths up to 30 degrees of tilt) is the
 nearest real input and is a laptop request (`docs/handoff.md` 0b).
+
+#### P4-3 P4.2 as built: hull for the gantry only, axis and tilt checks deferred to P1.4 (deliberate deviation)
+
+P4.2 says to "transform a proxy of the printed-so-far part (convex hull of
+deposited points, updated every N points for speed) and test it against the
+clearance model, axis ranges and tilt limits". As built
+(`src/atom/tilt_motion_check.py`), with the operator's decisions of
+2026-09-23:
+
+* **The convex hull is tested against the machine bodies only** (the gantry
+  half-space, for the reference proxy). Against a flat body the hull is
+  exact, not a proxy: a convex solid's highest point is a vertex. Between
+  rebuilds (every 500 material points) the raw points laid since are added,
+  so nothing printed is ever missing. A test checks this against brute force
+  under random orientations.
+* **The nozzle is tested against the real printed points**, through the same
+  code as P4.3 (`nozzle_material_check.cone_hits`). The hull fills hollows,
+  so it would put the nozzle "inside" material whenever it works between two
+  features or inside a cup.
+* **Axis ranges and the tilt limit between points are not checked yet.** By
+  the operator's decision they come from the P1.4 validator once it is in
+  `main`, so those rules exist once. Every report lists them under
+  `not_checked`. At the points themselves the IK already enforces both (NaN
+  `offset`), and moves touching an unreachable point are skipped and
+  counted.
+* **Two checks added** that the plan's list does not name: the bed corners
+  against every body at every state (the IK does this only at the points),
+  and the nozzle tip against the bed plane between points.
+* **Which states:** every reachable point, plus interior states of each move
+  that turns the tool by more than `check_tilt_step_deg` (0.5 degrees, the
+  plan's default) and of each travel longer than `travel_step_mm` (0.5 mm).
+  Interpolation is linear in the five axes, as the firmware moves. The
+  nozzle check at the points themselves is P4.3's; P4.2 does it between
+  them. `tools/check_motion_safety.py` runs both.
+* **Tolerance 0.01 mm.** The kinematics run in float32 (about 1e-3 mm of
+  rounding); a violation must be deeper than this.
+
+**Verified against hand calculations and the IK.** A 68 mm tower 80 mm from a
+nozzle working 30 mm up, tilted 30 degrees toward it, reaches
+`38 cos 30 + 80 sin 30 = 72.91` mm, 2.91 mm into the gantry; the check
+reports 2.909. A travel with no lift through a 5 mm block is caught at that
+move, at `(4 - 0.001) sin 40` deep, while P4.3 at the two clear endpoints
+sees nothing. Where the check finds a bed corner in the gantry at a point,
+the depth equals the lift `kinematics3z.inverse` asks for there. The golden
+cube has no violations over 49 063 states (2 290 between points); the part
+comes no closer than 68.9 mm to the gantry.
+
+**A fact about the reference machine worth knowing (from the IK, not new
+maths).** Its bed corners reach the gantry at large tilts when the nozzle is
+near the bed: 20 degrees toward a diagonal with the nozzle 5 mm up puts a
+corner 4 mm into it, and 30 degrees does so in every direction once the work
+sits 40 mm off the bed's centre. Along X or Y at 20 degrees it is clear. The
+IK asks for lift at such points and `add_platform` raises the part to give
+it, so a `_platform` toolpath is clear; a `_smoothed` one checked directly
+will show these as `bed` violations. Gate M2 (usable tilt by position) is
+where this matters.
+
+**Test tier.** The golden-cube swept test takes about 3.6 s on the session
+container (the P4.3 one about 2 s), above the unit tier's "~2 s". They are
+kept in the unit tier so CI guards them; the operator may prefer them in
+`pipeline`.

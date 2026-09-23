@@ -21,8 +21,10 @@ Head frame
     ``p_head = p_world - (X, Y, 0)``.
 
 Every method takes world-frame points plus the head position ``head_xy``
-(X, Y). With the default ``head_xy = (0, 0)`` the points are simply taken to
-be in the head frame already.
+(X, Y): one pair for all the points, or one row per point, ``(N, 2)``, when
+the points come from different machine states. With the default
+``head_xy = (0, 0)`` the points are simply taken to be in the head frame
+already.
 
 Signed distance
 ---------------
@@ -94,8 +96,12 @@ class ClearanceModel(Protocol):
 
     bodies: tuple[str, ...]
 
-    def body_distances(self, points, head_xy=(0.0, 0.0)) -> np.ndarray:
-        """``(N, B)`` signed distance from each point to each body, mm."""
+    def body_distances(self, points, head_xy=(0.0, 0.0), bodies=None) -> np.ndarray:
+        """``(N, B)`` signed distance from each point to each body, mm.
+
+        ``bodies`` optionally names the bodies wanted, in the column order
+        wanted; by default all of them, in the order of ``bodies``.
+        """
         ...
 
     def signed_distance(self, points, head_xy=(0.0, 0.0)) -> np.ndarray:
@@ -120,8 +126,17 @@ class _BodyModel:
 
     bodies: tuple[str, ...] = ()
 
-    def body_distances(self, points, head_xy=(0.0, 0.0)) -> np.ndarray:
+    def body_distances(self, points, head_xy=(0.0, 0.0), bodies=None) -> np.ndarray:
         raise NotImplementedError
+
+    def _selected(self, bodies) -> list[int]:
+        """Column indices for the named bodies (all of them by default)."""
+        if bodies is None:
+            return list(range(len(self.bodies)))
+        unknown = [name for name in bodies if name not in self.bodies]
+        if unknown:
+            raise ValueError(f"unknown bodies {unknown}; this model has {list(self.bodies)}")
+        return [self.bodies.index(name) for name in bodies]
 
     def signed_distance(self, points, head_xy=(0.0, 0.0)) -> np.ndarray:
         distances = self.body_distances(points, head_xy)
@@ -150,10 +165,22 @@ class _BodyModel:
         return np.flatnonzero(self.signed_distance(points, head_xy) < margin_mm)
 
 
+def _head_positions(head_xy, count: int) -> np.ndarray:
+    """``head_xy`` as ``(count, 2)``: one pair broadcast, or one row per point."""
+    head = np.asarray(head_xy, dtype=np.float64)
+    if head.shape == (2,):
+        return np.broadcast_to(head, (count, 2))
+    if head.shape != (count, 2):
+        raise ValueError(f"head_xy must be (2,) or ({count}, 2), got {head.shape}")
+    return head
+
+
 def _head_frame(points, head_xy) -> np.ndarray:
     points = np.asarray(points, dtype=np.float64).reshape(-1, 3)
-    head = np.asarray(head_xy, dtype=np.float64).reshape(2)
-    return points - np.array([head[0], head[1], 0.0])
+    head = _head_positions(head_xy, len(points))
+    local = points.copy()
+    local[:, :2] -= head
+    return local
 
 
 # --------------------------------------------------------------------------
@@ -242,11 +269,16 @@ class ReferenceClearance(_BodyModel):
         self.half_angle_deg = float(half_angle_deg)
         self.gantry_height_mm = height
 
-    def body_distances(self, points, head_xy=(0.0, 0.0)) -> np.ndarray:
+    def body_distances(self, points, head_xy=(0.0, 0.0), bodies=None) -> np.ndarray:
         local = _head_frame(points, head_xy)
-        nozzle = cone_signed_distance(local, self.half_angle_deg, self.gantry_height_mm)
-        gantry = self.gantry_height_mm - local[:, 2]
-        return np.column_stack([nozzle, gantry])
+        columns = []
+        for index in self._selected(bodies):
+            if self.bodies[index] == "nozzle":
+                columns.append(cone_signed_distance(local, self.half_angle_deg,
+                                                    self.gantry_height_mm))
+            else:
+                columns.append(self.gantry_height_mm - local[:, 2])
+        return np.column_stack(columns) if columns else np.zeros((len(local), 0))
 
     def describe(self) -> dict:
         return {
@@ -312,17 +344,19 @@ class BoxesClearance(_BodyModel):
             _warn_placeholder(path)
         return model
 
-    def body_distances(self, points, head_xy=(0.0, 0.0)) -> np.ndarray:
+    def body_distances(self, points, head_xy=(0.0, 0.0), bodies=None) -> np.ndarray:
         points = np.asarray(points, dtype=np.float64).reshape(-1, 3)
-        head = np.asarray(head_xy, dtype=np.float64).reshape(2)
-        shift = np.zeros((len(self.bodies), 3))
-        shift[:, :2] = self._follows * head
-        low, high = self._low + shift, self._high + shift
-
-        centre = 0.5 * (low + high)
+        head = _head_positions(head_xy, len(points))
+        chosen = self._selected(bodies)
+        low, high, follows = self._low[chosen], self._high[chosen], self._follows[chosen]
+        # Where each box is for each point's head position: (N, B, 3).
+        shift = np.zeros((len(points), len(chosen), 3))
+        shift[:, :, :2] = follows[None] * head[:, None, :]
+        centre = 0.5 * (low + high)[None] + shift
         half = 0.5 * (high - low)
+
         # Exact box SDF: q is the per-axis excess over the half-extent.
-        q = np.abs(points[:, None, :] - centre[None]) - half[None]
+        q = np.abs(points[:, None, :] - centre) - half[None]
         outside = np.linalg.norm(np.maximum(q, 0.0), axis=2)
         inside = np.minimum(q.max(axis=2), 0.0)
         return outside + inside

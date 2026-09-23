@@ -99,6 +99,28 @@ def test_the_head_position_shifts_the_whole_model(model):
     np.testing.assert_allclose(model.signed_distance(world, head)[:2], [10 * COS40, -10 * SIN40])
 
 
+def test_each_point_can_carry_its_own_head_position(model):
+    """The swept check scores many machine states in one call."""
+    heads = np.array([[150.0, 120.0], [10.0, 20.0], [0.0, 0.0]])
+    points = np.array([[160.0, 120.0, 0.0], [10.0, 20.0, 10.0], [0.0, 0.0, 75.0]])
+    np.testing.assert_allclose(model.signed_distance(points, heads),
+                               [10 * COS40, -10 * SIN40, -5.0])
+    with pytest.raises(ValueError, match="head_xy"):
+        model.signed_distance(points, heads[:2])
+
+
+def test_bodies_can_be_chosen_and_ordered(model, boxes):
+    points = [(0, 0, 75), (0, 0, 10)]
+    np.testing.assert_allclose(model.body_distances(points, bodies=["gantry"]),
+                               model.body_distances(points)[:, [1]])
+    np.testing.assert_allclose(model.body_distances(points, bodies=["gantry", "nozzle"]),
+                               model.body_distances(points)[:, [1, 0]])
+    np.testing.assert_allclose(boxes.body_distances(points, bodies=["beam"]),
+                               boxes.body_distances(points)[:, [2]])
+    with pytest.raises(ValueError, match="unknown bodies"):
+        model.body_distances(points, bodies=["hotend"])
+
+
 def test_signed_distance_is_the_nearest_body(model):
     distances, body = model.nearest_body([(0, 0, 10), (0, 0, 75), (70, 0, 80)])
     np.testing.assert_allclose(distances, [-10 * SIN40, -5.0, -10.0])
@@ -211,6 +233,15 @@ def test_boxes_follow_the_axes_they_are_attached_to(boxes):
     # The beam follows Y only: centred on y = 200 now, still x 0..300.
     assert boxes.body_distances([(150, 200, 85)], head)[0, 2] == pytest.approx(-5.0)
     assert boxes.body_distances([(150, 200, 85)], (0.0, 0.0))[0, 2] == pytest.approx(195.0)
+
+
+def test_boxes_take_one_head_position_per_point(boxes):
+    heads = np.array([[100.0, 200.0], [0.0, 0.0]])
+    points = np.array([[113.0, 214.0, 30.0], [150.0, 200.0, 85.0]])
+    distances = boxes.body_distances(points, heads)
+    assert distances[0, 0] == pytest.approx(5.0)       # hotend, moved with the head
+    assert distances[1, 2] == pytest.approx(195.0)     # beam, head at y = 0
+    np.testing.assert_allclose(distances[0], boxes.body_distances(points[:1], heads[0])[0])
 
 
 def test_box_violations_name_the_body(boxes):

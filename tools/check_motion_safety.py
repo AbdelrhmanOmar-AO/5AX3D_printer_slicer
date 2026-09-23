@@ -7,15 +7,24 @@ Checks available:
     it? The nozzle is the 40-degree cone of `atom.clearance`, placed along
     each point's own tool orientation, up to the gantry level. numpy and
     scipy only, so it runs anywhere in seconds.
+``swept`` (P4.2)
+    Every machine state *between* the points too: moves that turn the tool
+    and all travel are split into small steps, the bed is posed by the
+    forward kinematics, and the part so far, the bed corners and the nozzle
+    are checked against the clearance model. Axis ranges and the tilt limit
+    between points are not checked yet (they come from the P1.4 validator).
+    Needs Taichi; runs on the CPU unless ``ATOM_TI_ARCH`` says otherwise.
 
-Every file is checked in its own part frame. Several files, or a directory
-of them, can be given at once; the P0.8 archive ``reports/toolpaths/`` holds
-the stock toolpaths of the whole baseline matrix, up to 30 degrees of tilt.
+Every file is solved re-centred on the bed, as `toolpath_to_gcode` does.
+Several files, or a directory of them, can be given at once; the P0.8
+archive ``reports/toolpaths/`` holds the stock toolpaths of the whole
+baseline matrix, up to 30 degrees of tilt.
 
 Usage
 -----
-    python tools/check_motion_safety.py data/toolpath/ramp60_s_smoothed.npz
-    python tools/check_motion_safety.py reports/toolpaths --json reports/motion_safety/stock_nozzle.json
+    python tools/check_motion_safety.py data/toolpath/ramp60_s_platform.npz
+    python tools/check_motion_safety.py reports/toolpaths --json reports/motion_safety/stock.json
+    python tools/check_motion_safety.py part.npz --checks nozzle
 
 Exit status: 0 when every file is clear, 1 when any collision is found, 2 on
 bad input.
@@ -26,6 +35,7 @@ from __future__ import annotations  # no Taichi kernels in this module
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -44,7 +54,7 @@ from atom import toolpath_view as tv  # noqa: E402
 #: Version of the report layout.
 SCHEMA_VERSION = 1
 
-CHECKS = ("nozzle",)
+CHECKS = ("nozzle", "swept")
 
 
 def expand_inputs(paths) -> list[Path]:
@@ -66,7 +76,8 @@ def file_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
-def check_file(path: Path, profile, settings: dict, limit: int) -> dict:
+def check_file(path: Path, profile, settings: dict, limit: int,
+               checks=CHECKS, model=None) -> dict:
     """Run the requested checks on one toolpath file; a JSON-ready dict."""
     arrays = tv.load_toolpath_arrays(path)
     toolpath = SimpleNamespace(**arrays)
@@ -79,27 +90,63 @@ def check_file(path: Path, profile, settings: dict, limit: int) -> dict:
         "checks": {},
     }
 
-    started = time.perf_counter()
-    result = nm.check_toolpath(toolpath, profile, **settings)
-    report = result.to_dict(limit=limit)
-    report["seconds"] = round(time.perf_counter() - started, 2)
-    entry["checks"]["nozzle"] = report
+    if "nozzle" in checks:
+        started = time.perf_counter()
+        result = nm.check_toolpath(toolpath, profile, **settings)
+        report = result.to_dict(limit=limit)
+        report["seconds"] = round(time.perf_counter() - started, 2)
+        entry["checks"]["nozzle"] = report
+
+    if "swept" in checks:
+        from atom import tilt_motion_check as tmc
+
+        started = time.perf_counter()
+        result = tmc.check_toolpath(
+            toolpath, profile, model,
+            material_subsample_mm=settings["subsample_mm"],
+            tolerance_mm=max(settings["tolerance_mm"], tmc.SweptCheckSettings.tolerance_mm),
+        )
+        report = result.to_dict(limit=limit)
+        report["seconds"] = round(time.perf_counter() - started, 2)
+        entry["checks"]["swept"] = report
+
     entry["ok"] = all(check["ok"] for check in entry["checks"].values())
     return entry
 
 
 def summary_line(entry: dict) -> str:
-    nozzle = entry["checks"]["nozzle"]
-    verdict = "clear" if entry["ok"] else "COLLISION"
-    detail = ""
-    if not nozzle["ok"]:
-        detail = (f"  {nozzle['collisions']} positions "
-                  f"({nozzle['collisions_while_printing']} printing, "
-                  f"{nozzle['collisions_while_travelling']} travelling), "
-                  f"deepest {nozzle['max_depth_mm']:.2f} mm")
+    parts = []
+    seconds = 0.0
+    for name, check in entry["checks"].items():
+        seconds += check["seconds"]
+        if check["ok"]:
+            continue
+        if name == "nozzle":
+            parts.append(f"nozzle: {check['collisions']} positions "
+                         f"({check['collisions_while_printing']} printing, "
+                         f"{check['collisions_while_travelling']} travelling), "
+                         f"deepest {check['max_depth_mm']:.2f} mm")
+        else:
+            kinds = ", ".join(f"{kind} {n}" for kind, n in check["violations_by_kind"].items())
+            parts.append(f"swept: {check['violations']} moves ({kinds})")
+    verdict = "clear" if entry["ok"] else "COLLISION  " + "; ".join(parts)
     return (f"{Path(entry['file']).name:<34} {entry['points']:>8} pts  "
             f"tilt <= {entry['max_tilt_deg']:5.1f} deg  "
-            f"{nozzle['seconds']:6.1f} s  {verdict}{detail}")
+            f"{seconds:6.1f} s  {verdict}")
+
+
+def ensure_taichi() -> str:
+    """Start Taichi (CPU unless ``ATOM_TI_ARCH`` says otherwise) if nothing has
+    yet, and name the backend in use. Re-initialising would reset a runtime
+    another caller (a test session, say) is already using."""
+    import taichi as ti
+
+    from atom.ti_env import init_taichi
+    from atom.ti_env import current_arch_name
+
+    if ti.lang.impl.get_runtime().prog is None:
+        init_taichi("cpu", log_level="error")
+    return current_arch_name()
 
 
 def main(argv=None) -> int:
@@ -108,6 +155,8 @@ def main(argv=None) -> int:
                         help="toolpath .npz files, or directories of them")
     parser.add_argument("--machine", default=None,
                         help="machine profile (default: ATOM_MACHINE, else reference)")
+    parser.add_argument("--checks", default=",".join(CHECKS),
+                        help=f"comma-separated, from {', '.join(CHECKS)} (default: all)")
     parser.add_argument("--subsample", type=float, default=None, metavar="MM",
                         help="thin earlier material to one point per voxel of this size")
     parser.add_argument("--tolerance", type=float, default=0.0, metavar="MM",
@@ -125,23 +174,41 @@ def main(argv=None) -> int:
               file=sys.stderr)
         return 2
 
+    checks = tuple(name.strip() for name in args.checks.split(",") if name.strip())
+    unknown = sorted(set(checks) - set(CHECKS))
+    if unknown or not checks:
+        print(f"Unknown check(s): {', '.join(unknown) or 'none given'}; "
+              f"choose from {', '.join(CHECKS)}", file=sys.stderr)
+        return 2
+
+    if args.machine is not None:
+        # The kinematics bake the machine in when first imported (hazard 12),
+        # which happens lazily below, so this reaches them.
+        os.environ[machine_profile.ENV_VAR] = args.machine
     profile = machine_profile.load_profile(args.machine)
     model = clearance.load_clearance(profile)
     settings = {"subsample_mm": args.subsample, "tolerance_mm": args.tolerance}
 
+    backend = None
+    if "swept" in checks:
+        backend = ensure_taichi()
+
     entries = []
     for path in files:
-        entry = check_file(path, profile, settings, args.limit)
+        entry = check_file(path, profile, settings, args.limit, checks, model)
         print(summary_line(entry), flush=True)
         entries.append(entry)
 
     report = {
         "schema_version": SCHEMA_VERSION,
         "tool": "tools/check_motion_safety.py",
-        "checks": list(CHECKS),
+        "checks": list(checks),
         "machine": profile.name,
         "machine_status": profile.status,
         "clearance_model": model.describe(),
+        # Plan rule 10: the backend beside every number. The nozzle check is
+        # numpy only; the swept check's kinematics run on this backend.
+        "taichi_backend": backend,
         "files": entries,
         "ok": all(entry["ok"] for entry in entries),
     }

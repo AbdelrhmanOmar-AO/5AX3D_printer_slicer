@@ -103,21 +103,22 @@ section 5.
    the operator merges it into `main`; no validator code is written twice.
 2. **Part proxy in P4.2:** the convex hull is used **for the gantry only**
    (exact there, since the gantry is flat). The nozzle cone is checked
-   against the real printed points, thinned. The plan's hull-for-everything
-   would raise false collisions whenever the nozzle works inside a hollow.
-   To be recorded as a deviation in `plan_corrections.md` 7b with P4.2.
+   against the real printed points. The plan's hull-for-everything would
+   raise false collisions whenever the nozzle works inside a hollow. Thinning
+   the points is available (`--subsample`) but was not needed: every point
+   is fast enough at these sizes. Recorded in `plan_corrections.md` 7b P4-3.
 3. **Viewer:** wire the clearance model into the viewer **after P4.2**, so it
    shows exactly what the swept check reports. Needs a laptop check.
 
 | Task | Status |
 |---|---|
-| P4.1 Clearance model | **Built**: `src/atom/clearance.py`, `tests/test_clearance.py` (36 tests). Reference proxy (nozzle cone 40 degrees half-angle up to 70 mm, gantry half-space above) plus the box format for M3. Agrees with the IK's own bed-corner lift to 0.002 mm. |
-| P4.3 Nozzle vs printed material | **Built**: `src/atom/nozzle_material_check.py`, `tools/check_motion_safety.py`, tests (28). Every nozzle position against earlier material, exact, about 2 s for the golden cube, which is clear. Not yet run on large-tilt toolpaths (the P0.8 archive is on the laptop). |
-| P4.2 Swept check | After P4.3; axis-range and tilt-limit part waits for P1.4 in `main` |
+| P4.1 Clearance model | **Built**: `src/atom/clearance.py`, `tests/test_clearance.py` (39 tests). Reference proxy (nozzle cone 40 degrees half-angle up to 70 mm, gantry half-space above) plus the box format for M3. Agrees with the IK's own bed-corner lift to 0.002 mm. |
+| P4.3 Nozzle vs printed material | **Built**: `src/atom/nozzle_material_check.py`, `tools/check_motion_safety.py`, tests (23, plus 7 for the tool). Every nozzle position against earlier material, exact, about 2 s for the golden cube, which is clear. Not yet run on large-tilt toolpaths (the P0.8 archive is on the laptop). |
+| P4.2 Swept check | **Built (collision part)**: `src/atom/tilt_motion_check.py`, added to `tools/check_motion_safety.py` (`--checks swept`), tests (13). Golden cube: 0 violations over 49 063 states. **Axis-range and tilt-limit checks between points wait for P1.4 in `main`**, then this task is finished. |
 | P4.4 Safe travel | Only if P4.2/P4.3 find problems |
 | Viewer wiring | After P4.2 |
 
-Unit suite on the branch: 515 passed, 13 skipped.
+Unit suite on the branch: 534 passed, 13 skipped.
 
 ---
 
