@@ -1,5 +1,7 @@
 # Corrections and deviations from SLICER_BUILD_PLAN v3
 
+The plan itself is `docs/SLICER_BUILD_PLAN.md`, currently **v3.3** (2026-09-23).
+
 Everything found so far that contradicts the build plan, or where the
 implementation deliberately departs from it. Build plan section 0 rule 6 says
 to report contradictions rather than work around them silently; this is that
@@ -9,8 +11,11 @@ report.
 **PLAN EDIT** should be corrected in the plan document itself, because a later
 task will be written against the wrong fact.
 
-Last updated: 2026-09-22. Phase P0 complete; the P0.8 matrix is being re-run
-against corrected metrics.
+Last updated: 2026-09-23. Phase P0 complete, P0.8 matrix included, and merged
+into `main` (pull request #2). P1 and P4 are now built in two parallel
+sessions: **each session adds its items only under its own heading in
+section 7**, and they are renumbered into sections 1–4 once, when both
+branches are merged.
 
 ---
 
@@ -185,6 +190,21 @@ exactly. P1.1 should also check the physical pose: build the pose with
 `tests/test_bed_motion.py` pins the gap below 0.2 degrees. The kinematics
 maths is left unchanged.
 
+### 1.10 Plan v3.3 still carries stale P0 text ★ PLAN EDIT
+
+Found when reading v3.3 against the repository after P0 was merged:
+
+| Where in the plan | What it says | What is true |
+|---|---|---|
+| §0.1 and the P0 "Where it lives" line | working branch `claude/new-session-l8g46d` | P0 is in `main`; each session has its own branch (2.13) |
+| §4 lane diagram | `P0 ✅ (P0.8 matrix run pending)` | the matrix is done (48 of 48, metrics v2) |
+| §4 phase table, P0 row | "**Pending:** running the P0.8 matrix" | done |
+| Appendix A, P0 row | "344 unit tests" and "P0.8 matrix (24 runs) **pending**" | 451 unit tests; matrix done |
+| Appendix E source line | corrections "on branch `claude/new-session-l8g46d`" | now in `main` |
+| §0.4 hazard list | numbered 1–15, then 17, 18, 19, then 16 | hazard 16 is out of order |
+
+None of these changes a task. They mislead a cold reader about what is done.
+
 ## 2. Deliberate deviations
 
 ### 2.1 Golden baseline taken at this fork's `main`, not upstream
@@ -258,7 +278,7 @@ orientation steps stay small, and before `add_platform`, which adds sacrificial
 material below the part that is not part of its geometry and would distort both
 the support test and the surface sampling.
 
-### 2.9 Single branch instead of one branch per task
+### 2.9 Single branch instead of one branch per task (superseded by 2.13)
 
 Plan section 0.1 wants `p<phase>/<task-id>-<short-slug>` branches with one pull
 request each. All work is on `claude/new-session-l8g46d`, one commit per task,
@@ -338,6 +358,29 @@ and V with `kinematics3z.forward` (the vendored
 cube this reproduces the toolpath the G-code was written from within
 **0.0001 mm**, so the reader checks that the G-code and the `.npz` belong to
 the same run before it pairs them.
+
+### 2.13 One branch per session, merged into `main` by pull request ★ PLAN EDIT
+
+2.9 described P0: one branch for everything, `main` untouched. On 2026-09-23 the
+operator merged that work (P0, P5.4 and the plan) into `main` through pull
+request #2, merge commit `d2d39c3`. From then on:
+
+* each Claude Code session works on **its own branch**, started from `main`,
+  with one commit per task as before;
+* the operator merges a session's branch into `main` through a pull request;
+  Claude Code never merges into `main` and never pushes to another session's
+  branch;
+* a session that needs another session's finished work gets it by merging
+  `main` into its own branch, never by merging the other branch directly.
+
+Plan §0 rule 2 ("if a dependency is not merged into `main`, stop") therefore
+now applies literally: P4 can use P1.4 once the P1 branch carrying it has been
+merged into `main`.
+
+The golden baseline commit is unchanged: `e7b71ea`, the fork's original `main`
+(2.1). Merging P0 did not move it.
+
+Plan §0.1 should describe this protocol and stop naming a single branch.
 
 ## 3. Environment facts the plan asked to establish
 
@@ -541,6 +584,22 @@ diagnostic the assertion was written to print. `pipeline_stats` now passes
 `encoding="utf-8", errors="replace"` and sets `PYTHONIOENCODING=utf-8` for the
 child, which `run_baseline_matrix.ps1` already did for its own runs.
 
+### 3.11 A fresh session container is missing runtime dependencies
+
+The first unit-test run in a new session container (Python 3.11, 2026-09-23)
+reported **48 failures**, all `ModuleNotFoundError: No module named 'tqdm'`.
+`tqdm` is a runtime dependency in `pyproject.toml`, but `atom` cannot be
+pip-installed there (the `< 3.11` pin), so its dependencies are not pulled in.
+After installing them the suite gave 451 passed, 13 skipped, matching the
+laptop.
+
+It looks like broken code, not a missing package. Before trusting a failing
+first run, install:
+
+```
+pip install pytest pytest-timeout numpy scipy trimesh jsonschema taichi tqdm
+```
+
 ## 4. Implementation hazards found while building
 
 ### 4.1 `M98 P"/macros/enable3Z.g"` parses as an `E3` word
@@ -726,14 +785,16 @@ laptop.
 |---|---|
 | P0.8 matrix | **Done** (2026-09-23): 48 of 48 at metrics v2. The first run, 48 runs in 19.9 h, produced sound tilt and runtime data but unusable unsupported figures; `--reanalyse` recovered 39 of those from their archived toolpaths. |
 | Gates M1, M2, M3, E1 | Deferred by the team until the mechanical design is settled |
-| Gate D0 (tilt budget, benchmark geometry) | Needs the re-run matrix and P2.1's analytic bound |
+| Gate D0 (tilt budget, benchmark geometry) | Matrix done. Still needs P2.1's analytic bound, the team's decision, and ideally M2 |
 | T-shape `underside_angle_deg` | Defaults to 90; gate D0 picks the real value |
 | Thresholds (45 deg effective, 1 % unsupported) | Placeholders, gate D0. Now meaningful: with the metric fixed, parts can actually pass. |
-| `twin_domes` verdict | Reports "not printable" when it has no overhang to measure. Conservative by design but misleading in the table; distinguishing "nothing to measure" from "failed" is worth doing. |
+| `twin_domes` verdict | **Closed** (P0.9b): reports carry `verdict.assessable`, and the summary prints "– no overhang". |
 | Which stage first diverges across backends | 3.9 argues the field solvers, from which stages change backend and how the planner works. Not measured stage by stage. The atom count in `data/frame/<part>.npz` settles it in one command if it ever matters. |
-| Backend recorded beside each number | 3.9's consequence 4. The reports in `reports/` do not record which backend produced them; all 48 used the stock mix, but nothing in the files says so. Worth adding before any run happens on another machine. |
-| `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk |
+| Backend recorded beside each number | 3.9's consequence 4. The reports in `reports/` do not record which backend produced them; all 48 used the stock mix, but nothing in the files says so. Now plan task **P1.7** (provenance block plus backfill). |
+| `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk. Now plan task **P1.6** |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
+| P4 vs P1.4 ordering | P4 depends on P1.4 (the validator). Which P4 tasks start before P1.4 reaches `main` is the operator's call; P4.1 and P4.3 do not use it |
+| P2 | No session assigned. Waits on gate D0; P2.0 and P2.1 do not |
 
 ## 6. Quick index
 
@@ -760,3 +821,22 @@ And the two habits that caught most of them:
   chasing (4.6 was found exactly this way).
 * Check a metric against a case whose answer is known before putting its
   output in a table (3.7).
+
+## 7. Parallel sessions: items found during P1 and P4
+
+Two sessions run at once from 2026-09-23 (`docs/handoff.md` section 0). To
+avoid both editing the same numbered list (the 4.12/4.13 collision,
+`handoff.md` 7c), each session adds items **only under its own heading
+below**, numbered `P1-1`, `P1-2`, … or `P4-1`, `P4-2`, …, using the same
+categories as sections 1–4 (factual error, deliberate deviation, environment
+fact, hazard) and the same **PLAN EDIT** marker. When both branches are in
+`main`, the items move into sections 1–4 with ordinary numbers, and every
+citation of them is updated in the same commit.
+
+### 7a. P1 session (`claude/vibrant-rubin-waln7y`)
+
+None yet.
+
+### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
+
+None yet.
