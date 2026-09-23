@@ -101,7 +101,7 @@ overhang-aware field: the project's actual contribution.
 | P0.1 Dev environment and packaging | **Done**, verified on the laptop |
 | P0.2 Golden baseline | **Done**. Deterministic; captured, committed and passing |
 | P0.3 Test harness and CI | **Done**, verified on the laptop |
-| P0.4 Taichi arch helper (`ti_env`) | **Done**. All 23 `ti.init` calls route through `ATOM_TI_ARCH` |
+| P0.4 Taichi arch helper (`ti_env`) | **Done**. All 23 `ti.init` calls route through `ATOM_TI_ARCH`. The CPU golden run — its last exit criterion — is answered below: the hash differs, by design |
 | P0.5 Machine profiles | **Done**. Golden test passed after it: G-code byte-identical |
 | P0.6 Tilt contracts and conventions | **Done**. `atom.tilt`, `atom.contracts`, `docs/conventions.md` |
 | P0.7 Benchmark meshes | **Done**. 36 meshes, 9 parts x 4 sizes |
@@ -121,17 +121,45 @@ confirm it.
 
 ### Verification status
 
-Both laptop verifications have passed:
+The laptop verifications have passed:
 
 | Check | Result |
 |---|---|
 | `pytest --run-pipeline tests/test_golden.py` | 3 passed in 457 s, after the P0.5 vendored edit |
 | `python tools/atomize.py data/param/ramp60_xs.json` | ran normally; the generated meshes are pipeline-valid |
+| `ATOM_TI_ARCH=cpu pytest --run-pipeline tests/test_golden.py` | **Hash differed**, by design — see below |
 
 The golden baseline is committed (`tests/golden/calibration_cube.stats.json`,
 `calibration_cube.toolpath.npz`), so it no longer lives on one machine.
 
 **Re-run the golden test after every vendored edit.** About 7.5 minutes.
+
+#### The CPU golden run, and why it did not match (P0.4's last exit criterion)
+
+P0.4 asked for the golden test with every stage forced onto the CPU. It ran on
+2026-09-23 (19 min 54 s) and the SHA-256 **differed**. The difference is not
+float noise: **+2.44 % G1 moves, three fewer deposition runs, twenty fewer fan
+toggles, 8 mm less extrusion.** The CPU backend produced a different toolpath.
+
+The reason, in one line: `ATOM_TI_ARCH=cpu` moves the *iterative field solvers*
+off CUDA (`order_atoms` was always on the CPU); their last-bit differences pass
+through a threshold in `extract_explicit_atoms`, and the greedy planner then
+amplifies a few flipped atoms into a different path. Nothing is broken. Full
+measurement and reasoning: `docs/plan_corrections.md` **3.9**;
+`tests/golden/baseline.md` carries the same table.
+
+**The three things a later session needs to take from it:**
+
+1. The golden hash is valid **only on the stock backend mix**. `test_golden.py`
+   now skips the hash when `ATOM_TI_ARCH` is set and checks invariants plus a
+   6 % / 2 % drift tolerance instead.
+2. **The 48-run baseline matrix is unaffected.** `run_baseline_matrix.ps1` never
+   sets `ATOM_TI_ARCH`, so every run used the same mix as the golden capture.
+3. **Runs from a CPU-only machine cannot be pooled with the laptop's.** This
+   bears directly on the plan to use university CPU machines (section 3): a
+   stock-vs-overhang-aware comparison must be measured on **one** machine, or
+   the backend difference will be credited to the contribution. Always record
+   the backend beside a reported number.
 
 ### The immediate next step
 
@@ -378,6 +406,36 @@ PowerShell being closed — and lost about 40 minutes of work in total.
 
 Three flaws in the metric were found and fixed before this run
 (`plan_corrections.md` 4.5, 4.6, 1.8); 3.7 records the validation.
+
+## 7c. Two sessions ran in parallel, and have been merged
+
+Worth knowing, because the branch history shows it and the numbering of the
+corrections moved.
+
+For about a day two Claude Code sessions worked on the same branch family: one
+finished **P0.8** (the 48-run matrix, the resume machinery, metrics v2) and one
+built **P5.4** (`tools/visualize_5ax.py`, `tools/viewer_qt.py`,
+`src/atom/toolpath_view.py`, `src/atom/bed_motion.py` and their tests). They
+touched disjoint code; only the two living documents overlapped. Merged on
+2026-09-23 in commit `b88d897`, on `claude/new-session-l8g46d`.
+
+**One renumbering to be aware of.** Both sessions added a correction `4.12`.
+The P0.8 session had already shifted 4.7 through 4.12 down by one when it
+inserted a new 4.7; the viewer session's VTK-timer entry is therefore now
+**4.13**, and its citations in `tools/viewer_qt.py` and in correction 2.11
+follow it. Nothing else was renumbered, so any other reference either session
+wrote still points where it did. If an older note cites "4.12" for the VTK
+timer, it means 4.13.
+
+**The lesson for the next parallel pair:** the code merged without a single
+conflict, and the only friction was two people numbering a list. If two
+sessions run again, have each append its corrections under a session-specific
+heading and renumber once at merge time, rather than both editing the same
+counter.
+
+**Also relevant:** `pyproject.toml` gained an optional `gui` extra (PySide6,
+pyvistaqt). Without it the viewer falls back to the classic pyvista window, and
+CI installs neither, so `tests/test_viewer_qt.py` skips there.
 
 ## 8. Gates (blocked on other people)
 

@@ -381,10 +381,14 @@ voxel remesh, the SMOOTH modifier and `bpy.ops.wm.obj_export` with its named
 arguments all still work. Blender is invoked exactly once in the pipeline, so
 that single check covers every use of it.
 
-### 3.4 The pipeline is deterministic
+### 3.4 The pipeline is deterministic on one backend, not across backends
 
 Two consecutive runs of the calibration cube produced identical statistics, so
 golden comparisons use the G-code SHA-256 directly rather than float tolerances.
+
+**That holds per backend only.** Change which backend a stage runs on and the
+toolpath changes — see 3.9 for the measurement. The hash is a valid check of
+"nothing regressed"; it is not a valid check of "these two machines agree".
 
 ---
 
@@ -446,6 +450,96 @@ golden file. Axis values differ by up to about 4e-5 mm and total extrusion by
 SHA-256 therefore differs, so **the golden SHA check only holds on the
 backend the baseline was captured on** (CUDA, on the operator's laptop).
 Comparisons across backends need tolerances, not hashes.
+
+### 3.9 Forcing every stage onto the CPU changes the toolpath, not just its digits ★ PLAN EDIT
+
+P0.4's exit criterion asks for the golden test under `ATOM_TI_ARCH=cpu`, and
+says a difference is fine to "note". It is worth more than a note.
+
+The run (2026-09-23, operator's laptop, 19 min 54 s) **failed the hash check**,
+and the differences are structural:
+
+| Statistic | Golden (stock mix) | `ATOM_TI_ARCH=cpu` | Change |
+|---|---:|---:|---:|
+| Lines | 47 910 | 49 057 | +1 147 |
+| `G1` | 47 837 | 49 004 | +1 167 (+2.44 %) |
+| `M106` (fan toggles) | 50 | 30 | -20 |
+| Total extrusion | 3231.197 mm | 3223.138 mm | -8.06 mm (-0.25 %) |
+| Total retraction | 1060.0 mm | 1054.0 mm | -6.0 mm |
+| Retracts / primes | 530 / 529 | 527 / 526 | -3 / -3 |
+| X, Y moves | 46 777 | 47 950 | +1 173 |
+| Z, U, V moves | 46 778 | 47 951 | +1 173 |
+| U max | 87.042015 | 87.247643 | +0.21 mm |
+| V max | 110.051544 | 109.963348 | -0.09 mm |
+
+Three fewer retractions means the planner built **three fewer deposition
+runs**: a different chaining of the atoms, not a rounding difference. Twenty
+fewer fan toggles means the path crosses `z_fan_on = 2.0` mm twenty times less
+often. This is a different toolpath.
+
+**Why.** The stages do not all default to the same backend:
+
+| Backend by default | Stages |
+|---|---|
+| `gpu` (CUDA on the laptop) | `bpn_to_sdf`, `compute_tool_orientations`, `sdf_df_to_layers`, `compute_tangents`, `align_atoms`, `extract_explicit_atoms`, `add_platform`, `toolpath_to_gcode` |
+| `cpu` | `obj_to_bpn`, `sdf_to_isdf`, **`order_atoms`**, `smooth_toolpath_point`, `tesselate_toolpath_orientations` |
+
+So `ATOM_TI_ARCH=cpu` moves exactly the **field solvers** off CUDA, and leaves
+the planner where it already was. Those solvers are iterative
+(`direction.py`, `phasor3.py`, `triphasor3.py` each run a multigrid loop) and
+their kernels use `sqrt`, `atan2` and fused multiply-add, which CUDA's
+libdevice and LLVM's x64 lowering do not compute to the same last bit. The
+fields therefore converge to very slightly different solutions;
+`extract_explicit_atoms` then applies a **threshold**
+(`frame_field_filter_point_too_close_to_boundary`), so a handful of atoms fall
+on the other side of it; and `order_atoms` is a **sequential greedy chain**, so
+a few flipped atoms near the start redirect the rest of the path. Small input
+difference, amplified by a threshold, amplified again by a greedy planner.
+
+The planner itself is not the culprit and is not at fault: its counters
+(`toolpath3.Field.insert`, `set.insert_u32`) increment in Python, sequentially,
+so given the same atoms it produces the same path. Nothing here is a bug.
+
+**Consequences.**
+
+1. **The golden SHA-256 is valid only on the captured mix.** `test_golden.py`
+   now skips the hash assertion when `ATOM_TI_ARCH` is set, and checks
+   invariants plus a 6 % / 2 % drift tolerance instead
+   (`test_forced_backend_stays_within_tolerance`). A tolerance loose enough to
+   pass the table above would not guard anything, so the two cases are separate
+   tests rather than one loosened one.
+2. **The 48-run baseline matrix is unaffected.** `scripts/run_baseline_matrix.ps1`
+   never sets `ATOM_TI_ARCH`, so all 48 runs used the same stock mix as the
+   golden capture. The baseline is internally consistent and comparable to it.
+3. **Results from a CPU-only machine cannot be pooled with the laptop's.** This
+   matters for the plan to buy time on university CPU machines: a matrix run
+   there is a different computation, so its numbers belong in their own group,
+   or the comparison run has to be redone on the same machine. Comparing a
+   stock run from one machine against an overhang-aware run from another would
+   attribute a backend difference to the contribution.
+4. **The plan should say which backend a reported number came from.** Every
+   table in `reports/` and in the paper needs the backend recorded beside it.
+
+**Cheap diagnostic if this needs pinning down further.** `data/frame/<part>.npz`
+holds the extracted atoms; the golden run has 31 630 of them
+(`tests/golden/baseline.md`). If a CPU run's count differs, the divergence is
+upstream of `order_atoms`, as argued above; if it matches exactly and the
+G-code still differs, the argument is wrong and the planner is where to look.
+The file from the 2026-09-23 CPU run is still on the laptop.
+
+### 3.10 The golden test lost its own failure message on Windows
+
+The same CPU run raised, in the middle of the test, a
+`UnicodeDecodeError: 'charmap' codec can't decode byte 0x8d in position 49`
+from `subprocess`'s reader thread. `subprocess.run(..., text=True)` decodes
+with the locale codec, which is cp1252 on the operator's laptop, and one
+non-ASCII byte in a stage's output is enough to raise.
+
+It was harmless here only because the run's exit code was 0. Had a stage
+failed, the exception would have destroyed `stdout` and `stderr` — the whole
+diagnostic the assertion was written to print. `pipeline_stats` now passes
+`encoding="utf-8", errors="replace"` and sets `PYTHONIOENCODING=utf-8` for the
+child, which `run_baseline_matrix.ps1` already did for its own runs.
 
 ## 4. Implementation hazards found while building
 
@@ -630,12 +724,14 @@ laptop.
 
 | Item | Status |
 |---|---|
-| P0.8 matrix | **Re-running** (2026-09-22) against the corrected metrics. The first run, 48 runs in 19.9 h, produced sound tilt and runtime data but unusable unsupported figures. |
+| P0.8 matrix | **Done** (2026-09-23): 48 of 48 at metrics v2. The first run, 48 runs in 19.9 h, produced sound tilt and runtime data but unusable unsupported figures; `--reanalyse` recovered 39 of those from their archived toolpaths. |
 | Gates M1, M2, M3, E1 | Deferred by the team until the mechanical design is settled |
 | Gate D0 (tilt budget, benchmark geometry) | Needs the re-run matrix and P2.1's analytic bound |
 | T-shape `underside_angle_deg` | Defaults to 90; gate D0 picks the real value |
 | Thresholds (45 deg effective, 1 % unsupported) | Placeholders, gate D0. Now meaningful: with the metric fixed, parts can actually pass. |
 | `twin_domes` verdict | Reports "not printable" when it has no overhang to measure. Conservative by design but misleading in the table; distinguishing "nothing to measure" from "failed" is worth doing. |
+| Which stage first diverges across backends | 3.9 argues the field solvers, from which stages change backend and how the planner works. Not measured stage by stage. The atom count in `data/frame/<part>.npz` settles it in one command if it ever matters. |
+| Backend recorded beside each number | 3.9's consequence 4. The reports in `reports/` do not record which backend produced them; all 48 used the stock mix, but nothing in the files says so. Worth adding before any run happens on another machine. |
 | `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
 
@@ -654,6 +750,7 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 4.6 | Sampling by face centroid under-measures large flat faces; subdivide first |
 | 4.7 | An overwriting run makes an interrupted re-run look complete; version the metrics |
 | 4.8 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
+| 3.9 | The golden SHA-256 holds only on the backend mix it was captured on |
 | 4.13 | Create VTK timers after the interactor is initialised, or they never fire on Windows |
 
 And the two habits that caught most of them:
