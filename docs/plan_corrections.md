@@ -1036,6 +1036,30 @@ rather than in source.
   enable/disable markers from `gcode_templates.MACRO_CALLS`, the strings the
   header writes, rather than keeping a copy.
 
+#### P1-12 How P1.3 wires the infill settings, and one knock-on for the viewer
+
+*Deliberate choices within P1.3, and a follow-up for another owner.*
+
+* **Units are deposition widths**, as `fff3.sdf_generate_infill` uses them.
+  The plan does not say. With 0.9 mm beads the defaults are a 7.2 mm period
+  and a 1.8 mm shell.
+* **Fractional values are accepted**, since the kernel takes floats. The
+  period must be above zero, because the kernel takes the position modulo it.
+  The shell must be zero or more. No upper limit is set.
+* **Defaults stay upstream's ints (8, 2)** when no option is given, passed to
+  the kernel exactly as before. The options are added to the stage's command
+  only when the parameter file has the key.
+* **`tools/sdf_to_isdf.py` gained `parse_args()`** (vendored edit), so the
+  command line can be tested without Taichi. Taichi now starts after the
+  arguments are parsed, so a bad option fails before initialisation. The GUI
+  path is unchanged.
+* **Knock-on for the viewer (not changed here):** `atom.toolpath_view`'s
+  shell/infill colouring hard-codes a 2-width shell
+  (`tests/test_toolpath_view.py`, `plan_corrections.md` 2.11). For a part
+  printed with another `shell_thickness`, that colouring will be off. The
+  viewer is the P4 session's area (`docs/handoff.md` section 0), so this is
+  recorded for it, not edited.
+
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
 None yet.

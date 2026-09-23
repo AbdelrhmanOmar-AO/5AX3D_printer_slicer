@@ -10,6 +10,12 @@ import atom.drawer3
 import atom.fff3
 import atom.phasor3
 import atom.solid3
+from atom.infill_options import (
+    DEFAULT_INFILL_PERIOD,
+    DEFAULT_SHELL_THICKNESS,
+    check_infill_period,
+    check_shell_thickness,
+)
 
 
 @ti.kernel
@@ -18,7 +24,14 @@ def copy(input: ti.template(), output: ti.template()):
         output[i] = input[i]
 
 
-def sdf_to_isdf(bpn_path, sdf_path, isdf_path, no_gui=False):
+def sdf_to_isdf(
+    bpn_path,
+    sdf_path,
+    isdf_path,
+    no_gui=False,
+    infill_period=DEFAULT_INFILL_PERIOD,
+    shell_thickness=DEFAULT_SHELL_THICKNESS,
+):
     bpn = atom.solid3.BoundaryPointNormal()
     bpn.load(bpn_path)
     print(f"Domain size: {bpn.get_size()}")
@@ -33,9 +46,9 @@ def sdf_to_isdf(bpn_path, sdf_path, isdf_path, no_gui=False):
 
     offset = ti.math.vec3(0)
     offset_support = ti.math.vec3(0)
-    infill_period = 8
+    # Build plan P1.3: infill_period and shell_thickness are parameters now,
+    # in deposition widths; the defaults are upstream's 8 and 2.
     support_period = 4
-    shell_thickness = 2
     compute_support = False
     compute_infill = True
     gyroid = True
@@ -231,20 +244,43 @@ def sdf_to_isdf(bpn_path, sdf_path, isdf_path, no_gui=False):
         window.show()
 
 
-if __name__ == "__main__":
-    init_taichi("cpu")
-
+def parse_args(argv=None):
+    """The command line. Taichi is not needed to parse it."""
     parser = argparse.ArgumentParser(description="TODO")
     parser.add_argument("bpn_path")
     parser.add_argument("sdf_path")
     parser.add_argument("isdf_path")
     parser.add_argument("no_gui", nargs="?", default="False")
+    # Build plan P1.3. Without them the stage uses upstream's values exactly.
+    parser.add_argument(
+        "--infill-period", type=float, default=None,
+        help=f"Gyroid period in deposition widths (default {DEFAULT_INFILL_PERIOD}).",
+    )
+    parser.add_argument(
+        "--shell-thickness", type=float, default=None,
+        help=f"Solid shell under the surface in deposition widths (default {DEFAULT_SHELL_THICKNESS}).",
+    )
+    args = parser.parse_args(argv)
 
-    args = parser.parse_args()
+    args.no_gui = args.no_gui != "False" and args.no_gui != "0"
+    args.infill_period = (
+        DEFAULT_INFILL_PERIOD if args.infill_period is None else check_infill_period(args.infill_period)
+    )
+    args.shell_thickness = (
+        DEFAULT_SHELL_THICKNESS if args.shell_thickness is None else check_shell_thickness(args.shell_thickness)
+    )
+    return args
 
-    bpn_path = args.bpn_path
-    sdf_path = args.sdf_path
-    isdf_path = args.isdf_path
-    no_gui = args.no_gui != "False" and args.no_gui != "0"
 
-    sdf_to_isdf(bpn_path, sdf_path, isdf_path, no_gui)
+if __name__ == "__main__":
+    args = parse_args()
+    init_taichi("cpu")
+
+    sdf_to_isdf(
+        args.bpn_path,
+        args.sdf_path,
+        args.isdf_path,
+        args.no_gui,
+        infill_period=args.infill_period,
+        shell_thickness=args.shell_thickness,
+    )
