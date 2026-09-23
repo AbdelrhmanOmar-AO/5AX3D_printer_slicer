@@ -4,3 +4,14 @@ __pycache__
 *.egg-info
 imgui.ini
 .DS_Store
+# Test and pipeline run logs
+logs/
+run1.txt
+run2.txt
+run2.stats.json
+
+# Archived toolpaths from tools/overhang_report.py. Several hundred megabytes
+# for a full matrix, and regenerable by re-running. They exist so a change to
+# the metrics can be re-scored with --reanalyse instead of re-slicing, which is
+# a local concern; the JSON reports are the committed artifact.
+reports/toolpaths/

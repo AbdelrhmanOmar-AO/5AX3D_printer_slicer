@@ -2,12 +2,14 @@ import argparse
 import time
 from tqdm import tqdm
 import taichi as ti
+
+from atom.ti_env import init_taichi
 import numpy as np
 
 import atom.toolpath3
 import atom.kinematics3z
 
-ti.init(arch=ti.gpu)
+init_taichi("gpu")
 
 @ti.kernel
 def calculate_extrusion(point: ti.types.ndarray(), width: ti.types.ndarray(), height: ti.types.ndarray(), travel_type: ti.types.ndarray(), filament_diameter: ti.f32, extrusion: ti.types.ndarray()):

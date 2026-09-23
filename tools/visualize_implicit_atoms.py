@@ -3,11 +3,13 @@ import argparse
 import numpy as np
 import taichi as ti
 
+from atom.ti_env import init_taichi
+
 import atom.drawer3
 import atom.solid3
 import atom.triphasor3
 
-ti.init(arch=ti.gpu, offline_cache_cleaning_policy="never")
+init_taichi("gpu", offline_cache_cleaning_policy="never")
 
 
 def visualize_implicit_atoms():

@@ -1,11 +1,13 @@
 import argparse
 
 import taichi as ti
+
+from atom.ti_env import init_taichi
 import numpy as np
 import atom.toolpath3
 import atom.kinematics3z
 
-ti.init(arch=ti.gpu)
+init_taichi("gpu")
 
 def add_platform(input_path, output_path, nozzle_width, layer_height):
     toolpath = atom.toolpath3.Toolpath()

@@ -1,0 +1,33 @@
+{
+    "_comment": "Our 5-axis printer. EVERY NUMBER BELOW IS A PLACEHOLDER copied from reference.json. The mechanical design is not finished, so none of these have been measured. Loading this profile prints a warning and raises PlaceholderProfileWarning. Replace the values, then set status to 'verified', only once the mechanical team supplies measurements (build plan task P6.1).",
+    "_gate": "M1 (bed geometry, travel, clearances) and M2 (tilt budget: max tilt on both axes at once, cone or box, whether the design can exceed 30 degrees, and whether reachable tilt varies with position)",
+
+    "name": "ours",
+    "status": "PLACEHOLDER",
+    "firmware_dialect": "rrf",
+    "tilt_limit_shape": "cone",
+
+    "ball_2dpos_0": [-4.07, -12.16],
+    "ball_2dpos_1": [304.93, -12.16],
+    "ball_2dpos_2": [150.43, 296.84],
+    "ball_z": -45.7,
+    "rail_angle_0": 29.89,
+    "rail_angle_1": -29.89,
+    "rail_angle_2": 90.0,
+    "z_offset": 75.0,
+
+    "max_tilt_angle_deg": 30.0,
+    "max_x_axis": 300,
+    "max_y_axis": 293,
+    "max_z_axis": 280,
+    "ball_to_corner": 10,
+    "nozzle_to_gantry": 70,
+
+    "filament_diameter": 1.75,
+    "deposition_feedrate": 600,
+    "travel_feedrate": 3000,
+    "z_fan_on": 2.0,
+    "retract_thresh": 1.8,
+    "retract_length": 2.0,
+    "retract_speed": 2700
+}

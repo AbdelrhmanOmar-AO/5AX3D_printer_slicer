@@ -1,0 +1,14 @@
+# Development / test dependencies for the 5AX3D slicer fork.
+#
+# Runtime dependencies live in pyproject.toml ([project] dependencies).
+# Everything here is only needed to run the test suite and the helper tools
+# we add on top of vendored Atomizer; no vendored stage imports any of it.
+#
+# Install with:  pip install -e ".[dev]"
+# (this file mirrors [project.optional-dependencies] dev in pyproject.toml)
+
+pytest>=8.0,<10.0
+pytest-timeout>=2.3,<3.0
+trimesh>=4.0,<6.0
+scipy>=1.10,<2.0
+jsonschema>=4.0,<5.0

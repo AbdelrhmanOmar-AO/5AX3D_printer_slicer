@@ -2,10 +2,12 @@ import argparse
 
 import taichi as ti
 
+from atom.ti_env import init_taichi
+
 import atom.toolpath3
 from numpy import pi
 
-ti.init(arch=ti.cpu)
+init_taichi("cpu")
 
 
 def tesselate_toolpath_orientations():

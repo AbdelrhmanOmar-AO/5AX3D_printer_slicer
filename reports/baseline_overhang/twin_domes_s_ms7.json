@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "metrics_version": 2,
+  "part": "twin_domes_s",
+  "max_slope_deg": 7.0,
+  "overhang_aware": false,
+  "deposition_width_mm": 0.9,
+  "mesh": {
+    "volume_mm3": 17693.43151370542,
+    "face_count": 6828,
+    "sampled_face_count": 128256,
+    "extents_mm": [
+      50.0,
+      22.5,
+      21.989925384521484
+    ]
+  },
+  "toolpath": {
+    "point_count": 96261,
+    "deposition_count": 65028
+  },
+  "runtime": {
+    "total_s": 2294.7739857000124,
+    "stages": {
+      "Direction computation": 36.9,
+      "Implicit layer computation": 42.1,
+      "Tangent computation": 38.1,
+      "Atoms alignment": 124.9,
+      "Extracting explicit atoms": 2.7,
+      "Toolpath planner": 1856.0
+    }
+  },
+  "metrics": {
+    "max_tool_tilt_deg": 2.553053208207916,
+    "unsupported_fraction_overall": 0.0018607369133296426,
+    "unsupported_fraction_near_overhangs": NaN,
+    "deposition_points_near_overhangs": 0,
+    "surfaces": []
+  },
+  "verdict": {
+    "printable": false,
+    "worst_effective_deg": NaN,
+    "thresholds": {
+      "max_effective_overhang_deg": 45.0,
+      "max_unsupported_fraction": 0.01,
+      "_gate": "D0: placeholders, team decision pending"
+    }
+  }
+}

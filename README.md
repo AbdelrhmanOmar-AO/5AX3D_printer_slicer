@@ -91,6 +91,191 @@ conda activate atomizer
 pip install -e .
 ```
 
+### Development setup (this fork)
+
+Contributors to the 5-axis work should install the dev dependencies as well and
+use the setup script, which creates the environment, installs everything, and
+reports the Python / Blender / CUDA versions that later tasks depend on:
+
+```powershell
+.\scripts\setup_laptop.ps1
+```
+
+#### "Terms of Service have not been accepted" from conda
+
+Recent Miniconda releases refuse to install from Anaconda's own channels
+(`pkgs/main`, `pkgs/r`, `pkgs/msys2`) until their Terms of Service are accepted,
+failing with `CondaToSNonInteractiveError`. `setup_laptop.ps1` avoids this by
+creating the environment from **conda-forge**, which has no such prompt and no
+licence restriction for larger organisations. It provides the same Python 3.10,
+and every other dependency is installed by pip afterwards, so the slicer is
+unaffected.
+
+To use Anaconda's channels instead, accept their terms first:
+
+```powershell
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2
+.\scripts\setup_laptop.ps1 -Channel defaults
+```
+
+#### "conda"/"blender" is not recognized
+
+Neither the Miniconda nor the Blender installer puts itself on `PATH`, so both
+commands fail even after a successful install (and after a reboot). Fix both at
+once:
+
+```powershell
+.\scripts\fix_tool_paths.ps1
+```
+
+It locates each tool, appends it to your **user** `PATH` (no Administrator
+needed), runs `conda init powershell` so `conda activate` works, and prints
+what is still missing. Close and reopen PowerShell afterwards — `PATH` changes
+only reach newly-started shells.
+
+If several Blender versions are installed it prefers a version the pipeline has
+been verified against, because
+[`tools/process_for_atomizer.py`](tools/process_for_atomizer.py) drives the
+`bpy` API directly and those calls change across major Blender releases.
+
+| Version | Status |
+|---|---|
+| 4.4, 4.5 | Tested upstream |
+| 5.2.1 LTS | Verified here on the calibration cube (STL import, voxel remesh, smooth modifier, OBJ export) |
+
+Blender is invoked exactly once in the pipeline, by
+[`tools/atomize.py`](tools/atomize.py), so checking that one stage covers every
+use of it.
+
+To point at a specific install:
+
+```powershell
+.\scripts\fix_tool_paths.ps1 -BlenderPath "C:\Program Files\Blender Foundation\Blender 4.5"
+```
+
+You can check the Blender stage on its own, without running the whole
+pipeline, with:
+
+```powershell
+blender -b -P tools/process_for_atomizer.py -- data/mesh/calibration_cube.stl data/mesh/calibration_cube.obj 0.084375
+```
+
+It should finish without a Python traceback and write
+`data/mesh/calibration_cube.obj`.
+
+#### "running scripts is disabled on this system"
+
+Windows blocks PowerShell scripts by default, so the first script you run fails
+with `UnauthorizedAccess` / `PSSecurityException`. Allow scripts for your own
+user account, once:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+`RemoteSigned` permits scripts stored on your own disk (anything from
+`git clone`) while still requiring a signature on files downloaded from the
+internet. It is per-user and does not need Administrator.
+
+For a script downloaded with a browser or `curl` — such as
+`install_git_blender_miniconda.ps1` — either unblock it with
+`Unblock-File .\install_git_blender_miniconda.ps1`, or allow scripts for just
+the current window:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+```
+
+`-Scope Process` lasts only until you close that PowerShell window.
+
+### Choosing the Taichi backend
+
+Each pipeline stage has its own default backend (see
+[`src/atom/ti_env.py`](src/atom/ti_env.py)). `ATOM_TI_ARCH` overrides all of
+them at once:
+
+```powershell
+$env:ATOM_TI_ARCH = "cuda"      # force every stage onto CUDA
+$env:ATOM_TI_ARCH = "cpu"       # force every stage onto the CPU
+Remove-Item Env:\ATOM_TI_ARCH   # back to each stage's own default
+```
+
+Note that Taichi does **not** fail when a requested GPU backend is unavailable:
+it logs a warning and falls back to the CPU, running far slower. Check what it
+actually started on rather than assuming.
+
+### Project documents
+
+| Document | What it holds |
+|---|---|
+| [`docs/plan_corrections.md`](docs/plan_corrections.md) | Everything in the build plan that is wrong or deliberately departed from. **Read before trusting the plan on a specific fact.** |
+| [`docs/handoff.md`](docs/handoff.md) | State of the work, environment facts and conventions, written to be read with no prior context. |
+| [`tests/golden/baseline.md`](tests/golden/baseline.md) | The frozen "before" record: baseline commit, environment, stage timings, determinism result. |
+
+### Choosing a machine
+
+Machine constants (bed geometry, travel limits, tilt limit, feed rates) live in
+JSON profiles under [`config/machines/`](config/machines), not in the code. The
+`ATOM_MACHINE` environment variable picks one:
+
+```powershell
+$env:ATOM_MACHINE = "reference"   # the default
+```
+
+| Profile | Status | What it is |
+|---|---|---|
+| `reference` | verified | The upstream Atomizer machine. Values copied exactly from the original constants block; the golden test runs against it, and it stays in the test matrix permanently. |
+| `ours` | **PLACEHOLDER** | Our printer. Every number is copied from `reference` and none has been measured. Loading it warns on stderr and raises `PlaceholderProfileWarning`. |
+
+Fill in `ours.json` only once the mechanical team supplies real measurements
+(gates M1 and M2), then set its `status` to `verified`.
+
+#### Noise during a pipeline run
+
+Three things look alarming and are not:
+
+* `conda.exe : ... NativeCommandError` — PowerShell reports anything written to
+  stderr as an error record. Progress bars go to stderr.
+* `ΓûêΓûÄ` in place of a progress bar — the console code page is not UTF-8.
+  `scripts/run_baseline_matrix.ps1` sets it; other scripts do not.
+* `Lock C:/taichi_cache/ticache/ticache.lock failed` — Taichi could not lock its
+  compiled-kernel cache, so it recompiles instead of reusing. Results are
+  unaffected, but every stage pays the compilation cost again. Clear it with
+  `ti cache clean -p C:/taichi_cache/ticache`, or delete the folder; an
+  interrupted run can leave the lock behind.
+
+#### "No module named ..." after a `git pull`
+
+Dependencies are added as the work progresses, and a `git pull` brings the new
+`pyproject.toml` without installing anything. If a test suddenly fails to import
+a module, refresh the environment:
+
+```powershell
+pip install -e ".[dev]"
+```
+
+Re-running `.\scripts\setup_laptop.ps1` does the same thing and re-checks
+Blender and CUDA as well; it reuses the existing conda environment rather than
+rebuilding it.
+
+Note that a missing dependency shows up as a *collection error* that stops the
+whole run (`Interrupted: 1 error during collection`), not as a single failing
+test, so one absent package hides the state of everything else.
+
+### Running the tests
+
+```powershell
+pytest -m unit                              # fast, CPU only, no GPU needed
+.\scripts\run_pipeline_tests.ps1           # real pipeline stages (GPU + Blender)
+.\scripts\run_pipeline_tests.ps1 -Benchmark  # full benchmark parts (slow)
+```
+
+The `pipeline` and `benchmark` tiers are skipped unless explicitly requested,
+so `pytest` on a machine without a GPU still gives a meaningful result. See
+[`tests/conftest.py`](tests/conftest.py) for the tiers and fixtures.
+
 ## Usage
 
 ### Atomize
@@ -124,6 +309,59 @@ Add the `--warmup` option to exclude the compilation time from the computation t
 ```
 python tools/atomize.py data/param/tubes.json
 ```
+
+### Preview like a slicer (this fork)
+
+`tools/visualize_5ax.py` opens a 3D window in the style of a slicer preview.
+It shows the toolpath as lines and has these controls:
+
+**Install the window once** into the conda environment (it is a desktop app
+built with Qt):
+
+```powershell
+conda activate atomizer
+conda install -c conda-forge pyside6 pyvistaqt
+```
+
+Without it the tool still works, in a simpler "classic" window with the
+controls drawn over the 3D view (`--classic` picks that one on purpose).
+
+The window has a side panel on the left, the 3D view, and a timeline along
+the bottom:
+
+- a timeline that scrubs through the print in the printer's order, with
+  jump-to-start, step back, play/pause, step forward and jump-to-end buttons;
+- a Z-height clip for looking inside the part;
+- a dropdown that colours the lines by tilt, tilt direction, bead width or
+  height, feed rate, unsupported points (the P0.8 metric) or a shell/infill
+  guess;
+- the part's STL drawn over the lines, and a cone showing the nozzle's tilt at
+  the current point;
+- a playback speed slider (labelled with the time the whole print takes);
+- camera presets (Iso, Top, Front, Side) and "Save image";
+- a "Current point" card: position, tilt, bead size, screw values;
+- a **machine view** that shows the printer the way it moves: the nozzle stays
+  vertical and the bed tilts beneath it. The bed's pose comes from the three
+  screw values (Z, U, V), and the gantry level is drawn too. The bed turns red
+  if a corner would hit the gantry or a point is out of reach.
+
+It reads a toolpath `.npz` or the final G-code:
+
+```powershell
+python tools/visualize_5ax.py data/toolpath/ramp60_xs_smoothed.npz
+python tools/visualize_5ax.py reports/toolpaths/ramp60_s_ms30.npz --mode azimuth
+python tools/visualize_5ax.py data/gcode/ramp60_xs.gcode
+```
+
+**Mouse:** left-drag rotates, scroll zooms, shift+drag pans.
+
+**Keys:** Left/Right step one point, `,` and `.` step 1 %, Home/End jump to
+the start/end, Space plays and pauses. `--machine-view` starts in the machine
+view. Hover over any control for a tooltip.
+
+**Screenshot:** `--screenshot out.png` saves a picture without opening a
+window. Run `--help` for every option, and see the tool's docstring for which
+file to open when.
 
 ### Visualize
 

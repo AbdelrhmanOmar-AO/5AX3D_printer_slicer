@@ -3,6 +3,8 @@ import argparse
 import numpy as np
 import taichi as ti
 
+from atom.ti_env import init_taichi
+
 import atom.direction
 import atom.drawer3
 import atom.fff3
@@ -230,7 +232,7 @@ def sdf_to_isdf(bpn_path, sdf_path, isdf_path, no_gui=False):
 
 
 if __name__ == "__main__":
-    ti.init(arch=ti.cpu)
+    init_taichi("cpu")
 
     parser = argparse.ArgumentParser(description="TODO")
     parser.add_argument("bpn_path")

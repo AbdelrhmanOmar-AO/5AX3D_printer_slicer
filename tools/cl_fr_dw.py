@@ -2,9 +2,11 @@ import argparse
 
 import taichi as ti
 
+from atom.ti_env import init_taichi
+
 import atom.fff3
 
-ti.init(arch=ti.cpu)
+init_taichi("cpu")
 
 
 def cl_fr_dw():
