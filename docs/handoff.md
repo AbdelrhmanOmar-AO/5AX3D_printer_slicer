@@ -5,8 +5,10 @@ with no prior conversation.
 
 **Keep this file updated as the work progresses.**
 
-Last updated: 2026-09-23. **Phase P0 is complete**; 378 unit tests pass.
-The P0.8 matrix is being re-run against corrected metrics.
+Last updated: 2026-09-23. **Phase P0 is complete** — all 48 matrix runs are in
+at metrics v2 — and **P5.4** (toolpath viewer, bed-motion animation, Qt window)
+is built. Two sessions worked in parallel and have now been merged; see
+section 7c.
 
 ---
 
@@ -69,8 +71,10 @@ Setup pain already solved, all documented in `README.md`:
 
 ## 4. Repository conventions
 
-- **Branch:** everything on `claude/new-session-l8g46d`. `main` is untouched and
-  holds the golden baseline commit. Never push elsewhere without asking.
+- **Branch:** P0 is on `claude/new-session-l8g46d`. `main` is untouched and
+  holds the golden baseline commit. P5.4 is on `claude/wonderful-hypatia-iwzai1`,
+  which starts from the P0 branch's last commit (`84bae2e`), so merging it
+  brings P0 along. Never push elsewhere without asking.
 - **Commits:** one per build-plan task, subject line `P0.7: <what>`. Explain
   *why*, and record anything surprising that was discovered.
 - **Tests:** three tiers, in `pytest.ini` and `tests/conftest.py`.
@@ -102,8 +106,18 @@ overhang-aware field: the project's actual contribution.
 | P0.6 Tilt contracts and conventions | **Done**. `atom.tilt`, `atom.contracts`, `docs/conventions.md` |
 | P0.7 Benchmark meshes | **Done**. 36 meshes, 9 parts x 4 sizes |
 | P0.8 Overhang metrics | **Done.** 48 runs at metrics v2; see section 7b |
+| P5.4a Toolpath viewer | **Built**, pulled forward at the operator's request (`plan_corrections.md` 2.11). Laptop check pending |
+| P5.4b Bed-motion animation | **Built and checked on the laptop** (Play and smooth playback confirmed by the operator). Side-by-side view deferred until P2 |
+| P5.4 UI | **Qt window built** (`tools/viewer_qt.py`): side panel, timeline, toggle switches, dropdown. Needs `conda install -c conda-forge pyside6 pyvistaqt` once; falls back to the classic window without it. Laptop check pending |
 
-378 unit tests pass; 6 skipped (the `pipeline` and `benchmark` tiers).
+**450 unit tests pass; 13 skipped** (the `pipeline` and `benchmark` tiers, plus
+the 7 viewer display tests, which skip where there is no display; under
+`xvfb-run` with PySide6 and pyvistaqt installed those 7 run too). In the
+session container the Qt tests need `pip install pyside6 pyvistaqt` and
+`apt-get install libegl1 libxkbcommon-x11-0 libxcb-cursor0` (plus the other
+`libxcb-*` libraries Qt lists). The Play fix
+(`plan_corrections.md` 4.13) is Windows-specific and needs the laptop to
+confirm it.
 
 ### Verification status
 
@@ -187,6 +201,8 @@ at a time.
 | `tilt.py` | Tilt angles, rotations and limits. Pure numpy. `rotate_toward` is the operation P2.2 performs. |
 | `contracts.py` | `MachineToolpath`: a toolpath plus the machine state it implies. Runs the IK over every point and marks failures rather than aborting, which is what P3.3, P4 and P5.4 are built on. Verified against the golden toolpath: 46 773 points, 0 unreachable, and the Z/U/V maxima match the written G-code exactly. |
 | `ti_env.py` | One switch for the Taichi backend across every stage. |
+| `bed_motion.py` | The bed's rigid pose for a machine state, recovered from three `forward` calls; bed corners and ball joints from the profile. Behind the viewer's machine view. Found the 0.14-degree gap in 1.9. |
+| `toolpath_view.py` | Everything the toolpath viewer shows that can be tested without a display: visible segments, the colour modes, the shell/infill guess, the unsupported mask (exactly the P0.8 metric). numpy + scipy only. |
 
 ### New tools (`tools/`)
 
@@ -194,6 +210,8 @@ at a time.
 |---|---|
 | `gcode_stats.py` | G-code to a stable JSON record (hash, counts, axis ranges, extrusion). The golden comparison. |
 | `make_benchmarks.py` | Generates the benchmark meshes and parameter files; prints estimated runtime before writing. |
+| `viewer_qt.py` | The Qt window around `visualize_5ax.Viewer`: side panel (colour dropdown, switches, Z clip, camera presets, current point, notes) and timeline (transport buttons, scrubber, speed). Playback on a Qt timer. |
+| `visualize_5ax.py` | **Look at the output.** Opens the Qt window when available. A slicer-style 3D preview of a toolpath `.npz` or the G-code: print-order slider, Z clip, colour by tilt / tilt direction / bead size / feed / unsupported / shell-infill, STL overlay, nozzle cone, Play/Pause with adjustable speed, and a machine view where the bed tilts under a fixed nozzle. `--screenshot` saves a PNG. G-code is mapped back through the forward kinematics and paired with its `.npz` (matches within 0.0001 mm on the golden cube). |
 | `overhang_report.py` | Runs a part at a chosen `max_slope`, measures it, writes a JSON report, and archives the toolpath. `--summarize` builds the comparison table; `--reanalyse` re-scores every archived run against the current metrics in seconds. |
 
 ### Configuration and scripts

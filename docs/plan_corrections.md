@@ -153,6 +153,38 @@ the neighbour search.
 
 Decided with the operator on 2026-09-22.
 
+### 1.9 The kinematics realise the requested tool direction only approximately ★ PLAN EDIT
+
+Found while building P5.4b. `kinematics3z.inverse` turns the requested build
+direction into the bed's normal by flipping its x and y
+(`docs/conventions.md` section 2), and `forward` flips them back. That is
+exact only if the bed does not also turn about its own normal, and the three
+slot constraints do make it turn a little.
+
+The bed's real pose can be recovered from `forward`'s positions:
+
+* at fixed screws, a change in X or Y moves only the nozzle, so three
+  `forward` calls give the bed's rotation (`atom.bed_motion`);
+* that pose reproduces the screw height differences at the three ball joints
+  to within 0.001 mm, up to 30 degrees of tilt.
+
+The nozzle axis under that pose is the build direction the machine actually
+produces. It differs from the requested one by:
+
+| Tilt | Largest difference (at diagonal azimuths) |
+|---|---|
+| 5.5 degrees (golden cube) | 0.0003 degrees |
+| 25 degrees | 0.08 degrees |
+| 30 degrees | 0.14 degrees |
+
+This is far below the 1-degree tessellation step, so it does not matter for
+printing. But **P1.1's IK→FK round trip on the normal (1e-4 rad) cannot catch
+it**, because both directions use the same flip and so agree with each other
+exactly. P1.1 should also check the physical pose: build the pose with
+`atom.bed_motion` and require `R @ d` to be within a stated tolerance of +Z.
+`tests/test_bed_motion.py` pins the gap below 0.2 degrees. The kinematics
+maths is left unchanged.
+
 ## 2. Deliberate deviations
 
 ### 2.1 Golden baseline taken at this fork's `main`, not upstream
@@ -241,6 +273,71 @@ is `data/toolpath/<part>_platform.npz` (`tools/atomize.py`), not the `_smoothed`
 one.
 
 ---
+
+### 2.11 P5.4 started early, in two parts, as `visualize_5ax.py` P5.4a/P5.4b
+
+The operator asked for a way to look at Atomizer's output while the P0.8
+matrix re-runs. P5.4 says it "can start after P0.6 on stock toolpaths", so it
+has been started now and split in two:
+
+* **P5.4a:** a static viewer. It scrubs through the print order, clips by Z,
+  and colours the lines by tilt, tilt direction, bead width or height, feed
+  rate, unsupported points or a shell/infill guess. It can overlay the STL and
+  draw the nozzle cone. It reads the toolpath `.npz` or the G-code. Code is in
+  `atom.toolpath_view` (numpy only, unit-tested) and `tools/visualize_5ax.py`
+  (the window).
+* **P5.4b:** the bed-motion animation. Built as a "machine view" toggle in
+  the same window, together with a Play/Pause button and a speed slider (the
+  operator's requests).
+
+The operator's choices differ from the plan text in three places:
+
+* **Z clip:** Atomizer's layers are curved and no layer number is stored, so
+  the "layer slider" is a print-order slider plus a flat Z clip. Recovering
+  true curved-layer numbers is left for later.
+* **Shell/infill colouring:** added at the operator's request. It is a
+  heuristic: Atomizer records no bead type, so it uses the infill stage's own
+  rule (solid within `shell_thickness = 2` deposition widths of the surface).
+* **Side by side deferred:** the stock vs overhang-aware comparison was not
+  asked for in this round. It has nothing to compare until P2 exists.
+
+**UI (operator's request after P5.4b).** The main window is now a Qt desktop
+app, `tools/viewer_qt.py`. It has a side panel with a colour-mode dropdown,
+toggle switches, Z clip, camera presets and the current point; a timeline bar
+with transport buttons and speed; and tooltips. It embeds the same engine
+(`visualize_5ax.Viewer`) through `pyvistaqt`. PySide6 and pyvistaqt are new
+**optional** dependencies (`pyproject.toml` `gui` extra); without them the
+classic pyvista window opens instead. Playback there runs on a Qt timer, not
+a VTK one, which avoids 4.13 entirely. CI installs neither, so
+`tests/test_viewer_qt.py` skips there and runs where Qt and a display exist.
+
+P5.4b differs from the plan text in three places:
+
+* **Only two kinds of violation are shown in red:** a bed corner above the
+  gantry level, and a point the IK rejects. Both come straight from the
+  kinematics' own checks. The plan's "clearance model" violations need P4.1,
+  which does not exist yet. The part-so-far is drawn as the actual printed
+  lines, not a convex-hull proxy.
+* **The plan's "frame count = points / stride" test is replaced.** Playback
+  runs live and advances by wall-clock time at the chosen speed (points per
+  second). The tests check that timing instead. Saving the animation to a
+  video file is not built.
+* **Toolpath input solves its own screw values.** An `.npz` carries no screw
+  values, so they are solved after re-centring on the bed, as
+  `toolpath_to_gcode` does. For a `_smoothed` toolpath (no platform yet)
+  they can differ from the final G-code's by the platform lift, and the
+  window says so. Opening the G-code shows the exact values.
+
+### 2.12 The G-code is paired with its toolpath through the forward kinematics
+
+The viewer reads G-code by taking the moves between the header's `M83` and
+the footer's `M82`. It recovers each nozzle position and tilt from X, Y, Z, U
+and V with `kinematics3z.forward` (the vendored
+`toolpath_to_cartesian_toolpath` kernel). It then subtracts
+`contracts.bed_centering_offset` to get back to the part frame. On the golden
+cube this reproduces the toolpath the G-code was written from within
+**0.0001 mm**, so the reader checks that the G-code and the `.npz` belong to
+the same run before it pairs them.
 
 ## 3. Environment facts the plan asked to establish
 
@@ -340,6 +437,16 @@ noticing a figure that did not match physical intuition and chasing it rather
 than explaining it away, and twice the check that exposed it cost seven
 minutes against a twenty-hour run.
 
+### 3.8 G-code written on the CPU differs from the CUDA golden in the last digits
+
+Running `tools/toolpath_to_gcode.py` on the golden toolpath with
+`ATOM_TI_ARCH=cpu` gives a G-code with the same lines and structure as the
+golden file. Axis values differ by up to about 4e-5 mm and total extrusion by
+2e-5 mm. That is float32 rounding in the IK kernel on a different backend. The
+SHA-256 therefore differs, so **the golden SHA check only holds on the
+backend the baseline was captured on** (CUDA, on the operator's laptop).
+Comparisons across backends need tolerances, not hashes.
+
 ## 4. Implementation hazards found while building
 
 ### 4.1 `M98 P"/macros/enable3Z.g"` parses as an `E3` word
@@ -392,6 +499,13 @@ clustered at the bottom, which is the gyroid infill bridging its own voids.
 
 The first baseline matrix (20 hours) was measured before this was found, so its
 unsupported column is inflated by roughly three percentage points.
+
+**Update (2026-09-22, found while building P5.4a).** The 2.78 % and the 852
+points above were measured with the old 1.5 x height search radius. With the
+2.5 x radius from 1.8, the same golden toolpath gives **0.27 % (82 points)**.
+So most of those 852 points were the radius cutting off the cone, not the
+gyroid bridging its own voids. The 82 that remain are clustered near the top
+of the cube and around its internal features.
 
 ### 4.6 Sampling a surface by face centroid under-measures large flat faces
 
@@ -496,6 +610,22 @@ miss in a scrollback, and the files simply stay staged, so a later `git push`
 reports "Everything up-to-date" while nothing has been committed. Worth setting
 during setup on any new machine.
 
+### 4.13 A VTK timer created before the window opens never fires on Windows
+
+The viewer's Play button did nothing on the operator's laptop, although it
+worked in every test here. The playback timer was created while the scene was
+built, before `show()`. `vtkWin32RenderWindowInteractor::InternalCreateTimer`
+calls `SetTimer(this->WindowId, ...)`, and `WindowId` is only set in
+`Initialize()`, which pyvista first calls inside `show()`. Created earlier,
+the timer belongs to no window and its messages never reach VTK. On Linux
+(X11) VTK keeps its own timer list, so the same code works there, and **no
+Linux test can tell the two orders apart**.
+
+The fix is `Viewer.start_timer`: initialise the interactor, then create the
+timer. `tests/test_visualize_5ax.py` now drives the real event loop, but that
+only guards the playback path. The Windows behaviour has to be checked on the
+laptop.
+
 ## 5. Open plan items not yet resolved
 
 | Item | Status |
@@ -524,6 +654,7 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 4.6 | Sampling by face centroid under-measures large flat faces; subdivide first |
 | 4.7 | An overwriting run makes an interrupted re-run look complete; version the metrics |
 | 4.8 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
+| 4.13 | Create VTK timers after the interactor is initialised, or they never fire on Windows |
 
 And the two habits that caught most of them:
 
