@@ -402,7 +402,25 @@ This was found because a 7-minute check before a 20-hour re-run returned
 exactly the same 28.70 % as the run it was meant to correct. A figure that does
 not move when the thing it depends on changes is worth chasing.
 
-### 4.7 Re-centring on the bed is not a constant offset
+### 4.7 An overwriting run makes an interrupted re-run look complete
+
+Each matrix run writes its report to the same path for a given part and slope,
+so a re-run overwrites the previous one. When the operator's laptop restarted
+12 hours into a re-run, the combinations already redone held new results and
+the rest still held the **old** ones — and every file existed, so nothing
+looked missing.
+
+Reports now carry a `metrics_version` separate from `schema_version`: the file
+layout did not change, the meaning of the numbers did. `--status` counts a
+report from an older definition as missing, and `-Resume` skips only genuinely
+current results.
+
+Two smaller safeguards from the same incident: `load_reports` reports a
+truncated file rather than raising, since a power cut can catch a write in
+progress, and each run appends a row to `reports/matrix_progress.csv`, flushed
+and fsynced, as a trail that survives whatever happens to the process.
+
+### 4.8 Re-centring on the bed is not a constant offset
 
 `tools/toolpath_to_gcode.py` re-centres the whole toolpath on the bed before
 solving. It is tempting to treat that as a translation whose effect cancels in
@@ -418,7 +436,7 @@ maxima exactly. `contracts.bed_centering_offset` mirrors the arithmetic and
 Anything comparing computed machine axes against written G-code must solve in
 the same frame.
 
-### 4.8 The header's purge lines extend the G-code's axis ranges
+### 4.9 The header's purge lines extend the G-code's axis ranges
 
 `kinematics3z.HEADER` draws two priming lines at fixed coordinates
 (`X0.1 Y20`, `Y200.0`, all three screws at `0.3 + Z_OFFSET`). Those points are
@@ -430,7 +448,7 @@ They can only extend a range, never narrow it, so a comparison against toolpath
 output should assert equality on the maxima and an inequality on the minima.
 `tests/test_contracts.py` does exactly that.
 
-### 4.9 `from __future__ import annotations` was hit in practice
+### 4.10 `from __future__ import annotations` was hit in practice
 
 Recorded as a hazard in 3.2, then walked into two commits later while writing
 `src/atom/contracts.py`: the module had the import, and its Taichi kernel
@@ -442,7 +460,7 @@ absent. Affected so far: `contracts.py`, `tests/test_contracts.py`,
 `tests/test_ti_env.py`, `tools/overhang_report.py`,
 `tests/test_overhang_report.py`.
 
-### 4.10 `git ls-files` reports the index, not what is committed
+### 4.11 `git ls-files` reports the index, not what is committed
 
 Two guard tests were written against the wrong notion of "tracked" and passed
 while the thing they guarded was broken:
@@ -455,7 +473,7 @@ while the thing they guarded was broken:
 Both now use `git ls-tree -r --name-only HEAD`. Only a commit survives a push,
 a clone, or a move to another machine.
 
-### 4.11 A fresh Windows machine has no git identity
+### 4.12 A fresh Windows machine has no git identity
 
 `git commit` fails with "Author identity unknown" until
 `git config --global user.name` and `user.email` are set. The error is easy to
@@ -489,7 +507,8 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 1.8 | The plan's 1.5 x height support radius overrides its own 65-degree cone |
 | 4.5 | The bed-contact rule must anchor to the part's lowest point |
 | 4.6 | Sampling by face centroid under-measures large flat faces; subdivide first |
-| 4.7 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
+| 4.7 | An overwriting run makes an interrupted re-run look complete; version the metrics |
+| 4.8 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
 
 And the two habits that caught most of them:
 

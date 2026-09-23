@@ -39,14 +39,17 @@ afterwards would otherwise have cost all 20 again.
 # through atom.contracts. See docs/plan_corrections.md 3.2.
 
 import argparse
+import csv
 import json
 import math
+import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -64,6 +67,25 @@ SUMMARY_PATH = REPO_ROOT / "reports" / "baseline_overhang.md"
 TOOLPATH_ARCHIVE = REPO_ROOT / "reports" / "toolpaths"
 
 SCHEMA_VERSION = 1
+
+#: Version of the *metric semantics*, distinct from the file layout. Bump it
+#: whenever a change alters what the numbers mean, so a report produced by an
+#: older definition is recognised as stale rather than silently mixed with new
+#: ones.
+#:
+#: A matrix run overwrites the previous run's report files, so after an
+#: interrupted re-run the combinations not yet reached still hold results from
+#: the old definition. Without this they look complete.
+#:
+#: 1 - the original definitions.
+#: 2 - bed contact anchored to the part's lowest point (plan_corrections 4.5);
+#:     surfaces sampled densely rather than by face centroid (4.6);
+#:     support radius 2.5x height so the 65-degree cone governs (1.8).
+METRICS_VERSION = 2
+
+#: An append-only record of every run, written as each finishes. Survives a
+#: crash and gives a human-readable trail beside the per-run JSON.
+PROGRESS_LOG = REPO_ROOT / "reports" / "matrix_progress.csv"
 
 #: GATE D0: placeholder thresholds, team decision pending. The same values are
 #: used in P2.5, so stock and overhang-aware are judged on one scale.
@@ -213,6 +235,7 @@ def measure(
 
     return {
         "schema_version": SCHEMA_VERSION,
+        "metrics_version": METRICS_VERSION,
         "part": part,
         "max_slope_deg": max_slope_deg,
         "overhang_aware": False,
@@ -256,6 +279,39 @@ def measure(
             },
         },
     }
+
+
+def append_progress(report):
+    """Append one line to the progress log, flushed immediately.
+
+    The per-run JSON is the real artifact; this is the at-a-glance trail that
+    survives a crash and shows what had been completed and when.
+    """
+    metrics, verdict = report["metrics"], report["verdict"]
+    PROGRESS_LOG.parent.mkdir(parents=True, exist_ok=True)
+
+    new_file = not PROGRESS_LOG.exists()
+    with PROGRESS_LOG.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        if new_file:
+            writer.writerow([
+                "finished_utc", "part", "max_slope_deg", "metrics_version",
+                "worst_effective_deg", "unsupported_near_overhangs",
+                "max_tilt_used_deg", "printable", "runtime_s",
+            ])
+        writer.writerow([
+            datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            report["part"],
+            f"{report['max_slope_deg']:g}",
+            report.get("metrics_version", ""),
+            f"{verdict['worst_effective_deg']:.2f}",
+            f"{metrics['unsupported_fraction_near_overhangs']:.4f}",
+            f"{metrics['max_tool_tilt_deg']:.2f}",
+            verdict["printable"],
+            f"{report['runtime']['total_s']:.0f}",
+        ])
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def report_path(part, max_slope_deg):
@@ -491,17 +547,65 @@ def _conclusion(reports, slopes):
     return [" ".join(sentences)]
 
 
-def load_reports():
+def load_reports(quiet=False):
+    """Every valid report on disk.
+
+    A report truncated mid-write, which a power loss can do, is reported and
+    skipped rather than taking the whole summary down with it.
+    """
     if not REPORT_DIR.is_dir():
         return []
+
     reports = []
     for path in sorted(REPORT_DIR.glob("*.json")):
-        data = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            print(f"  CORRUPT {path.name}: {exc}. Delete it and re-run that part.")
+            continue
         if data.get("schema_version") != SCHEMA_VERSION:
-            print(f"Skipping {path.name}: schema version {data.get('schema_version')}")
+            if not quiet:
+                print(
+                    f"  Skipping {path.name}: schema version "
+                    f"{data.get('schema_version')}, expected {SCHEMA_VERSION}"
+                )
             continue
         reports.append(data)
     return reports
+
+
+#: The parts and slopes a full baseline matrix covers (build plan P0.8 step 5).
+MATRIX_PARTS = (
+    "ramp45", "ramp50", "ramp60", "ramp70", "ramp80", "ramp90", "tshape", "twin_domes",
+)
+MATRIX_SLOPES = (7.0, 15.0, 30.0)
+
+
+def matrix_status(sizes, parts=MATRIX_PARTS, slopes=MATRIX_SLOPES):
+    """Which combinations of the matrix have a report, and which do not.
+
+    Each run writes its report as soon as it finishes, so an interrupted matrix
+    keeps everything completed up to that point. This says what is left.
+    """
+    reports = load_reports(quiet=True)
+    done = {
+        (r["part"], r["max_slope_deg"])
+        for r in reports
+        if r.get("metrics_version") == METRICS_VERSION
+    }
+    stale = {
+        (r["part"], r["max_slope_deg"])
+        for r in reports
+        if r.get("metrics_version") != METRICS_VERSION
+    }
+
+    present, missing = [], []
+    for size in sizes:
+        for part in parts:
+            for slope in slopes:
+                key = (f"{part}_{size}", slope)
+                (present if key in done else missing).append(key)
+    return present, missing, stale
 
 
 # --------------------------------------------------------------------------
@@ -525,6 +629,14 @@ def main(argv=None):
         help="Collect every report into reports/baseline_overhang.md.",
     )
     parser.add_argument(
+        "--status", nargs="*", metavar="SIZE", default=None,
+        help=(
+            "Report which matrix combinations already have results and which "
+            "are missing, then exit. Give the sizes to check, e.g. "
+            "--status xs s. Use this after an interrupted run."
+        ),
+    )
+    parser.add_argument(
         "--reanalyse", "--reanalyze", action="store_true", dest="reanalyse",
         help=(
             "Re-score every archived run against the current metrics, without "
@@ -532,6 +644,34 @@ def main(argv=None):
         ),
     )
     args = parser.parse_args(argv)
+
+    if args.status is not None:
+        sizes = args.status or ["xs", "s"]
+        present, missing, stale = matrix_status(sizes)
+        total = len(present) + len(missing)
+
+        print(f"Matrix status for size(s) {', '.join(sizes)}:")
+        print(f"  complete (metrics v{METRICS_VERSION}) : {len(present)} of {total}")
+        print(f"  missing or stale             : {len(missing)}")
+        if stale:
+            print(
+                f"\n  {len(stale)} report(s) were produced by an older metric "
+                "definition and count as missing.\n"
+                "  They will be overwritten when those combinations are re-run."
+            )
+        if missing:
+            print("\nStill to run:")
+            for part, slope in missing:
+                print(f"  {part:<18} max_slope {slope:g}")
+            print(
+                "\nRe-run the matrix with -Resume to do only these, or run one "
+                "directly:\n"
+                f"  python tools/overhang_report.py data/param/{missing[0][0]}.json "
+                f"--max-slope {missing[0][1]:g}"
+            )
+        else:
+            print("\nNothing missing. Write the summary with --summarize.")
+        return 0
 
     if args.reanalyse:
         existing = load_reports()
@@ -590,6 +730,7 @@ def main(argv=None):
     destination = report_path(part, max_slope)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    append_progress(report)
 
     verdict = report["verdict"]
     worst = verdict["worst_effective_deg"]

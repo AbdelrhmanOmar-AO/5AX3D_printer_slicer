@@ -143,6 +143,18 @@ python tools/overhang_report.py data/param/ramp45_xs.json --max-slope 7
 **printable: True**. A 45-degree overhang is one any 3-axis printer manages, so
 that is the case whose answer is known; if it moves, something has regressed.
 
+**An interrupted matrix resumes.** Each run writes its report as it finishes,
+so a crash loses at most one run. Check what is outstanding, then continue:
+
+```powershell
+python tools/overhang_report.py --status xs s
+.\scripts\run_baseline_matrix.ps1 -Sizes xs,s -Resume
+```
+
+Reports carry a `metrics_version`; one produced by an older definition counts
+as missing, so a half-finished re-run cannot look complete.
+`reports/matrix_progress.csv` is an append-only trail of every run.
+
 **A metric change no longer costs a re-run.** Every run archives its toolpath
 to `reports/toolpaths/` (gitignored, ~220 MB for a full matrix), and
 `python tools/overhang_report.py --reanalyse` re-scores every archived run in

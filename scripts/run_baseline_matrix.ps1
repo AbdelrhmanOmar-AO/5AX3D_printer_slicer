@@ -30,10 +30,20 @@
 .PARAMETER EnvName
     Conda environment. Default `atomizer`.
 
+.PARAMETER Resume
+    Skip combinations that already have a result from the current metrics.
+    Every run writes its report the moment it finishes, so an interrupted
+    matrix keeps everything done so far; -Resume continues from there rather
+    than repeating it.
+
+    Check what is outstanding first:
+        python tools/overhang_report.py --status xs s
+
 .EXAMPLE
     .\scripts\run_baseline_matrix.ps1
     .\scripts\run_baseline_matrix.ps1 -Sizes xs
     .\scripts\run_baseline_matrix.ps1 -Sizes xs,s -Slopes 7,30
+    .\scripts\run_baseline_matrix.ps1 -Sizes xs,s -Resume   # after an interruption
 #>
 
 [CmdletBinding()]
@@ -42,7 +52,12 @@ param(
     [double[]]$Slopes = @(7, 15, 30),
     [string[]]$Parts = @("ramp45", "ramp50", "ramp60", "ramp70", "ramp80", "ramp90",
                          "tshape", "twin_domes"),
-    [string]$EnvName = "atomizer"
+    [string]$EnvName = "atomizer",
+
+    # Skip combinations that already have a result from the current metric
+    # definition. Use this to continue an interrupted matrix: each run writes
+    # its report as it finishes, so nothing completed is lost.
+    [switch]$Resume
 )
 
 $ErrorActionPreference = "Continue"
@@ -76,6 +91,21 @@ Write-Host "Baseline matrix: $($Parts.Count) parts x $($Slopes.Count) slopes x $
 Write-Host "Sizes: $($Sizes -join ', ')  Slopes: $($Slopes -join ', ') deg"
 Write-Host "Log: $LogFile"
 Write-Host "Leave this running. A failed run is recorded and the matrix continues." -ForegroundColor Yellow
+Write-Host "Each run's report is written as it finishes, so an interruption loses at most one run." -ForegroundColor Yellow
+
+# What is already done under the current metric definition?
+$statusText = & conda run --name $EnvName --no-capture-output python tools/overhang_report.py `
+    --status @Sizes 2>&1 | Out-String
+$completeLine = ($statusText -split "`n" | Select-String "complete \(metrics")
+if ($completeLine) {
+    Write-Host ""
+    Write-Host ("Existing results: " + $completeLine.ToString().Trim()) -ForegroundColor Cyan
+    if (-not $Resume) {
+        Write-Host "Running everything. Pass -Resume to skip what is already done." -ForegroundColor Yellow
+    }
+}
+
+$skipped = 0
 
 foreach ($size in $Sizes) {
   foreach ($slope in $Slopes) {
@@ -88,6 +118,23 @@ foreach ($size in $Sizes) {
             Write-Host "[$index/$total] SKIP $solid - no $paramPath" -ForegroundColor Yellow
             $failures += "$solid @ $slope (missing parameter file)"
             continue
+        }
+
+        if ($Resume) {
+            $check = & conda run --name $EnvName --no-capture-output python -c @"
+import json, sys
+from pathlib import Path
+p = Path('reports/baseline_overhang/${solid}_ms$($slope -replace '\.0$','').json')
+try:
+    print('done' if json.loads(p.read_text())['metrics_version'] == 2 else 'stale')
+except Exception:
+    print('missing')
+"@ 2>$null
+            if ($check -match 'done') {
+                $skipped++
+                Write-Host "[$index/$total] SKIP $solid at $slope deg - already done" -ForegroundColor DarkGray
+                continue
+            }
         }
 
         $elapsedSoFar = (Get-Date) - $startedAll
@@ -119,9 +166,13 @@ Write-Host "=== Writing the summary ===" -ForegroundColor Cyan
 $totalElapsed = (Get-Date) - $startedAll
 Write-Host ""
 Write-Host "Matrix finished in $($totalElapsed.ToString('hh\:mm\:ss'))." -ForegroundColor Green
+if ($skipped -gt 0) {
+    Write-Host "$skipped run(s) were skipped as already complete." -ForegroundColor DarkGray
+}
 if ($failures.Count -gt 0) {
     Write-Host "$($failures.Count) of $total runs failed:" -ForegroundColor Red
     $failures | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
 }
 Write-Host "Summary: reports\baseline_overhang.md"
+Write-Host "Progress log: reports\matrix_progress.csv" -ForegroundColor Cyan
 Write-Host "Commit reports\ and paste the summary table." -ForegroundColor Cyan

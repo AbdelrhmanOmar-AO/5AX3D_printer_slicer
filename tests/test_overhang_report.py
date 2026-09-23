@@ -424,3 +424,95 @@ def test_measure_records_how_many_faces_it_sampled(ti_cpu, tmp_path):
     )
 
     assert report["mesh"]["sampled_face_count"] > report["mesh"]["face_count"]
+
+
+# --------------------------------------------------------------------------
+# Crash recovery
+#
+# A matrix run overwrites the previous run's report files, so after an
+# interrupted re-run the combinations not yet reached still hold results from
+# the old metric definition. Without a metrics version they look complete.
+# --------------------------------------------------------------------------
+
+
+def test_reports_record_which_metric_definition_produced_them(ti_cpu, tmp_path):
+    mesh = bm.make_ramp(60, **bm.default_dimensions(60.0))
+    stl_path = tmp_path / "ramp60.stl"
+    mesh.export(stl_path)
+    toolpath_path = tmp_path / "ramp60_smoothed.npz"
+    SyntheticToolpath(
+        _points_over_overhang_faces(mesh), direction=[0.0, 0.0, 1.0]
+    ).save(toolpath_path)
+
+    report = overhang_report.measure(
+        "ramp60", 7.0, 0.9, toolpath_path=toolpath_path, stl_path=stl_path
+    )
+    assert report["metrics_version"] == overhang_report.METRICS_VERSION
+
+
+def test_status_counts_a_stale_report_as_missing(tmp_path, monkeypatch):
+    """The trap: an old report for a not-yet-redone combination looks done."""
+    monkeypatch.setattr(overhang_report, "REPORT_DIR", tmp_path)
+
+    current = _fake_report("ramp45_xs", 7.0, 40.0, 0.002, 5.5, True)
+    current["metrics_version"] = overhang_report.METRICS_VERSION
+    (tmp_path / "ramp45_xs_ms7.json").write_text(json.dumps(current))
+
+    old = _fake_report("ramp50_xs", 7.0, 50.0, 0.30, 5.5, False)
+    old["metrics_version"] = overhang_report.METRICS_VERSION - 1
+    (tmp_path / "ramp50_xs_ms7.json").write_text(json.dumps(old))
+
+    present, missing, stale = overhang_report.matrix_status(
+        ["xs"], parts=("ramp45", "ramp50"), slopes=(7.0,)
+    )
+
+    assert ("ramp45_xs", 7.0) in present
+    assert ("ramp50_xs", 7.0) in missing, "a stale report must not count as done"
+    assert ("ramp50_xs", 7.0) in stale
+
+
+def test_a_report_with_no_version_counts_as_stale(tmp_path, monkeypatch):
+    """Reports from before versioning existed must be re-run, not trusted."""
+    monkeypatch.setattr(overhang_report, "REPORT_DIR", tmp_path)
+    (tmp_path / "ramp45_xs_ms7.json").write_text(
+        json.dumps(_fake_report("ramp45_xs", 7.0, 40.0, 0.002, 5.5, True))
+    )
+
+    _, missing, stale = overhang_report.matrix_status(
+        ["xs"], parts=("ramp45",), slopes=(7.0,)
+    )
+    assert ("ramp45_xs", 7.0) in missing
+    assert ("ramp45_xs", 7.0) in stale
+
+
+def test_a_truncated_report_is_reported_not_fatal(tmp_path, monkeypatch, capsys):
+    """A power cut mid-write must not take the whole summary down."""
+    monkeypatch.setattr(overhang_report, "REPORT_DIR", tmp_path)
+
+    good = _fake_report("ramp45_xs", 7.0, 40.0, 0.002, 5.5, True)
+    good["metrics_version"] = overhang_report.METRICS_VERSION
+    (tmp_path / "ramp45_xs_ms7.json").write_text(json.dumps(good))
+    (tmp_path / "ramp50_xs_ms7.json").write_text('{"part": "ramp50_xs", "met')
+
+    reports = overhang_report.load_reports()
+
+    assert len(reports) == 1
+    assert "CORRUPT" in capsys.readouterr().out
+
+
+def test_progress_log_appends_a_row_per_run(tmp_path, monkeypatch):
+    """An append-only trail that survives a crash."""
+    log = tmp_path / "matrix_progress.csv"
+    monkeypatch.setattr(overhang_report, "PROGRESS_LOG", log)
+
+    for part in ("ramp45_xs", "ramp50_xs"):
+        report = _fake_report(part, 7.0, 40.0, 0.002, 5.5, True)
+        report["metrics_version"] = overhang_report.METRICS_VERSION
+        report["runtime"] = {"total_s": 420.0, "stages": {}}
+        overhang_report.append_progress(report)
+
+    lines = log.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 3, "a header and one row per run"
+    assert lines[0].startswith("finished_utc,part,max_slope_deg,metrics_version")
+    assert "ramp45_xs" in lines[1]
+    assert "ramp50_xs" in lines[2]
