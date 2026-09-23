@@ -870,3 +870,48 @@ model's gantry half-space reproduces the lift `kinematics3z.inverse` asks for
 to within 0.002 mm, over 24 states up to 29.9 degrees of tilt
 (`tests/test_clearance.py`). The two therefore share one world frame, which
 P4.2 relies on.
+
+#### P4-2 P4.3 checks every nozzle position, exactly, not only deposition points subsampled (deliberate deviation)
+
+P4.3 says "for each deposition point, test earlier deposited points
+(KD-tree, subsampled)". As built (`src/atom/nozzle_material_check.py`,
+`tools/check_motion_safety.py`; the plan names no files for P4.3):
+
+* **Every toolpath point is checked**, travel included. A travel that ends
+  inside material is as much a collision as a print move. Reports split the
+  two. The travel *between* points stays with P4.2.
+* **"Earlier" is defined by the moves.** `travel_type[i]` describes the move
+  *to* point `i`, so a printing move `j` makes both `p[j-1]` and `p[j]`
+  material. With the nozzle at `p[i]`, material from moves up to `i - 1`
+  counts; move `i`'s own bead ends under the nozzle.
+* **No subsampling by default.** Exact is fast enough: the whole golden cube
+  (46 773 points) takes about 2 s on the session container. The cone is covered
+  by a chain of spheres along its axis, so a KD-tree query returns only
+  material near the cone. `--subsample MM` remains as an option; it keeps the
+  earliest point per voxel, so everything it reports is a real collision.
+* The cone is `atom.clearance`'s nozzle (40 degrees, capped at
+  `nozzle_to_gantry`), so P4.1, P4.2 and P4.3 share one nozzle.
+
+**Checked against known answers.** The golden cube is clear. The zero means
+something: the top 3 000 points printed in reverse order (top down) collide at
+more than a third of positions, and 12 000 of them at 83 %. A brute-force
+comparison over 400 scattered points (330 colliding) matches the fast check
+exactly (positions, depths, blocker counts) at three block sizes.
+
+**The 50-degree cap is now a test.** The plan's introduction says the tilt is
+"capped at 50 degrees by the nozzle cone". With a 40-degree half-angle, a
+flat layer printed at more than 90 - 40 = 50 degrees of tilt puts its own
+earlier beads inside the nozzle; at 45 degrees it is clear
+(`tests/test_nozzle_material_check.py`).
+
+**Hazard for a wider nozzle (gate M3).** The covering spheres stay above the
+nozzle tip's plane only for half-angles below 45 degrees
+(`q <= 1 / tan^2(half_angle)` for a slab ratio `q`). If the real hotend
+turns out to need a cone of 45 degrees or wider, the check stays correct but
+slows to comparing most point pairs. A wide hotend should be modelled as a
+narrow cone plus boxes (P6.2) rather than as one wide cone.
+
+**Not yet run on large tilts.** P4.3's benchmark is "run on the P2.5
+outputs", which do not exist. The P0.8 archive on the laptop
+(`reports/toolpaths/`, stock toolpaths up to 30 degrees of tilt) is the
+nearest real input and is a laptop request (`docs/handoff.md` 0b).

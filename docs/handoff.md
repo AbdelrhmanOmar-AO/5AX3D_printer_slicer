@@ -112,12 +112,12 @@ section 5.
 | Task | Status |
 |---|---|
 | P4.1 Clearance model | **Built**: `src/atom/clearance.py`, `tests/test_clearance.py` (36 tests). Reference proxy (nozzle cone 40 degrees half-angle up to 70 mm, gantry half-space above) plus the box format for M3. Agrees with the IK's own bed-corner lift to 0.002 mm. |
-| P4.3 Nozzle vs printed material | Next |
+| P4.3 Nozzle vs printed material | **Built**: `src/atom/nozzle_material_check.py`, `tools/check_motion_safety.py`, tests (28). Every nozzle position against earlier material, exact, about 2 s for the golden cube, which is clear. Not yet run on large-tilt toolpaths (the P0.8 archive is on the laptop). |
 | P4.2 Swept check | After P4.3; axis-range and tilt-limit part waits for P1.4 in `main` |
 | P4.4 Safe travel | Only if P4.2/P4.3 find problems |
 | Viewer wiring | After P4.2 |
 
-Unit suite on the branch: 487 passed, 13 skipped.
+Unit suite on the branch: 515 passed, 13 skipped.
 
 ---
 
