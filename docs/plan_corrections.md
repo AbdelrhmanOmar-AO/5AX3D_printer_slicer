@@ -944,11 +944,19 @@ with the operator on 2026-09-23 unless marked:
   toolpath already on disk (`--skip-pipeline`: origin unknown, flagged in the
   summary), or was backfilled. *(Not specified by the plan.)*
 * **Backfill**: all 48 baseline reports got the laptop's host name
-  (`Abdelrahman-personal-laptop`, given by the operator), the stock mix and
-  the reference profile. `stage_arches` is **inferred** from each stage's
-  default backend, with the GPU stages on CUDA because the laptop's CUDA works.
-  The commit and run times were not recorded and are `null`. The next real run
-  on the laptop records the true values; if they differ, the summary warns.
+  (`AbdoYasser`), the stock mix and the reference profile. `stage_arches` is
+  **inferred** from each stage's default backend, with the GPU stages on CUDA
+  because the laptop's CUDA works. The commit and run times were not recorded
+  and are `null`.
+* **Checked on the laptop, 2026-09-23.** The known-answer run
+  (`ramp45_xs` at 7 degrees: 0.24 %, printable) recorded all 14 stage
+  backends exactly as inferred. It also recorded the host name as
+  `AbdoYasser`, not `Abdelrahman-personal-laptop`, the name first given for
+  the backfill. `--summarize` then warned that the table mixed two machines,
+  which is the warning working as designed. The operator confirmed it is the
+  same laptop, and the backfill was corrected. **Lesson:** take a machine's
+  name from what the code records (`platform.node()`), not from a name a
+  person reads off the computer.
 * **`schema_version` stays 1.** `provenance` is an added key, and bumping the
   version would make `load_reports` skip every existing report.
 * **Not given a provenance block** *(not specified by the plan)*:

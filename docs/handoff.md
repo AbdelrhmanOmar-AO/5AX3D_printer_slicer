@@ -94,26 +94,17 @@ before P1.6, which measures `order_atoms` timings.
 | Task | Status |
 |---|---|
 | P1.4 G-code validator | **Done** (`58d2fe7`), verified on the laptop 2026-09-23: `pytest --run-pipeline tests/test_golden.py` gave **5 passed, 1 skipped** in 784 s. Golden SHA unchanged, and the real golden G-code validates with zero violations. (The P1.4 commit message expected 4 passed; that miscounted the file's unit tests.) **Merged into `main`** (pull request #4, `fab657f`), so the P4 session can bring it in |
-| P1.7 Provenance on reports | **Built.** Every overhang report now records its machine, backend (each stage's actual one), Taichi version, profile and commit (`atom.provenance`). All 48 baseline reports are backfilled (`tools/backfill_provenance.py`). `--summarize` states the origin above the table and warns on a mixed table. Laptop check pending: see below |
+| P1.7 Provenance on reports | **Done**, verified on the laptop 2026-09-23. Every overhang report records its machine, backend (each stage's actual one), Taichi version, profile and commit (`atom.provenance`). All 48 baseline reports are backfilled (`tools/backfill_provenance.py`). `--summarize` states the origin above the table and warns on a mixed table. Not yet in `main` |
 
-**P1.7 laptop check** (one run, ~7 min, the known-answer part). It runs a
-real pipeline with the new recording, then checks that the backfilled values
-match what the laptop really does:
+**The P1.7 laptop check** was the known-answer run (`ramp45_xs` at 7 degrees:
+0.24 % unsupported, printable). All 14 stages reported exactly the backends
+inferred for the backfill. The laptop's host name, as Python records it, is
+**`AbdoYasser`**. The backfill first used the name `Abdelrahman-personal-laptop`,
+so the summary warned that two machines were mixed, which is the check working.
+The operator confirmed it is the same laptop, and the backfill now uses
+`AbdoYasser` (`plan_corrections.md` 7a, P1-7).
 
-```powershell
-python tools/overhang_report.py data/param/ramp45_xs.json --max-slope 7
-python tools/overhang_report.py --summarize
-python -c "import json; print(json.dumps(json.load(open('reports/baseline_overhang/ramp45_xs_ms7.json'))['provenance'], indent=1))"
-git restore reports
-```
-
-Expected: the usual ~0.24 % unsupported and `printable: True`, a "measured
-on" line naming the laptop, and **no mixed-provenance warning** from
-`--summarize`. A warning means the inferred backfill differs from what the
-stages really reported, and the new report's `provenance.stage_arches` says
-where. `git restore reports` puts the committed reports back afterwards.
-
-**What P1.4 gives the P4 session**, once it is in `main`:
+**What P1.4 gives the P4 session** (in `main` since pull request #4):
 
 * `atom.gcode_check`: `check_file(path, profile, max_feed=None, max_e_mm=5.0)`
   returns a `Report` with `ok`, `violations` (`id`, 1-based `line`, `detail`)

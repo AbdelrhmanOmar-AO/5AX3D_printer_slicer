@@ -8,7 +8,7 @@ A part counts as printable when the worst effective overhang stays at or below 4
 
 `n/m` means not measured: no deposition was found near that surface.
 
-Measured on: machine Abdelrahman-personal-laptop, backend stock mix (cuda + x64), Taichi 1.7.4, profile reference. All 48 runs are comparable.
+Measured on: machine AbdoYasser, backend stock mix (cuda + x64), Taichi 1.7.4, profile reference. All 48 runs are comparable.
 
 | Part | max_slope 7° | max_slope 15° | max_slope 30° |
 |---|---|---|---|

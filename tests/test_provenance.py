@@ -303,7 +303,7 @@ def test_the_committed_baseline_is_one_comparable_group(repo_root):
     assert len(overhang_report.provenance_groups(reports)) == 1
     assert overhang_report.provenance_warning(reports) is None
     block = reports[0]["provenance"]
-    assert block["machine"] == "Abdelrahman-personal-laptop"
+    assert block["machine"] == "AbdoYasser"
     assert block["ti_arch_setting"] == prov.STOCK_MIX
     assert block["stage_arches"]["order_atoms"] == "x64"
     assert block["stage_arches"]["compute_tool_orientations"] == "cuda"
@@ -311,7 +311,7 @@ def test_the_committed_baseline_is_one_comparable_group(repo_root):
 
 def test_the_committed_summary_states_where_the_numbers_came_from(repo_root):
     summary = (repo_root / "reports" / "baseline_overhang.md").read_text(encoding="utf-8")
-    assert "Measured on: machine Abdelrahman-personal-laptop, backend stock mix" in summary
+    assert "Measured on: machine AbdoYasser, backend stock mix" in summary
 
 
 def test_backfill_covers_every_stage_that_starts_taichi_in_a_run(repo_root):
@@ -341,6 +341,58 @@ def test_backfill_is_idempotent_and_never_overwrites(tmp_path, repo_root, no_ove
     assert json.loads(first)["provenance"]["source"] == prov.SOURCE_BACKFILLED
     kept = json.loads((tmp_path / "b.json").read_text(encoding="utf-8"))["provenance"]
     assert kept["source"] == prov.SOURCE_PIPELINE
+
+
+def test_backfill_refreshes_its_own_blocks_but_not_recorded_ones(repo_root, no_overrides):
+    stale = report_with(copy.deepcopy(backfill_provenance.BACKFILL))
+    stale["metrics_version"] = 2
+    stale["provenance"]["machine"] = "an-old-guess"
+    assert backfill_provenance.backfill_report(stale)
+    assert stale["provenance"]["machine"] == backfill_provenance.LAPTOP
+
+    recorded = report_with(pipeline_block(repo_root))
+    recorded["metrics_version"] = 2
+    before = copy.deepcopy(recorded)
+    assert not backfill_provenance.backfill_report(recorded)
+    assert recorded == before
+
+
+def test_backfill_matches_what_the_laptop_recorded():
+    """The first run after P1.7 on the laptop (2026-09-23), as pasted by the operator.
+
+    Everything that decides comparability must agree, or the baseline would
+    split from every new laptop run.
+    """
+    recorded = {
+        "source": "pipeline",
+        "machine": "AbdoYasser",
+        "os": "Windows-10-10.0.26200-SP0",
+        "python": "3.10.21",
+        "taichi": "1.7.4",
+        "ti_arch_setting": "stock mix",
+        "stage_arches": {
+            "add_platform": "cuda", "align_atoms": "cuda", "atomize": "x64",
+            "bpn_to_sdf": "cuda", "compute_tangents": "cuda",
+            "compute_tool_orientations": "cuda", "extract_explicit_atoms": "cuda",
+            "obj_to_bpn": "x64", "order_atoms": "x64", "sdf_df_to_layers": "cuda",
+            "sdf_to_isdf": "x64", "smooth_toolpath_point": "x64",
+            "tesselate_toolpath_orientations": "x64", "toolpath_to_gcode": "cuda",
+        },
+        "machine_profile": "reference",
+        "git_commit": "8d435f7eb6b266a6070f551723eaff8a1d649334",
+        "code_modified": False,
+        "recorded_utc": "2026-09-23T20:47:37+00:00",
+        "metrics_version": 2,
+        "scored": {
+            "machine": "AbdoYasser",
+            "git_commit": "8d435f7eb6b266a6070f551723eaff8a1d649334",
+            "code_modified": False,
+            "utc": "2026-09-23T20:47:37+00:00",
+            "metrics_version": 2,
+        },
+    }
+    assert prov.comparability_key(recorded) == prov.comparability_key(backfill_provenance.BACKFILL)
+    assert recorded["os"] == backfill_provenance.BACKFILL["os"]
 
 
 def test_backfill_refuses_a_different_metrics_version():

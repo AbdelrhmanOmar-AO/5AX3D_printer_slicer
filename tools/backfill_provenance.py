@@ -10,19 +10,22 @@ What is known, and how
 Every value below comes from ``docs/handoff.md`` (sections 3 and 7b) or from
 the operator on 2026-09-23:
 
-* all 48 ran on the operator's laptop, host name ``Abdelrahman-personal-laptop``
-  (given by the operator);
+* all 48 ran on the operator's laptop. Its host name is ``AbdoYasser``, which
+  is what ``platform.node()`` records there. The operator first gave the name
+  ``Abdelrahman-personal-laptop``; the first run after P1.7 recorded
+  ``AbdoYasser``, and the operator confirmed it is the same laptop;
 * ``scripts/run_baseline_matrix.ps1`` sets neither ``ATOM_TI_ARCH`` nor
   ``ATOM_MACHINE``, so every run used the stock backend mix and the
   ``reference`` profile;
-* Windows 11 (10.0.26200), Python 3.10.21, Taichi 1.7.4, and a working CUDA
-  driver (Taichi started on CUDA reports ``Arch.cuda``).
+* Windows 11 (10.0.26200, which ``platform.platform()`` reports as
+  ``Windows-10-10.0.26200-SP0``), Python 3.10.21, Taichi 1.7.4, and a working
+  CUDA driver (Taichi started on CUDA reports ``Arch.cuda``).
 
 What is **inferred** rather than recorded: ``stage_arches``. It is each
 stage's default backend (``docs/plan_corrections.md`` 1.5), with the GPU
-stages on ``cuda`` because the laptop's CUDA works. A run on the same laptop
-after P1.7 records the real values; if they differ from these, the summary's
-mixed-provenance warning says so.
+stages on ``cuda`` because the laptop's CUDA works. The first run on the
+laptop after P1.7 (``ramp45_xs`` at 7 degrees, 2026-09-23) recorded exactly
+these 14 values.
 
 What is **not known**: the commit each run used, since the runs spanned several
 commits on 2026-09-22 and 2026-09-23, and each run's finishing time. Those are
@@ -33,8 +36,9 @@ Usage
     python tools/backfill_provenance.py            # fill in, then report
     python tools/backfill_provenance.py --check    # exit 1 if any report lacks it
 
-It only fills reports that have no provenance. It never overwrites an existing
-block, so running it twice changes nothing.
+It fills reports that have no provenance, and refreshes blocks it wrote itself
+(``source: backfilled``) when the values above are corrected. It never touches
+a block that a real run recorded, and running it twice changes nothing.
 """
 
 from __future__ import annotations
@@ -76,12 +80,12 @@ STAGE_DEFAULTS = {
 #: operator's laptop: an x86-64 CPU, and CUDA for "gpu".
 LAPTOP_ARCH = {"cpu": "x64", "gpu": "cuda"}
 
-LAPTOP = "Abdelrahman-personal-laptop"
+LAPTOP = "AbdoYasser"
 
 BACKFILL = {
     "source": prov.SOURCE_BACKFILLED,
     "machine": LAPTOP,
-    "os": "Windows 11 (10.0.26200)",
+    "os": "Windows-10-10.0.26200-SP0",
     "python": "3.10.21",
     "taichi": "1.7.4",
     "ti_arch_setting": prov.STOCK_MIX,
@@ -101,20 +105,26 @@ BACKFILL = {
     "_note": (
         "Backfilled 2026-09-23 (build plan P1.7) from docs/handoff.md and the "
         "operator. stage_arches is inferred from each stage's default backend, "
-        "not recorded at run time. The commit and finishing time were not "
+        "not recorded at run time; the first run after P1.7 on the same laptop "
+        "recorded identical values. The commit and finishing time were not "
         "recorded and are left as null."
     ),
 }
 
 
 def backfill_report(report: dict) -> bool:
-    """Add the backfill block to one report if it has none. True if changed.
+    """Give one report the backfill block. True if it changed.
 
-    Refuses a report whose metrics version is not the one the backfill
-    describes, since those numbers were computed differently.
+    Fills a report with no provenance, and refreshes a block this script wrote
+    earlier if the values have since been corrected. A block a real run
+    recorded is never touched. Refuses a report whose metrics version is not
+    the one the backfill describes, since those numbers were computed
+    differently.
     """
-    if isinstance(report.get("provenance"), dict):
-        return False
+    existing = report.get("provenance")
+    if isinstance(existing, dict):
+        if existing.get("source") != prov.SOURCE_BACKFILLED or existing == BACKFILL:
+            return False
     if report.get("metrics_version") != BACKFILL["metrics_version"]:
         raise ValueError(
             f"{report.get('part')} at {report.get('max_slope_deg')}: metrics "
