@@ -839,4 +839,34 @@ None yet.
 
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
-None yet.
+#### P4-1 The clearance model takes world-frame points and the head position (deliberate deviation)
+
+P4.1 specifies `min_clearance(points_machine)` and `violations(points_machine)`
+without saying which frame "machine" means. `atom.clearance` fixes it: points
+are in the **world frame** of `atom.bed_motion` (fixed to the machine, +Z up,
+nozzle tip at `(X, Y, 0)`), and every method also takes the head position
+`head_xy`. The reference proxy moves entirely with the head, so it only needs
+points relative to the tip, but the real envelope (gate M3) will not: a frame
+member stays put while the head moves. With `head_xy` defaulting to `(0, 0)`,
+head-frame points work unchanged.
+
+Three additions to the plan's interface, all needed by P4.2's report:
+`body_distances` (signed distance to each named body: `nozzle`, `gantry`),
+`nearest_body` (which one is closest) and `describe` (the parameters, for a
+report's provenance). Distances are exact, not bounds: the cone's is computed
+in its meridian plane against a triangle, and a test checks it against a
+brute-force sampling of the surface.
+
+The box format for `config/machines/<name>.clearance.json` is defined but no
+such file exists (gate M3, filled in P6.2). Each box says which head axes it
+follows (`"moves_with": ["x", "y"]` for the hotend, `[]` for the frame,
+`["y"]` for a beam riding on Y). `load_clearance` falls back to the reference
+proxy when a machine has no file, as the P4 gate line prescribes, and a test
+asserts no file exists until M3 is answered.
+
+**Verified against the kinematics.** Putting the bed corners in the world
+frame with `atom.bed_motion` and measuring them against the reference
+model's gantry half-space reproduces the lift `kinematics3z.inverse` asks for
+to within 0.002 mm, over 24 states up to 29.9 degrees of tilt
+(`tests/test_clearance.py`). The two therefore share one world frame, which
+P4.2 relies on.

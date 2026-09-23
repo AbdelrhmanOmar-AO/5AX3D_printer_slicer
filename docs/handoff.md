@@ -96,9 +96,28 @@ Branch **`claude/phase-p4-build-fzqw55`**, started from `main` at `4986f61`
 2026-09-23. Unit suite on the branch at start: 451 passed, 13 skipped, matching
 section 5.
 
-Nothing built yet. P1.4 (the validator) is not in `main` yet; the P1 branch
-has no commits beyond `main` so far. The task order is waiting on the
-operator (section 0, "The one dependency between them").
+**Operator's decisions (2026-09-23):**
+
+1. **Order: build around P1.4.** P4.1, then P4.3, then P4.2's collision
+   checks. P4.2's axis-range and tilt-limit checks are added from P1.4 once
+   the operator merges it into `main`; no validator code is written twice.
+2. **Part proxy in P4.2:** the convex hull is used **for the gantry only**
+   (exact there, since the gantry is flat). The nozzle cone is checked
+   against the real printed points, thinned. The plan's hull-for-everything
+   would raise false collisions whenever the nozzle works inside a hollow.
+   To be recorded as a deviation in `plan_corrections.md` 7b with P4.2.
+3. **Viewer:** wire the clearance model into the viewer **after P4.2**, so it
+   shows exactly what the swept check reports. Needs a laptop check.
+
+| Task | Status |
+|---|---|
+| P4.1 Clearance model | **Built**: `src/atom/clearance.py`, `tests/test_clearance.py` (36 tests). Reference proxy (nozzle cone 40 degrees half-angle up to 70 mm, gantry half-space above) plus the box format for M3. Agrees with the IK's own bed-corner lift to 0.002 mm. |
+| P4.3 Nozzle vs printed material | Next |
+| P4.2 Swept check | After P4.3; axis-range and tilt-limit part waits for P1.4 in `main` |
+| P4.4 Safe travel | Only if P4.2/P4.3 find problems |
+| Viewer wiring | After P4.2 |
+
+Unit suite on the branch: 487 passed, 13 skipped.
 
 ---
 
