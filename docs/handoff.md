@@ -83,8 +83,8 @@ edits. P4 is mostly synthetic and CPU-only.
 *Edited by the P1 session only.*
 
 Branch `claude/vibrant-rubin-waln7y`. After each merge it restarts from `main`;
-most recently rebased onto the merge of P1.1 (pull request #6). The operator
-chose the order P1.4, P1.7, P1.1, P1.2. Proposed next: P1.3, P1.6. P1.5 stays open until
+most recently rebased onto the merge of P1.2 (pull request #7). The operator
+chose the order P1.4, P1.7, P1.1, P1.2, P1.3. Proposed next: P1.6. P1.5 stays open until
 gate E1 is answered.
 
 The P1.4 golden run took **784 s**, against 457 s when the baseline was
@@ -96,8 +96,8 @@ before P1.6, which measures `order_atoms` timings.
 | Task | Status |
 |---|---|
 | P1.4 G-code validator | **Done** (`58d2fe7`), verified on the laptop 2026-09-23: `pytest --run-pipeline tests/test_golden.py` gave **5 passed, 1 skipped** in 784 s. Golden SHA unchanged, and the real golden G-code validates with zero violations. (The P1.4 commit message expected 4 passed; that miscounted the file's unit tests.) **Merged into `main`** (pull request #4, `fab657f`), so the P4 session can bring it in |
-| P1.2 Templated header/footer + temperatures | **Built.** `atom.gcode_templates`; `kinematics3z.HEADER`/`FOOTER` now come from it, byte-identical to upstream (checked against the evaluated `e7b71ea` f-strings, and by converting the golden toolpath before and after: identical file). Optional `bed_temp`/`nozzle_temp` JSON keys and `--bed-temp`/`--nozzle-temp` options. Klipper raises GATE E1. **Verified on the laptop 2026-09-23:** `pytest --run-pipeline tests/test_golden.py` gave 5 passed, 1 skipped in 522 s, so the golden SHA is unchanged after editing the vendored `kinematics3z.py`, `atomize.py` and `toolpath_to_gcode.py` |
-| P1.3 Infill parameters | **Built**, local until PR #7 (P1.2) is merged. `atom.infill_options`; optional `infill_period` / `shell_thickness` JSON keys (deposition widths) and `--infill-period` / `--shell-thickness` on `tools/sdf_to_isdf.py`; defaults are upstream's 8 and 2. **Laptop check pending:** the golden test plus `tests/test_infill_pipeline.py` (a cube run with period 12 must extrude less than the golden) |
+| P1.2 Templated header/footer + temperatures | **Built.** `atom.gcode_templates`; `kinematics3z.HEADER`/`FOOTER` now come from it, byte-identical to upstream (checked against the evaluated `e7b71ea` f-strings, and by converting the golden toolpath before and after: identical file). Optional `bed_temp`/`nozzle_temp` JSON keys and `--bed-temp`/`--nozzle-temp` options. Klipper raises GATE E1. **Verified on the laptop 2026-09-23:** `pytest --run-pipeline tests/test_golden.py` gave 5 passed, 1 skipped in 522 s, so the golden SHA is unchanged after editing the vendored `kinematics3z.py`, `atomize.py` and `toolpath_to_gcode.py`. In `main` (pull request #7) |
+| P1.3 Infill parameters | **Built.** `atom.infill_options`; optional `infill_period` / `shell_thickness` JSON keys (deposition widths) and `--infill-period` / `--shell-thickness` on `tools/sdf_to_isdf.py`; defaults are upstream's 8 and 2. **Laptop check pending:** the golden test plus `tests/test_infill_pipeline.py` (a cube run with period 12 must extrude less than the golden) |
 | P1.1 Kinematics test suite | **Built.** `tests/test_kinematics3z.py` (24 tests) plus `tests/kinematics_f64_roundtrip.py`. No laptop run needed (CPU only). Two findings: the direction round trip is 4.5e-4 rad in 32-bit floats but exact in 64-bit (P1-8, both now tested), and a positive `offset` is a first estimate of the lift (P1-9, `docs/conventions.md` corrected). In `main` (pull request #6) |
 | P1.7 Provenance on reports | **Done**, verified on the laptop 2026-09-23. Every overhang report records its machine, backend (each stage's actual one), Taichi version, profile and commit (`atom.provenance`). All 48 baseline reports are backfilled (`tools/backfill_provenance.py`). `--summarize` states the origin above the table and warns on a mixed table. In `main` (pull request #5) |
 
