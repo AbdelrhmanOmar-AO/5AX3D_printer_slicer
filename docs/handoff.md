@@ -82,7 +82,7 @@ edits. P4 is mostly synthetic and CPU-only.
 
 *Edited by the P1 session only.*
 
-Branch `claude/vibrant-rubin-waln7y`, started from `main` at `4986f61`. The
+Branch `claude/vibrant-rubin-waln7y`, started from `main` at `4986f61`; rebased onto `main` at `fab657f` after P1.4 was merged. The
 operator chose **P1.4 first**. The rest of the order is still to be confirmed
 (proposed: P1.7, then P1.1, P1.2, P1.3, P1.6; P1.5 stays open until gate E1).
 
@@ -93,7 +93,7 @@ before P1.6, which measures `order_atoms` timings.
 
 | Task | Status |
 |---|---|
-| P1.4 G-code validator | **Done** (`58d2fe7`), verified on the laptop 2026-09-23: `pytest --run-pipeline tests/test_golden.py` gave **5 passed, 1 skipped** in 784 s. Golden SHA unchanged, and the real golden G-code validates with zero violations. (The P1.4 commit message expected 4 passed; that miscounted the file's unit tests.) Pull request #4 opened for `main` |
+| P1.4 G-code validator | **Done** (`58d2fe7`), verified on the laptop 2026-09-23: `pytest --run-pipeline tests/test_golden.py` gave **5 passed, 1 skipped** in 784 s. Golden SHA unchanged, and the real golden G-code validates with zero violations. (The P1.4 commit message expected 4 passed; that miscounted the file's unit tests.) **Merged into `main`** (pull request #4, `fab657f`), so the P4 session can bring it in |
 | P1.7 Provenance on reports | **Built.** Every overhang report now records its machine, backend (each stage's actual one), Taichi version, profile and commit (`atom.provenance`). All 48 baseline reports are backfilled (`tools/backfill_provenance.py`). `--summarize` states the origin above the table and warns on a mixed table. Laptop check pending: see below |
 
 **P1.7 laptop check** (one run, ~7 min, the known-answer part). It runs a
