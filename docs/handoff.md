@@ -5,7 +5,7 @@ with no prior conversation.
 
 **Keep this file updated as the work progresses.**
 
-Last updated: 2026-09-22. **Phase P0 is complete**; 368 unit tests pass.
+Last updated: 2026-09-23. **Phase P0 is complete**; 378 unit tests pass.
 The P0.8 matrix is being re-run against corrected metrics.
 
 ---
@@ -89,9 +89,8 @@ Setup pain already solved, all documented in `README.md`:
 
 ## 5. Where the work stands
 
-**Phase P0 is complete.** Every foundation task is built, tested and verified
-on the operator's laptop. What remains in P0 is compute time, not code: the
-baseline matrix is being re-run against corrected metrics.
+**Phase P0 is complete**, baseline included. The next work is P2, the
+overhang-aware field: the project's actual contribution.
 
 | Task | Status |
 |---|---|
@@ -102,9 +101,9 @@ baseline matrix is being re-run against corrected metrics.
 | P0.5 Machine profiles | **Done**. Golden test passed after it: G-code byte-identical |
 | P0.6 Tilt contracts and conventions | **Done**. `atom.tilt`, `atom.contracts`, `docs/conventions.md` |
 | P0.7 Benchmark meshes | **Done**. 36 meshes, 9 parts x 4 sizes |
-| P0.8 Overhang metrics | Tooling done and validated. **Matrix re-running** (2026-09-22); see section 7b |
+| P0.8 Overhang metrics | **Done.** 48 runs at metrics v2; see section 7b |
 
-368 unit tests pass; 6 skipped (the `pipeline` and `benchmark` tiers).
+378 unit tests pass; 6 skipped (the `pipeline` and `benchmark` tiers).
 
 ### Verification status
 
@@ -122,43 +121,45 @@ The golden baseline is committed (`tests/golden/calibration_cube.stats.json`,
 
 ### The immediate next step
 
-The baseline matrix is being re-run (~20 h) after three flaws were found in the
-unsupported-deposition metric:
+**P0 is finished, baseline included.** The next work is **P2**, the
+overhang-aware orientation field — the project's contribution. Everything it
+depends on is in place: the tilt contracts (P0.6), the conventions document, the
+benchmark parts, validated metrics, and a baseline that says exactly what is
+wrong with the current field.
+
+Start with **P2.1** (document the orientation-field pipeline and the analytic
+tilt bound), then **P2.2** (the overhang constraint itself). P2.5 re-runs this
+same matrix with the flag on and compares, so keep the reports committed.
+
+Two things to re-run after any change to the metrics or to a vendored file:
 
 ```powershell
-.\scripts\run_baseline_matrix.ps1 -Sizes xs,s
+python tools/overhang_report.py --reanalyse          # re-score, seconds
+pytest --run-pipeline tests/test_golden.py           # ~7.5 min
 ```
 
-When it finishes, read `reports/baseline_overhang.md`, commit `reports/`, and
-take the result to gate D0.
-
-**Before any long run, do one short one.** Both of the later flaws were caught
-by a seven-minute single-part check against a twenty-hour matrix:
+**Before any long run, do one short one.** Two of the three metric flaws were
+caught this way:
 
 ```powershell
 python tools/overhang_report.py data/param/ramp45_xs.json --max-slope 7
 ```
 
-`ramp45_xs` at `max_slope 7` should report about **0.24 % unsupported** and
+`ramp45_xs` at `max_slope 7` should report about **0.2 % unsupported** and
 **printable: True**. A 45-degree overhang is one any 3-axis printer manages, so
 that is the case whose answer is known; if it moves, something has regressed.
 
-**An interrupted matrix resumes.** Each run writes its report as it finishes,
-so a crash loses at most one run. Check what is outstanding, then continue:
+**An interrupted matrix resumes.** Check what is outstanding, then continue:
 
 ```powershell
 python tools/overhang_report.py --status xs s
 .\scripts\run_baseline_matrix.ps1 -Sizes xs,s -Resume
 ```
 
-Reports carry a `metrics_version`; one produced by an older definition counts
-as missing, so a half-finished re-run cannot look complete.
-`reports/matrix_progress.csv` is an append-only trail of every run.
-
-**A metric change no longer costs a re-run.** Every run archives its toolpath
-to `reports/toolpaths/` (gitignored, ~220 MB for a full matrix), and
-`python tools/overhang_report.py --reanalyse` re-scores every archived run in
-seconds.
+**A metric change no longer costs a re-run.** Every run archives its toolpath to
+`reports/toolpaths/` (gitignored, ~220 MB for a full matrix), and `--reanalyse`
+re-scores every archived run in seconds. This recovered 39 of 48 runs after the
+metrics changed mid-study.
 
 ### After that
 
@@ -278,58 +279,64 @@ design spec — expect loud fans, a hot chassis and thermal throttling that make
 the runtime estimates optimistic, not damage. Keep it plugged in and stop it
 sleeping (`powercfg /change standby-timeout-ac 0`).
 
-## 7b. The P0.8 baseline (2026-09-22)
+## 7b. The P0.8 baseline result (final, 2026-09-23)
 
-A first matrix ran on 2026-09-21: 48 runs, 8 parts x 3 slopes x 2 sizes, 19.9
-hours wall clock, none failed. Three flaws were then found in the
-unsupported-deposition metric, so **it is being re-run**. What survives from
-the first run and what does not:
+48 runs, 8 parts x 3 slopes x 2 sizes, all at metrics v2.
+`reports/baseline_overhang.md`, the per-run JSON and
+`reports/matrix_progress.csv` are committed.
 
-| Result | Status |
-|---|---|
-| Tilt behaviour (below) | **Sound.** Comes from tool orientations, which no flaw touched |
-| Runtime scaling (below) | **Sound.** Comes from timings, which no flaw touched |
-| Unsupported deposition | **Superseded.** All three flaws were in this column |
+### Result 1: stock Atomizer's overhang limit is 45 degrees
 
-The first run's reports are in git history at `ea675ba`.
+Exactly the classic planar 3-axis limit. A 5-axis machine performing like a
+3-axis one on overhangs.
 
-### The headline finding
+| Part | ms 7° | ms 15° | ms 30° |
+|---|---|---|---|
+| `ramp45` | ✅ 45° / 0.2 % | ✅ 45° / 0.2 % | ❌ 51° / 3.1 % |
+| `ramp50` | ❌ 50° / 4.6 % | ❌ 50° / 4.1 % | ❌ 67° / 8.4 % |
+| `ramp60` | ❌ 60° / 4.7 % | ❌ 65° / 4.9 % | ❌ 90° / 26.8 % |
+| `ramp70` | ❌ 70° / 9.8 % | ❌ 80° / 16.5 % | ❌ 90° / 26.9 % |
+| `ramp80` | ❌ 83° / 17.8 % | ❌ 90° / 25.8 % | ❌ 90° / 24.9 % |
+| `ramp90` | ❌ 90° / 24.7 % | ❌ 90° / 24.6 % | ❌ 90° / 25.5 % |
+| `tshape` | ❌ 90° / 24.4 % | ❌ 90° / 24.4 % | ❌ 90° / 24.5 % |
+| `twin_domes` | – no overhang | – no overhang | – no overhang |
 
-**Stock Atomizer does not merely ignore overhangs; it tilts away from them, and
-a larger tilt budget makes that worse.** Geometric angle against the effective
-angle achieved, size `s`:
+Effective angle / unsupported deposition near overhangs, size `s`. Size `xs`
+agrees within a couple of percentage points throughout, so the result does not
+depend on part size.
 
-| Part | max_slope 7° | 15° | 30° | Tilt used at 30° |
-|---|---|---|---|---|
-| `ramp45` | 45° | 45° | **50°** | 6.3° |
-| `ramp50` | 50° | 50° | **65°** | 17.1° |
-| `ramp60` | 60° | 64° | **90°** | 29.7° |
-| `ramp70` | 70° | 79° | **90°** | 20.6° |
-| `ramp80` | 83° | 90° | 90° | 14.6° |
-| `ramp90` | 90° | 90° | 90° | 11.9° |
+### Result 2: more tilt budget makes overhangs worse, one degree for one
 
-The damage tracks the tilt almost exactly one-for-one: `ramp60` at 30° uses
-29.7° of tilt and its overhang worsens by 30°, turning a 60° slope into a
-horizontal ceiling. That is the same `theta_eff = theta_geo ± tilt` relation
-P0.6 verified, with the wrong sign, and it states plainly what P2 exists to
-fix: the same tilt aimed correctly would turn 60° into 30°.
+The worsening of the effective angle **equals the tilt used**:
 
-`ramp90` and `tshape` are already horizontal and cannot get worse. At
-`max_slope 7` the field barely tilts at all (0.6–1.3°) on most parts, so the
-harm only appears once there is a budget to misuse. Upstream's 5.5–7° defaults
-hide it.
+```
+theta_eff = theta_geo + tilt_used      (capped at 90 degrees)
+```
 
-**What to look for in the re-run.** With the metric working, `ramp45` passes at
-`max_slope 7` (0.24 % unsupported). If it then *fails* at 30°, where its
-effective overhang becomes 50°, the claim sharpens to: **raising the tilt
-budget turns a printable overhang into an unprintable one.** The first matrix
-could not show this, because nothing passed at any setting.
+Measured over the 18 runs that used more than 2 degrees of tilt and were not
+already horizontal: mean absolute deviation **0.57 degrees**, correlation
+**r = 0.992**.
+
+So the field's tilt points almost exactly *away* from the overhang — not
+randomly, systematically opposite. `ramp60` at `max_slope 30` spends 29.7
+degrees of tilt turning a 60-degree slope into a horizontal ceiling.
+
+The sharpest form of it: **`ramp45` passes at `max_slope` 7 and 15, and fails
+at 30.** Raising the tilt budget turns the one printable overhang into an
+unprintable one. Upstream's 5.5–7 degree defaults hide this; the harm only
+appears once there is a budget to misuse.
+
+### What this means for P2
+
+The mechanism is not subtly wrong, it is sign-wrong, and the relationship is
+exact. The same magnitude of tilt aimed correctly would turn `ramp60`'s
+60 degrees into **30**, well inside the threshold. P2's job is to change where
+the tilt points, not how much of it there is.
 
 ### Measured runtime scaling
 
-`order_atoms` grows as **points^1.5**, not linearly (mean exponent 1.50 over 24
-part/slope pairs, range 1.39–1.61). This does not appear to be published for
-Atomizer, so it is a result in its own right.
+`order_atoms` grows as **points^1.5** (mean exponent 1.50 over 24 part/slope
+pairs, range 1.39–1.61). Not published for Atomizer as far as we can tell.
 
 | Size | Volume vs `s` | Per run | 24-run matrix |
 |---|---|---|---|
@@ -337,33 +344,22 @@ Atomizer, so it is a result in its own right.
 | `m` (75 mm) | 3.4x | ~4.4 h | ~105 h (4 days) |
 | `l` (100 mm) | 8.0x | ~16 h | ~384 h (16 days) |
 
-**`l` is out of reach** for a full matrix and `m` is a four-day commitment.
-Size `s` is the practical ceiling for anything run repeatedly; reserve `l` for
-individual showcase parts and printed benchmarks.
+`l` is out of reach for a repeated matrix; `s` is the practical ceiling.
 
-This is also why the first matrix took 19.9 h against an 8.8 h estimate: that
-estimate assumed linear scaling.
+### How this run went, and what made it survivable
 
-### The three metric flaws, and the habit that caught them
+The matrix was interrupted twice — a spontaneous restart 12 hours in, then
+PowerShell being closed — and lost about 40 minutes of work in total.
 
-Each was hidden by the one before it. On `ramp45_xs` at `max_slope 7`:
+* Each run writes its report the moment it finishes, so completed work is never
+  in flight.
+* Each run archives its toolpath, so `--reanalyse` recovered **39 of 48 runs in
+  seconds** after the metrics changed, rather than 13 hours of re-slicing.
+* `metrics_version` stops a stale report from masquerading as current, and
+  `-Resume` skips only genuinely current results.
 
-| State | Unsupported | Verdict |
-|---|---:|---|
-| Original | 28.70 % | not printable |
-| After the bed-contact fix | 28.70 % | unchanged — that bug was in the *overall* figure |
-| After dense surface sampling | 16.35 % | not printable |
-| After the cone governs the radius | **0.24 %** | **printable** |
-
-Full write-ups in `plan_corrections.md` 4.5, 4.6 and 1.8; the validation is 3.7.
-
-Two habits worth keeping, both of which paid for themselves here:
-
-* **Before a long run, do one short one.** A seven-minute single-part check
-  caught two of the three, against a twenty-hour matrix.
-* **A figure that does not move when the thing it depends on changes is worth
-  chasing.** The identical 28.70 % after the first fix is what exposed the
-  second flaw.
+Three flaws in the metric were found and fixed before this run
+(`plan_corrections.md` 4.5, 4.6, 1.8); 3.7 records the validation.
 
 ## 8. Gates (blocked on other people)
 

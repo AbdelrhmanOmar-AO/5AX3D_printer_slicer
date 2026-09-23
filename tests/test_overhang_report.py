@@ -546,3 +546,29 @@ def test_check_done_prints_nothing(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(overhang_report, "REPORT_DIR", tmp_path)
     overhang_report.main(["--check-done", "absent", "7"])
     assert capsys.readouterr().out == ""
+
+
+def test_a_part_with_no_overhang_is_not_reported_as_a_failure(ti_cpu, tmp_path):
+    """twin_domes checks that smooth surfaces are not made worse.
+
+    It has no overhang, so "not printable" misreads what it is for.
+    """
+    mesh = bm.make_box(**bm.default_dimensions(60.0))
+    stl_path = tmp_path / "box.stl"
+    mesh.export(stl_path)
+    toolpath_path = tmp_path / "box_smoothed.npz"
+    SyntheticToolpath(
+        [[10.0, 10.0, z] for z in np.arange(0.45, 20.0, 0.45)], [0.0, 0.0, 1.0]
+    ).save(toolpath_path)
+
+    report = overhang_report.measure(
+        "box", 7.0, 0.9, toolpath_path=toolpath_path, stl_path=stl_path
+    )
+
+    assert report["verdict"]["assessable"] is False
+    assert report["verdict"]["printable"] is False
+
+    cell = overhang_report._format_cell(report)
+    assert "no overhang" in cell
+    assert "❌" not in cell, "nothing to assess is not a failure"
+    assert "✅" not in cell, "nor is it a pass"

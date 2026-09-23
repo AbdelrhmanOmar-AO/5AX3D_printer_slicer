@@ -226,8 +226,12 @@ def measure(
     measured = [s for s in surfaces if s.measured]
     worst_effective = max((s.max_effective_deg for s in measured), default=float("nan"))
 
+    # A part with no overhang surface at all is not a failure; there is simply
+    # nothing to assess. twin_domes exists to check that smooth surfaces are not
+    # made worse, and reporting it as "not printable" misreads that.
+    assessable = bool(measured)
     printable = bool(
-        measured
+        assessable
         and worst_effective <= MAX_EFFECTIVE_OVERHANG_DEG
         and near_count > 0
         and near_fraction < MAX_UNSUPPORTED_FRACTION
@@ -271,6 +275,7 @@ def measure(
         },
         "verdict": {
             "printable": printable,
+            "assessable": assessable,
             "worst_effective_deg": worst_effective,
             "thresholds": {
                 "max_effective_overhang_deg": MAX_EFFECTIVE_OVERHANG_DEG,
@@ -376,10 +381,18 @@ def _format_cell(report):
     worst = verdict["worst_effective_deg"]
     near = metrics["unsupported_fraction_near_overhangs"]
 
+    tilt_text = f"{metrics['max_tool_tilt_deg']:.1f}°"
+
+    # No overhang surface to assess is not a failure. Say so rather than
+    # marking it failed; twin_domes is in the study to check that smooth
+    # surfaces are not made worse, not to pass an overhang threshold.
+    if not verdict.get("assessable", True):
+        return f"– no overhang / tilt {tilt_text}"
+
     worst_text = "n/m" if math.isnan(worst) else f"{worst:.0f}°"
     near_text = "n/m" if math.isnan(near) else f"{near * 100:.1f}%"
     mark = "✅" if verdict["printable"] else "❌"
-    return f"{mark} {worst_text} / {near_text} / {metrics['max_tool_tilt_deg']:.1f}°"
+    return f"{mark} {worst_text} / {near_text} / {tilt_text}"
 
 
 def summarize(reports):
@@ -496,6 +509,12 @@ def _conclusion(reports, slopes):
     def ramp_angle(report):
         return float(re.match(r"ramp(\d+)", report["part"]).group(1))
 
+    ramps = [r for r in ramps if r["verdict"].get("assessable", True)]
+    if not ramps:
+        return [
+            "No ramp presented a measurable overhang surface, so nothing can be "
+            "concluded about the printable angle."
+        ]
     printable = [r for r in ramps if r["verdict"]["printable"]]
     best = max((ramp_angle(r) for r in printable), default=None)
     worst_failed = min(
