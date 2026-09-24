@@ -720,6 +720,62 @@ timer. `tests/test_visualize_5ax.py` now drives the real event loop, but that
 only guards the playback path. The Windows behaviour has to be checked on the
 laptop.
 
+### 4.14 A report that does not name its machine can be quietly contaminated
+
+Found on 2026-09-24, the first time a second machine ran the pipeline. Every
+run writes `reports/baseline_overhang/<part>_ms<deg>.json`, keyed by part and
+slope only — **not by machine.** So a single run on the lab machine overwrote
+the committed, laptop-measured cell for `ramp45_xs` at 7 degrees, and nothing in
+the file or the summary said a different machine had made it.
+
+That is 3.9 arriving in practice rather than in principle. The failure it
+enables is the worst kind for this project: a stock-vs-overhang-aware table with
+one cell from another machine credits a **hardware difference** to the
+contribution, and nothing in the data reveals it.
+
+Closed by `src/atom/provenance.py` and the report tool:
+
+* every report carries `provenance.pipeline` (the machine and toolchain that
+  produced the **toolpath**) and `provenance.scored` (the one that computed the
+  metrics);
+* the two are kept apart deliberately. `--reanalyse` re-scores archived
+  toolpaths, so it carries `pipeline` forward unchanged and refreshes `scored`
+  only. Conflating them would have made one `--reanalyse` on the lab machine
+  relabel all 48 laptop runs as lab runs — the exact corruption being guarded
+  against, introduced by the guard;
+* `reports/baseline_overhang.md` now states the machine, and prints a **loud
+  warning listing which runs came from where** when one table mixes machines;
+* a **forced backend counts as a different machine**: `ti_arch` is part of the
+  comparison, because 3.9 is about arithmetic, not only hardware;
+* "unknown" is never treated as "matches mine". A report without provenance
+  cannot be declared comparable to one that has it;
+* `reports/matrix_progress.csv` gained a `machine` column, with a migration
+  that pads older rows rather than writing ragged ones into the crash trail
+  from 4.7.
+
+**The 48 committed reports were backfilled** from `docs/handoff.md` section 3
+and `tests/golden/baseline.md`, and marked `"recorded":
+"reconstructed-from-docs"` rather than `"captured"` — the values are read off
+documentation, not measured at the time. Only `schema_version` changed in those
+files; no metric was touched.
+
+`SCHEMA_VERSION` is 2, and **version 1 remains readable.** Refusing it would
+have discarded the baseline to gain a version number.
+
+### 4.15 No single test file could be run on its own
+
+Found while adding the tests for 4.14. `pytest tests/test_tilt.py` failed with
+`ModuleNotFoundError: No module named 'atom'` while the full suite passed, on
+every test file in the repository.
+
+`tests/conftest.py` put `tools/` on `sys.path` but not `src/`. During a full
+collection, one of the `tools/` modules inserts `src/` as an import side effect,
+and every module imported after it rides on that. So whether an import worked
+depended on **collection order** — invisible while running the whole suite, and
+broken the moment anyone runs one file, which is the normal way to work on one.
+
+`conftest.py` now adds `src/` explicitly, next to `tools/`.
+
 ## 5. Open plan items not yet resolved
 
 | Item | Status |
@@ -731,8 +787,8 @@ laptop.
 | Thresholds (45 deg effective, 1 % unsupported) | Placeholders, gate D0. Now meaningful: with the metric fixed, parts can actually pass. |
 | `twin_domes` verdict | Reports "not printable" when it has no overhang to measure. Conservative by design but misleading in the table; distinguishing "nothing to measure" from "failed" is worth doing. |
 | Which stage first diverges across backends | 3.9 argues the field solvers, from which stages change backend and how the planner works. Not measured stage by stage. The atom count in `data/frame/<part>.npz` settles it in one command if it ever matters. |
-| Reports do not name the machine that produced them | **Now urgent.** A run on the lab machine silently overwrites the committed cell for that part and slope, so a laptop-measured baseline can acquire a lab-measured cell with nothing in the file to show it. Must be closed before any matrix run happens off the laptop. |
-| Backend recorded beside each number | 3.9's consequence 4. The reports in `reports/` do not record which backend produced them; all 48 used the stock mix, but nothing in the files says so. Worth adding before any run happens on another machine. |
+| Reports do not name the machine that produced them | **Closed** (2026-09-24). Every report now carries a `provenance` block, the summary warns when one table mixes machines, and the 48 committed reports were backfilled. See 4.14. |
+| Backend recorded beside each number | **Closed** by the same change: `ti_arch` is part of the provenance record, and a forced backend counts as a different machine. |
 | `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
 | `-Parallel N` for the matrix | Designed, not built, by choice (handoff section 3): partition by part+size so no two workers share `data/` paths, per-worker Taichi cache dirs, a concurrency-safe progress log. Waiting on a measurement from the 36-core lab machine. |
@@ -754,6 +810,7 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 4.8 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
 | 3.9 | The golden SHA-256 holds only on the backend mix it was captured on |
 | 4.13 | Create VTK timers after the interactor is initialised, or they never fire on Windows |
+| 4.14 | Reports are keyed by part and slope, not machine; a second machine overwrites them silently |
 
 And the two habits that caught most of them:
 

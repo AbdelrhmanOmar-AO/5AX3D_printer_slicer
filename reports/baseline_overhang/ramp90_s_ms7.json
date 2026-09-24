@@ -1,6 +1,33 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "metrics_version": 2,
+  "provenance": {
+    "pipeline": {
+      "recorded": "reconstructed-from-docs",
+      "host": null,
+      "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
+      "cpu_logical": 12,
+      "os": "Windows-11-10.0.26200",
+      "python": "3.10.21",
+      "taichi": "1.7.4",
+      "ti_arch": null,
+      "machine_profile": "reference",
+      "git_commit": null,
+      "blender": "Blender 5.2.1 LTS"
+    },
+    "scored": {
+      "recorded": "reconstructed-from-docs",
+      "host": null,
+      "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
+      "cpu_logical": 12,
+      "os": "Windows-11-10.0.26200",
+      "python": "3.10.21",
+      "taichi": "1.7.4",
+      "ti_arch": null,
+      "machine_profile": "reference",
+      "git_commit": null
+    }
+  },
   "part": "ramp90_s",
   "max_slope_deg": 7.0,
   "overhang_aware": false,

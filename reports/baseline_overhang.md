@@ -8,6 +8,8 @@ A part counts as printable when the worst effective overhang stays at or below 4
 
 `n/m` means not measured: no deposition was found near that surface.
 
+Measured on **AMD Ryzen 5 5600H with Radeon Graphics (stock backend mix) [from docs, not measured]**.
+
 | Part | max_slope 7° | max_slope 15° | max_slope 30° |
 |---|---|---|---|
 | `ramp45_s` | ✅ 45° / 0.2% / 0.7° | ✅ 45° / 0.2% / 0.8° | ❌ 51° / 3.1% / 6.3° |

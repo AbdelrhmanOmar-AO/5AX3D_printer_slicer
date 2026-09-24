@@ -58,6 +58,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from atom import overhang_metrics as om  # noqa: E402
+from atom import provenance as prov  # noqa: E402
 from atom.ti_env import init_taichi  # noqa: E402
 
 #: Where individual reports and the summary live.
@@ -66,7 +67,15 @@ SUMMARY_PATH = REPO_ROOT / "reports" / "baseline_overhang.md"
 #: Each run's toolpath, kept so the metrics can be recomputed without re-slicing.
 TOOLPATH_ARCHIVE = REPO_ROOT / "reports" / "toolpaths"
 
-SCHEMA_VERSION = 1
+#: File layout version. Bumped to 2 when the `provenance` block was added
+#: (which machine produced the toolpath, and which scored it — see
+#: `atom.provenance` and corrections 3.9). Version 1 reports remain readable:
+#: they are the committed baseline, and refusing them would have thrown it away.
+#: A version 1 report simply has no provenance, which reads as "unknown".
+SCHEMA_VERSION = 2
+
+#: Layouts this tool can read. Anything else is skipped rather than guessed at.
+READABLE_SCHEMA_VERSIONS = (1, 2)
 
 #: Version of the *metric semantics*, distinct from the file layout. Bump it
 #: whenever a change alters what the numbers mean, so a report produced by an
@@ -182,11 +191,21 @@ def measure(
     stage_times=None,
     toolpath_path=None,
     stl_path=None,
+    pipeline_provenance=None,
 ):
     """Apply the three metrics and assemble the report.
 
     ``toolpath_path`` and ``stl_path`` default to the pipeline's own output
     locations; they are arguments so this can be exercised on synthetic data.
+
+    ``pipeline_provenance`` is the machine that produced the **toolpath**, which
+    is not necessarily this one: ``--reanalyse`` re-scores an archived toolpath
+    and must carry its original machine forward, or every laptop-measured run
+    re-scored on the lab machine would be relabelled as lab-measured — the very
+    corruption this records guard against (corrections 3.9). It is therefore an
+    argument with no default: a caller that has just run the pipeline passes
+    this machine's, and one re-scoring passes the old report's, including
+    ``None`` when that report predates provenance.
     """
     from atom import toolpath3
 
@@ -240,6 +259,12 @@ def measure(
     return {
         "schema_version": SCHEMA_VERSION,
         "metrics_version": METRICS_VERSION,
+        # Which machine produced the toolpath, and which scored it. Kept apart
+        # on purpose; see `atom.provenance`.
+        "provenance": {
+            "pipeline": pipeline_provenance,
+            "scored": prov.fingerprint(include_blender=False),
+        },
         "part": part,
         "max_slope_deg": max_slope_deg,
         "overhang_aware": False,
@@ -286,24 +311,65 @@ def measure(
     }
 
 
+#: Columns of the progress log. `machine` was appended when provenance was
+#: added; `migrate_progress_header` brings an older file up to it rather than
+#: writing ragged rows into it.
+PROGRESS_COLUMNS = (
+    "finished_utc", "part", "max_slope_deg", "metrics_version",
+    "worst_effective_deg", "unsupported_near_overhangs",
+    "max_tilt_used_deg", "printable", "runtime_s", "machine",
+)
+
+
+def migrate_progress_header(path=None):
+    """Bring a progress log written before `machine` existed up to date.
+
+    Returns True if the file was rewritten. Old rows are padded with an empty
+    machine rather than guessed at: the log predates the record, and inventing
+    a machine for it would be worse than admitting none.
+
+    A ragged CSV is the failure being avoided. The file is the crash trail from
+    correction 4.7, so it must stay readable by anything that opens it.
+    """
+    path = PROGRESS_LOG if path is None else path
+    if not path.is_file():
+        return False
+
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.reader(handle))
+    if not rows or tuple(rows[0]) == PROGRESS_COLUMNS:
+        return False
+
+    width = len(PROGRESS_COLUMNS)
+    padded = [list(PROGRESS_COLUMNS)]
+    for row in rows[1:]:
+        padded.append((list(row) + [""] * width)[:width])
+
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        csv.writer(handle).writerows(padded)
+    return True
+
+
 def append_progress(report):
     """Append one line to the progress log, flushed immediately.
 
     The per-run JSON is the real artifact; this is the at-a-glance trail that
-    survives a crash and shows what had been completed and when.
+    survives a crash and shows what had been completed and when — and now on
+    which machine, since a run on another machine is a different computation
+    (corrections 3.9).
     """
     metrics, verdict = report["metrics"], report["verdict"]
     PROGRESS_LOG.parent.mkdir(parents=True, exist_ok=True)
 
     new_file = not PROGRESS_LOG.exists()
+    if not new_file:
+        migrate_progress_header()
+
+    pipeline = (report.get("provenance") or {}).get("pipeline") or {}
     with PROGRESS_LOG.open("a", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         if new_file:
-            writer.writerow([
-                "finished_utc", "part", "max_slope_deg", "metrics_version",
-                "worst_effective_deg", "unsupported_near_overhangs",
-                "max_tilt_used_deg", "printable", "runtime_s",
-            ])
+            writer.writerow(list(PROGRESS_COLUMNS))
         writer.writerow([
             datetime.now(timezone.utc).isoformat(timespec="seconds"),
             report["part"],
@@ -314,6 +380,7 @@ def append_progress(report):
             f"{metrics['max_tool_tilt_deg']:.2f}",
             verdict["printable"],
             f"{report['runtime']['total_s']:.0f}",
+            pipeline.get("host") or "",
         ])
         handle.flush()
         os.fsync(handle.fileno())
@@ -361,6 +428,9 @@ def reanalyse(reports):
             runtime_s=old.get("runtime", {}).get("total_s", 0.0),
             stage_times=old.get("runtime", {}).get("stages", {}),
             toolpath_path=archived,
+            # The archived toolpath was computed wherever it was computed.
+            # Re-scoring it here does not move that.
+            pipeline_provenance=old.get("provenance", {}).get("pipeline"),
         )
         report_path(part, slope).write_text(
             json.dumps(fresh, indent=2) + "\n", encoding="utf-8"
@@ -395,6 +465,55 @@ def _format_cell(report):
     return f"{mark} {worst_text} / {near_text} / {tilt_text}"
 
 
+def _provenance_lines(reports):
+    """State which machine produced these runs, and shout if it is more than one.
+
+    This is the guard correction 3.9 asks for. A table that silently mixes two
+    machines attributes a hardware difference to whatever the table is meant to
+    show, and a matrix run on another machine overwrites reports one cell at a
+    time, so a mixed table is a realistic accident rather than a hypothetical.
+    """
+    records = [(r.get("provenance") or {}).get("pipeline") for r in reports]
+    buckets = prov.group_by_machine(records)
+
+    if len(buckets) <= 1:
+        record = buckets[0][0] if buckets else None
+        if record is None:
+            return [
+                "> **Machine not recorded.** These runs predate provenance "
+                "(schema 1), so nothing in the files says where they were "
+                "computed. `docs/handoff.md` section 3 has the machine they "
+                "were measured on.",
+                "",
+            ]
+        return [f"Measured on **{prov.describe(record)}**.", ""]
+
+    lines = [
+        "> ## ⚠️ These results come from more than one machine",
+        ">",
+        "> A run on another machine is a **different computation** — different "
+        "arithmetic gives a different toolpath (`docs/plan_corrections.md` "
+        "3.9). Numbers from different machines must not be compared with each "
+        "other, and a conclusion drawn across this table is not sound.",
+        ">",
+    ]
+    for record, members in buckets:
+        cells = ", ".join(
+            f"`{reports[i]['part']}` @ {reports[i]['max_slope_deg']:g}°"
+            for i in sorted(members)[:6]
+        )
+        if len(members) > 6:
+            cells += f", and {len(members) - 6} more"
+        lines.append(f"> * **{prov.describe(record)}** — {len(members)} run(s): {cells}")
+    lines += [
+        ">",
+        "> Re-run the odd ones out on one machine before drawing anything from "
+        "this table.",
+        "",
+    ]
+    return lines
+
+
 def summarize(reports):
     """Build the comparison table and the plain-language conclusion."""
     parts = sorted({r["part"] for r in reports})
@@ -416,7 +535,7 @@ def summarize(reports):
         "",
         "`n/m` means not measured: no deposition was found near that surface.",
         "",
-    ]
+    ] + _provenance_lines(reports)
 
     header = "| Part | " + " | ".join(f"max_slope {s:g}°" for s in slopes) + " |"
     lines += [header, "|" + "---|" * (len(slopes) + 1)]
@@ -582,11 +701,12 @@ def load_reports(quiet=False):
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             print(f"  CORRUPT {path.name}: {exc}. Delete it and re-run that part.")
             continue
-        if data.get("schema_version") != SCHEMA_VERSION:
+        if data.get("schema_version") not in READABLE_SCHEMA_VERSIONS:
             if not quiet:
                 print(
                     f"  Skipping {path.name}: schema version "
-                    f"{data.get('schema_version')}, expected {SCHEMA_VERSION}"
+                    f"{data.get('schema_version')}, can read "
+                    f"{', '.join(str(v) for v in READABLE_SCHEMA_VERSIONS)}"
                 )
             continue
         reports.append(data)
@@ -755,8 +875,18 @@ def main(argv=None):
         stage_times = parse_stage_times(log_path.read_text(encoding="utf-8"))
 
     init_taichi("cpu")
+    # This machine, in both branches. With --skip-pipeline the toolpath comes
+    # from `data/toolpath/`, which is gitignored local scratch, so it was
+    # produced here by an earlier invocation. Only --reanalyse reads a toolpath
+    # that may have come from elsewhere, and that path carries the old record
+    # forward instead.
     report = measure(
-        part, max_slope, float(params["deposition_width"]), runtime_s, stage_times
+        part,
+        max_slope,
+        float(params["deposition_width"]),
+        runtime_s,
+        stage_times,
+        pipeline_provenance=prov.fingerprint(),
     )
 
     if not args.skip_pipeline:

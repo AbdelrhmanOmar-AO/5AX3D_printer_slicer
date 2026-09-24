@@ -8,6 +8,7 @@ the numbers in the baseline table mean what they claim to.
 No `from __future__ import annotations`: this drives Taichi through the tool.
 """
 
+import csv
 import json
 import math
 
@@ -173,8 +174,8 @@ def test_a_box_reports_no_overhang_surfaces(ti_cpu, tmp_path):
 # --------------------------------------------------------------------------
 
 
-def _fake_report(part, slope, worst, near_fraction, tilt, printable):
-    return {
+def _fake_report(part, slope, worst, near_fraction, tilt, printable, machine=None):
+    report = {
         "schema_version": overhang_report.SCHEMA_VERSION,
         "part": part,
         "max_slope_deg": slope,
@@ -185,6 +186,202 @@ def _fake_report(part, slope, worst, near_fraction, tilt, printable):
         },
         "verdict": {"printable": printable, "worst_effective_deg": worst},
     }
+    if machine is not None:
+        report["provenance"] = {"pipeline": machine, "scored": machine}
+    return report
+
+
+#: Two machines for the provenance tests, matching the real pair in
+#: `docs/handoff.md` section 3.
+LAPTOP_MACHINE = {
+    "recorded": "captured",
+    "host": "laptop",
+    "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
+    "cpu_logical": 12,
+    "taichi": "1.7.4",
+    "blender": "Blender 5.2.1 LTS",
+    "ti_arch": None,
+    "machine_profile": "reference",
+}
+LAB_MACHINE = dict(
+    LAPTOP_MACHINE,
+    host="labpc",
+    cpu="Intel(R) Xeon(R) Gold 6254 CPU @ 3.10GHz",
+    cpu_logical=72,
+)
+
+
+# --------------------------------------------------------------------------
+# Provenance: which machine produced these numbers
+# --------------------------------------------------------------------------
+
+
+def test_a_fresh_run_records_this_machine(ti_cpu, tmp_path):
+    """The pipeline record must describe the machine that made the toolpath."""
+    from atom import provenance as prov
+
+    mesh = bm.make_ramp(45.0, **bm.default_dimensions(60.0))
+    stl = tmp_path / "ramp45.stl"
+    mesh.export(stl)
+    npz = tmp_path / "ramp45_smoothed.npz"
+    SyntheticToolpath(
+        _points_over_overhang_faces(mesh), direction=[0.0, 0.0, 1.0]
+    ).save(npz)
+
+    mine = prov.fingerprint()
+    report = overhang_report.measure(
+        "ramp45", 7.0, 0.9,
+        toolpath_path=npz, stl_path=stl, pipeline_provenance=mine,
+    )
+
+    assert report["provenance"]["pipeline"]["cpu"] == mine["cpu"]
+    assert report["provenance"]["scored"]["cpu"] == mine["cpu"]
+    assert report["schema_version"] == 2
+
+
+def test_rescoring_does_not_move_where_the_toolpath_was_computed(ti_cpu, tmp_path):
+    """The guard that matters.
+
+    `--reanalyse` re-scores archived toolpaths. Run on the lab machine, it must
+    not relabel 48 laptop-measured runs as lab-measured — that is exactly the
+    corruption provenance exists to prevent (corrections 3.9).
+    """
+    mesh = bm.make_ramp(45.0, **bm.default_dimensions(60.0))
+    stl = tmp_path / "ramp45.stl"
+    mesh.export(stl)
+    npz = tmp_path / "ramp45_smoothed.npz"
+    SyntheticToolpath(
+        _points_over_overhang_faces(mesh), direction=[0.0, 0.0, 1.0]
+    ).save(npz)
+
+    report = overhang_report.measure(
+        "ramp45", 7.0, 0.9,
+        toolpath_path=npz, stl_path=stl,
+        pipeline_provenance=LAPTOP_MACHINE,
+    )
+
+    assert report["provenance"]["pipeline"]["cpu"] == LAPTOP_MACHINE["cpu"]
+    assert report["provenance"]["pipeline"] is not report["provenance"]["scored"]
+    # The scoring record is this machine, whatever it is — but not the laptop's,
+    # unless the test happens to run on one.
+    assert report["provenance"]["scored"]["recorded"] == "captured"
+
+
+def test_the_summary_names_the_machine():
+    reports = [
+        _fake_report("ramp45", 7.0, 42.0, 0.002, 5.5, True, machine=LAPTOP_MACHINE),
+        _fake_report("ramp60", 7.0, 58.0, 0.05, 5.6, False, machine=LAPTOP_MACHINE),
+    ]
+    summary = overhang_report.summarize(reports)
+    assert "Measured on" in summary
+    assert "5600H" in summary
+    assert "more than one machine" not in summary
+
+
+def test_the_summary_shouts_when_two_machines_are_mixed():
+    """A table mixing machines credits a hardware difference to the result."""
+    reports = [
+        _fake_report("ramp45", 7.0, 42.0, 0.002, 5.5, True, machine=LAPTOP_MACHINE),
+        _fake_report("ramp60", 7.0, 58.0, 0.05, 5.6, False, machine=LAB_MACHINE),
+    ]
+    summary = overhang_report.summarize(reports)
+
+    assert "more than one machine" in summary
+    assert "5600H" in summary and "6254" in summary
+    assert "3.9" in summary, "the warning should cite the correction that explains why"
+
+
+def test_a_forced_backend_counts_as_a_different_machine():
+    """3.9 is about backends, not only hardware: ATOM_TI_ARCH changes the toolpath."""
+    reports = [
+        _fake_report("ramp45", 7.0, 42.0, 0.002, 5.5, True, machine=LAPTOP_MACHINE),
+        _fake_report("ramp60", 7.0, 58.0, 0.05, 5.6, False,
+                     machine=dict(LAPTOP_MACHINE, ti_arch="cpu")),
+    ]
+    assert "more than one machine" in overhang_report.summarize(reports)
+
+
+def test_the_summary_says_so_when_no_machine_was_recorded():
+    """Reports written before provenance existed must not look verified."""
+    reports = [
+        _fake_report("ramp45", 7.0, 42.0, 0.002, 5.5, True),
+        _fake_report("ramp60", 7.0, 58.0, 0.05, 5.6, False),
+    ]
+    summary = overhang_report.summarize(reports)
+    assert "Machine not recorded" in summary
+    assert "more than one machine" not in summary, (
+        "several unknowns are one unknown, not several machines"
+    )
+
+
+def test_version_1_reports_are_still_readable(tmp_path, monkeypatch):
+    """The 48 committed baseline reports are schema 1. Refusing them would have
+    thrown the baseline away."""
+    monkeypatch.setattr(overhang_report, "REPORT_DIR", tmp_path)
+    old = _fake_report("ramp45", 7.0, 42.0, 0.002, 5.5, True)
+    old["schema_version"] = 1
+    old["metrics_version"] = overhang_report.METRICS_VERSION
+    (tmp_path / "ramp45_ms7.json").write_text(json.dumps(old), encoding="utf-8")
+
+    assert len(overhang_report.load_reports(quiet=True)) == 1
+
+
+def test_an_unknown_schema_is_skipped_rather_than_guessed_at(tmp_path, monkeypatch):
+    monkeypatch.setattr(overhang_report, "REPORT_DIR", tmp_path)
+    future = _fake_report("ramp45", 7.0, 42.0, 0.002, 5.5, True)
+    future["schema_version"] = 99
+    (tmp_path / "ramp45_ms7.json").write_text(json.dumps(future), encoding="utf-8")
+
+    assert overhang_report.load_reports(quiet=True) == []
+
+
+# --------------------------------------------------------------------------
+# Progress log
+# --------------------------------------------------------------------------
+
+
+def test_the_progress_log_gains_a_machine_column(tmp_path):
+    """An older log must be migrated, not left ragged.
+
+    The log is the crash trail from correction 4.7, so it has to stay readable
+    by anything that opens it — appending a tenth field to nine-field rows would
+    break that quietly.
+    """
+    log = tmp_path / "matrix_progress.csv"
+    old_header = [
+        "finished_utc", "part", "max_slope_deg", "metrics_version",
+        "worst_effective_deg", "unsupported_near_overhangs",
+        "max_tilt_used_deg", "printable", "runtime_s",
+    ]
+    with log.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(old_header)
+        writer.writerow(["2026-09-23T12:00:00+00:00", "ramp45_xs", "7", "2",
+                         "45.00", "0.0024", "0.61", "True", "341"])
+
+    assert overhang_report.migrate_progress_header(log) is True
+
+    with log.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.reader(handle))
+
+    assert tuple(rows[0]) == overhang_report.PROGRESS_COLUMNS
+    assert len(rows[1]) == len(overhang_report.PROGRESS_COLUMNS)
+    assert rows[1][-1] == "", "an old row has no machine, and must not gain a made-up one"
+    assert rows[1][1] == "ramp45_xs", "the existing data must survive the migration"
+
+
+def test_migrating_an_already_current_log_does_nothing(tmp_path):
+    log = tmp_path / "matrix_progress.csv"
+    with log.open("w", encoding="utf-8", newline="") as handle:
+        csv.writer(handle).writerow(list(overhang_report.PROGRESS_COLUMNS))
+    before = log.read_bytes()
+
+    assert overhang_report.migrate_progress_header(log) is False
+    assert log.read_bytes() == before
+
+
+def test_migrating_a_missing_log_is_not_an_error(tmp_path):
+    assert overhang_report.migrate_progress_header(tmp_path / "nope.csv") is False
 
 
 def test_summary_lays_parts_against_slopes():
