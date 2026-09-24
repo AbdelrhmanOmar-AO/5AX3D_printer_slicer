@@ -81,8 +81,17 @@ DEFAULT_WORKER_ROOT = REPO_ROOT.parent / "5ax3d_workers"
 #: commits), no archived toolpaths, no previous reports.
 WORKER_CONTENT = ("src", "tools", "config", "scripts", "pyproject.toml")
 
-#: Input subdirectories of `data/` a worker needs, copied as-is.
-DATA_INPUTS = ("mesh", "param")
+#: Input subdirectories of `data/` a worker needs, and the only patterns copied
+#: from each.
+#:
+#: Patterns, not whole folders. `data/mesh/` accumulates `.obj` files that
+#: Blender writes during a run, and on the operator's machine that made a worker
+#: copy 53 MB instead of 21. Size is the lesser problem: a worker starting with
+#: another run's intermediates has a silent-corruption path. If Blender fails in
+#: a worker, a stale `.obj` left lying there lets the rest of the pipeline carry
+#: on with **the wrong geometry** and write a plausible but wrong report. A
+#: worker must start with inputs only.
+DATA_INPUTS = {"mesh": ("*.stl",), "param": ("*.json",)}
 
 #: Output subdirectories of `data/`, created empty in each worker.
 DATA_OUTPUTS = (
@@ -183,10 +192,12 @@ def tree_megabytes():
             total += source.stat().st_size
         elif source.is_dir():
             total += sum(f.stat().st_size for f in source.rglob("*") if f.is_file())
-    for name in DATA_INPUTS:
+    for name, patterns in DATA_INPUTS.items():
         source = REPO_ROOT / "data" / name
-        if source.is_dir():
-            total += sum(f.stat().st_size for f in source.rglob("*") if f.is_file())
+        if not source.is_dir():
+            continue
+        for pattern in patterns:
+            total += sum(f.stat().st_size for f in source.glob(pattern) if f.is_file())
     return total / 1e6
 
 
@@ -214,12 +225,15 @@ def create_worker(root, index, overwrite=False):
         else:
             shutil.copy2(source, worker / name)
 
-    for name in DATA_INPUTS:
+    for name, patterns in DATA_INPUTS.items():
         source = REPO_ROOT / "data" / name
-        if source.is_dir():
-            shutil.copytree(source, worker / "data" / name)
-        else:
-            (worker / "data" / name).mkdir(parents=True, exist_ok=True)
+        target = worker / "data" / name
+        target.mkdir(parents=True, exist_ok=True)
+        if not source.is_dir():
+            continue
+        for pattern in patterns:
+            for path in source.glob(pattern):
+                shutil.copy2(path, target / path.name)
 
     for name in DATA_OUTPUTS:
         (worker / "data" / name).mkdir(parents=True, exist_ok=True)

@@ -20,6 +20,8 @@ import pytest
 import overhang_report as orep
 import run_matrix_parallel as rmp
 
+REPO_ROOT_MESH = rmp.REPO_ROOT / "data" / "mesh"
+
 
 # --------------------------------------------------------------------------
 # Planning
@@ -114,6 +116,27 @@ def test_a_worker_carries_the_inputs_it_needs(tmp_path):
     assert (worker / "tools" / "overhang_report.py").is_file()
     assert (worker / "src" / "atom" / "overhang_metrics.py").is_file()
     assert (worker / "config" / "machines" / "reference.json").is_file()
+
+
+def test_a_worker_gets_inputs_only_not_leftovers(tmp_path, monkeypatch):
+    """A worker must not inherit another run's intermediates.
+
+    `data/mesh/` accumulates `.obj` files that Blender writes during a run. If
+    Blender then fails inside a worker, a stale `.obj` copied in would let the
+    rest of the pipeline carry on with the WRONG geometry and write a plausible
+    but wrong report. Found because a worker copy measured 53 MB on the
+    operator's machine against 21 MB on a clean tree.
+    """
+    stale = REPO_ROOT_MESH / "zz_stale_worker_probe.obj"
+    stale.write_text("# not an input\n", encoding="utf-8")
+    try:
+        worker = rmp.create_worker(tmp_path, 0)
+        assert list((worker / "data" / "mesh").glob("*.obj")) == [], (
+            "a worker inherited a Blender intermediate"
+        )
+        assert list((worker / "data" / "mesh").glob("*.stl")), "the meshes are gone"
+    finally:
+        stale.unlink(missing_ok=True)
 
 
 def test_a_worker_has_no_git_directory(tmp_path):
