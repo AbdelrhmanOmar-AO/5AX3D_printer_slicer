@@ -51,8 +51,15 @@ on any specific fact.**
 
 ## 3. The operator's machine
 
+**Every measured runtime in this document was taken on this laptop.** Per
+correction 3.9 that is not a detail: a run on another machine is a different
+computation, so anything compared against the committed baseline has to run
+here.
+
 | | |
 |---|---|
+| CPU | **AMD Ryzen 5 5600H** (Zen 3, 2021), 6 cores / 12 threads, 3.3 GHz base, 4.2 GHz boost |
+| RAM | Ample; the pipeline's peak measured usage is 0.18 GB, so RAM has never been the constraint |
 | OS | Windows 11 (10.0.26200), PowerShell 5.1 |
 | Username | `Abdo Yasser` — **has a space**, so quote paths: `cd "$HOME\5AX3D_printer_slicer"` |
 | Python | 3.10.21, conda environment `atomizer`, created from **conda-forge** |
@@ -60,6 +67,50 @@ on any specific fact.**
 | GPU | CUDA 13.0 driver, `ti.init(arch=ti.cuda)` reports `Arch.cuda` — working |
 | Blender | 5.2.1 LTS, on PATH |
 | Repo | `C:\Users\Abdo Yasser\5AX3D_printer_slicer` |
+
+### A university PC was considered and rejected (2026-09-24)
+
+A lab machine was offered as a way to get runs off the laptop. Its specs were
+compared against the laptop's and it is **slower**, so it is not the answer to
+the runtime problem:
+
+| | Laptop | Lab PC |
+|---|---|---|
+| CPU | Ryzen 5 5600H (Zen 3, 2021) | Xeon Silver 4112 (Skylake-SP, 2017) |
+| Cores / threads | 6 / 12 | 4 / 8 |
+| Base / boost | 3.3 / **4.2 GHz** | 2.6 / **3.0 GHz** |
+| RAM | Ample | 128 GB |
+| GPU | Radeon integrated + the CUDA GPU the golden was captured on | Quadro P600, **2 GB VRAM** |
+
+The reasoning, since the lab machine's numbers look larger at a glance:
+
+* `order_atoms` is 86 % of runtime and is a **sequential** 31 630-iteration
+  loop (section 7a), so **single-core speed decides**. The Ryzen boosts 40 %
+  higher and Zen 3 does more work per clock than Skylake: roughly **1.7x** in
+  the laptop's favour on that path, and about **3x** on all-core work.
+  *Estimated from the clock and architecture, not measured.* The 19.9-hour
+  matrix would be about **34 hours** there.
+* **128 GB of RAM buys nothing.** Peak measured usage is 0.18 GB.
+* **The P600 is a downgrade, and its 2 GB could bite.** A better GPU does not
+  help the bottleneck (7a), but the five CUDA field stages have to fit, and
+  2 GB is tighter than what the baseline was captured on.
+* The "65.8 GB" the lab machine reports for the P600 is Windows adding shared
+  system memory to the card's own 2 GB. Not usable VRAM.
+
+**Where it could still be used:** exploratory P2 runs, where a new orientation
+field is only being checked for sanity and is never compared against the
+committed baseline. It must **not** be used for P2.5's comparison, because the
+baseline it compares against was measured on the laptop.
+
+**If it is ever used, measure it first** — one run, twelve minutes on the
+estimate above, and it doubles as the known-answer check:
+
+```powershell
+python tools/overhang_report.py data/param/ramp45_xs.json --max-slope 7
+```
+
+Expect about 0.2 % unsupported and `printable: True`. If the wall-clock beats
+the laptop's ~7 minutes, the estimate above is wrong and worth revisiting.
 
 Setup pain already solved, all documented in `README.md`:
 
