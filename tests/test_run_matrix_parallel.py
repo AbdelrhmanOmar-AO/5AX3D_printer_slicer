@@ -78,6 +78,79 @@ def test_projection_divides_the_work_when_jobs_are_even():
     assert rmp.projected_seconds(jobs, workers=5) == pytest.approx(200.0)
 
 
+def test_the_warmup_is_the_shortest_job_not_the_longest(monkeypatch, tmp_path, capsys):
+    """The warm-up runs alone, so its length is pure serial time.
+
+    Taking the first of a longest-first list meant taking the *longest*: on the
+    full matrix that is `ramp90_s` at 1:27:31, spent alone with 15 workers idle.
+    The first real run paid 13:21 of it. Any job fills the cache equally well.
+    """
+    ran = []
+
+    def fake_run_job(worker, job, log_dir, threads=None):
+        ran.append((job["part"], job["slope"]))
+        return True, 0.01, tmp_path / "l.log"
+
+    monkeypatch.setattr(rmp, "run_job", fake_run_job)
+    monkeypatch.setattr(rmp, "collect",
+                        lambda w, j: _stub_report(j["part"], j["slope"]))
+    monkeypatch.setattr(orep, "append_progress", lambda report: None)
+    monkeypatch.setattr(orep, "load_reports", lambda quiet=False: [])
+    monkeypatch.setattr(rmp, "create_worker",
+                        lambda root, i, overwrite=False: tmp_path / f"w{i}")
+    monkeypatch.setattr(rmp, "seed_cache", lambda source, workers: len(workers) - 1)
+
+    jobs = [
+        {"part": "slow", "slope": 7.0, "estimate_s": 3600.0},
+        {"part": "middling", "slope": 7.0, "estimate_s": 600.0},
+        {"part": "quick", "slope": 7.0, "estimate_s": 60.0},
+    ]
+    monkeypatch.setattr(rmp, "build_jobs", lambda *a, **k: list(jobs))
+
+    rmp.main(["--sizes", "xs", "--workers", "3", "--root", str(tmp_path / "w"),
+              "--keep-workers"])
+
+    assert ran, "nothing ran"
+    assert ran[0][0] == "quick", (
+        f"the warm-up took {ran[0][0]!r}; it must take the shortest job"
+    )
+    assert sorted(part for part, _ in ran) == ["middling", "quick", "slow"], (
+        "every job must still run exactly once, warm-up included"
+    )
+
+
+def test_the_measured_efficiency_makes_the_estimate_larger():
+    """The ideal was 2.4x optimistic against the first real run, so both are
+    reported and the realistic one is the headline."""
+    jobs = [{"part": str(i), "slope": 7.0, "estimate_s": 100.0} for i in range(8)]
+    ideal = rmp.projected_seconds(jobs, workers=8)
+    likely = rmp.projected_seconds(jobs, workers=8,
+                                   efficiency=rmp.MEASURED_EFFICIENCY)
+    assert likely > ideal
+    assert likely == pytest.approx(100.0 / rmp.MEASURED_EFFICIENCY)
+
+
+def test_the_longest_job_still_floors_the_estimate_with_efficiency():
+    """No job can be split, however inefficient the pool."""
+    jobs = [{"part": "a", "slope": 7.0, "estimate_s": 3600.0}]
+    assert rmp.projected_seconds(jobs, 100, efficiency=0.1) == pytest.approx(3600.0)
+
+
+def test_a_zero_efficiency_does_not_divide_by_zero():
+    """Eight jobs, not one: a single job would floor the answer at its own
+    length and hide whether the division happened at all."""
+    jobs = [{"part": str(i), "slope": 7.0, "estimate_s": 100.0} for i in range(8)]
+    assert rmp.projected_seconds(jobs, 4, efficiency=0.0) == pytest.approx(200.0)
+
+
+def test_the_dry_run_prints_both_estimates(tmp_path, capsys):
+    rmp.main(["--sizes", "xs", "--workers", "8", "--dry-run",
+              "--root", str(tmp_path / "w")])
+    out = capsys.readouterr().out
+    assert "lower bound" in out
+    assert "expect this" in out, "the realistic estimate must be the headline"
+
+
 def test_projection_is_unknown_without_previous_runtimes():
     jobs = [{"part": "a", "slope": 7.0, "estimate_s": 0.0}]
     assert rmp.projected_seconds(jobs, workers=4) is None

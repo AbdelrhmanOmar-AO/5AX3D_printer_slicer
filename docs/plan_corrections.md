@@ -920,6 +920,25 @@ than `git ls-tree HEAD` deliberately, and despite 4.11: that correction is about
 "has this been committed", where the index lies; this asks "is this an input",
 and a newly added input that is not yet committed is still one a worker needs.
 
+### 4.18 A cache warm-up run must be the shortest job, not the longest
+
+The parallel runner fills one Taichi cache with a single run before copying it to
+every worker (4.17's neighbour: a cold cache inflates the GPU stages five to
+sevenfold). That run is **alone**, so its length is pure serial time added to the
+job.
+
+It was taking the first job of a longest-first queue — which is the **longest**.
+On the first real run that cost **13:21 of a 50:31 total**, a quarter of the
+wall-clock. On the full matrix it would have taken `ramp90_s` at max_slope 30,
+**1:27:31 spent alone with fifteen workers idle.**
+
+Any job fills the cache equally well. It now takes the shortest.
+
+Worth recording because the symptom is *only slowness*, and slowness on a new
+machine is easy to explain away — which is exactly what happened when the same
+run's cold-cache figures were first read as the machine being slow (3.9's
+neighbour, handoff section 3). A test pins the choice.
+
 ## 5. Open plan items not yet resolved
 
 | Item | Status |
@@ -939,7 +958,8 @@ and a newly added input that is not yet committed is still one a worker needs.
 | This session's branch not merged | `claude/new-session-l8g46d` carries the parallel runner, the failing-stage check, `ATOM_SKIP_DISPLAY_TESTS` and the conftest fix. Handoff section 0c lists them and declares two convention breaches for the operator to rule on. |
 | P2 | No session assigned. Waits on gate D0; P2.0 and P2.1 do not |
 | Parallel matrix runner | **Built** (2026-09-24) as `tools/run_matrix_parallel.py`: a copy of the working tree per worker, so no two runs share a `data/` path. Handoff section 3 has the design and the numbers. Tested with the slicing stubbed out; **contention between workers is still unmeasured**, so its projection is arithmetic rather than an observation. |
-| Contention between parallel workers | Unmeasured. The runner's 1:27:31 for 48 runs at 16 workers divides total work by workers and ignores memory bandwidth, the shared GPU and NUMA. One real run settles it: `--sizes xs --workers 8` on the lab machine, under an hour. |
+| Contention between parallel workers | **Measured at 8 workers** (2026-09-24): 5.19x speedup, 65 % efficiency, each run 1.47x slower under load. The ideal estimate was 2.4x optimistic, so the runner now prints both. **Above 8 workers it is still a guess**, and efficiency falls as workers are added; 16 workers is 3 to 3.5 h for the full 48, not the 2:33 that 65 % would give. |
+| Parallel efficiency on the laptop | Unmeasured. The lab machine's 65 % came from 36 cores and two sockets; a 6-core 45 W laptop will throttle instead, which is a different limit. `--sizes xs --workers 3` settles it in about an hour. |
 | CPU model in the provenance block | P1.7 records the machine's **host name**, not its processor. A host name distinguishes machines; `Intel(R) Xeon(R) Gold 6254` is what a reader comparing two timings needs. `platform.processor()` will not give it — the Windows registry or `/proc/cpuinfo` will. Worth adding to `atom.provenance`; see 4.14. |
 | Correction numbers 4.14 to 4.17 | **Taken** by this session, straight into section 4 rather than a per-session heading in section 7, because it is merging rather than staying in flight. P1 and P4 must not reuse them. |
 | A third concurrent session | The plan allows two. Three ran, and 4.14 is what it cost. |
@@ -968,6 +988,7 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 4.15 | Add `src/` in `conftest.py`, or no single test file can be run alone |
 | 4.16 | `atomize.py` ignores stage exit codes, so one failure becomes twelve — and a stale output can pass for a fresh one |
 | 4.17 | Never hand-write the pipeline's input list; `git ls-files -- data` is the list |
+| 4.18 | A warm-up run is serial time: make it the shortest job, never the longest |
 
 And the habits that caught most of them:
 

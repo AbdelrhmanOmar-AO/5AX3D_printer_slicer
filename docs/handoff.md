@@ -574,8 +574,50 @@ git pull
 python tools/run_matrix_parallel.py --sizes xs --workers 8
 ```
 
-**Still unmeasured:** contention between workers. The 1:27:31 is arithmetic, not
-an observation. The honest first step on the lab machine is
+#### Measured, 2026-09-24: 24 runs in 50:31, 0 failed
+
+`--sizes xs --workers 8` on the lab machine. **This is the run the projections
+were waiting on.**
+
+| | |
+|---|---|
+| Wall-clock | **0:50:31** — 13:21 of it the warm-up, alone |
+| The other 23 runs | 0:37:10 of wall-clock, against **3:12:53** of serial work |
+| **Speedup from 8 workers** | **5.19x — 65 % efficiency** |
+| Per-run slowdown under load | **1.47x** (a run that takes 7 min alone takes ~11 under 8-way load) |
+| Projected, ignoring contention | 0:21:03 — **2.4x optimistic** |
+
+So contention costs about a third, and the tool's old estimate was out by 2.4x.
+It said "a lower bound", which it was, but a lower bound nobody can plan against
+is not much use. `projected_seconds` now takes an `efficiency` and the runner
+prints both figures, with the realistic one as the headline.
+
+**What the full 48 will cost on the lab machine**, at 26:26 of serial work:
+
+| Workers | Efficiency | Estimate |
+|---|---|---|
+| 8 | 65 % (measured) | **5:05** |
+| 16 | 65 % | 2:33 |
+| 16 | 50 % | **3:18** |
+| 36 | 40 % | 1:50 |
+
+Only the first row rests on a measurement. **Efficiency falls as workers are
+added** — they share memory bandwidth, one GPU and two sockets — so take 16
+workers as **3 to 3.5 hours**, not 2:33. Against 21.8 h on the laptop that is
+still 6 to 7x.
+
+#### The warm-up must be the *shortest* job
+
+Found by reading that log. The warm-up runs with every other worker idle, so its
+length is pure serial time — and the runner was taking the **first** job of a
+longest-first list, which is the **longest**. On `xs` that cost 13:21 of the
+50:31. On the full matrix it would have been `ramp90_s @ 30` at **1:27:31 spent
+alone with 15 workers waiting.**
+
+Any job fills the cache equally well, so it now takes the shortest. A test pins
+it, because the symptom is only slowness and slowness is easy to explain away.
+
+**Still unmeasured:** efficiency above 8 workers, and anything on the laptop. The honest first step on the lab machine is
 `--sizes xs --workers 8`, whose serial estimate is 2:48:31, so a real figure
 arrives in well under an hour.
 
@@ -661,7 +703,7 @@ the project's actual contribution, follows once gate D0 is taken.
 | P1.5 firmware templates | Blocked on gate E1 |
 | P1.6 `order_atoms` without `kernel_profiler` | Proposed, not started. Needs an undisturbed laptop |
 | P4.1 / P4.2 / P4.3 | **Built on `claude/phase-p4-build-fzqw55`, not in `main`** (section 0b) |
-| Parallel matrix runner | **Built** on this session's branch, not in `main` (section 0c). 48 runs in ~1.5 h on the lab machine, ~5.5 h on the laptop, against 21.8 h serially. **Contention between workers is still unmeasured** |
+| Parallel matrix runner | **Built and measured** on this session's branch, not in `main` (section 0c). 24 runs at 8 workers took **50:31, 0 failed**, a 5.19x speedup at 65 % efficiency. The full 48 should take **3 to 3.5 h at 16 workers** against 21.8 h serially |
 | P2 | No session. Waits on gate D0; P2.0 and P2.1 do not |
 
 **630 unit tests pass; 14 skipped** (the `pipeline` and `benchmark` tiers, plus

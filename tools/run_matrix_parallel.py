@@ -197,17 +197,36 @@ def build_jobs(sizes, parts=orep.MATRIX_PARTS, slopes=orep.MATRIX_SLOPES,
     return jobs
 
 
-def projected_seconds(jobs, workers, ratio=1.0):
-    """Ideal wall-clock: the greater of total work over workers, and the longest job.
+#: Parallel efficiency measured on the 36-core lab machine, 2026-09-24:
+#: 23 runs at 8 workers finished in 37:10 against 3:12:53 of serial work, a
+#: 5.19x speedup from 8 workers. Each run took about 1.47x longer than it would
+#: have alone.
+#:
+#: One data point, on one machine, at one worker count. Efficiency will fall as
+#: workers are added — they share memory bandwidth, one GPU and two sockets — so
+#: applying this figure at 16 or 36 workers is optimistic. `--efficiency`
+#: overrides it.
+MEASURED_EFFICIENCY = 0.65
+MEASURED_AT_WORKERS = 8
 
-    No job can be split, so one job longer than the average worker's share sets
-    the floor. Ignores contention between workers, so it is a lower bound and is
-    reported as one.
+
+def projected_seconds(jobs, workers, ratio=1.0, efficiency=1.0):
+    """Wall-clock estimate: total work over workers, floored by the longest job.
+
+    ``efficiency`` of 1.0 gives the ideal, which is a lower bound: no job can be
+    split, so one job longer than the average worker's share sets the floor, and
+    contention between workers is ignored entirely. Pass
+    `MEASURED_EFFICIENCY` for the figure measured on real hardware.
+
+    The ideal was 2.4x optimistic against the first real run (0:21:03 projected,
+    0:50:31 actual), which is why both numbers are now reported.
     """
     estimates = [j["estimate_s"] * ratio for j in jobs if j["estimate_s"]]
     if not estimates:
         return None
-    return max(sum(estimates) / max(workers, 1), max(estimates))
+    workers = max(workers, 1)
+    efficiency = efficiency if efficiency > 0 else 1.0
+    return max(sum(estimates) / (workers * efficiency), max(estimates))
 
 
 def format_duration(seconds):
@@ -475,6 +494,14 @@ def main(argv=None):
         help=f"Where worker trees live (default: {DEFAULT_WORKER_ROOT}).",
     )
     parser.add_argument(
+        "--efficiency", type=float, default=0.0,
+        help=(
+            f"Parallel efficiency for the estimate (default {MEASURED_EFFICIENCY}, "
+            f"measured at {MEASURED_AT_WORKERS} workers on the lab machine). "
+            "Only affects what is printed."
+        ),
+    )
+    parser.add_argument(
         "--resume", action="store_true",
         help="Skip combinations that already hold a current result.",
     )
@@ -508,6 +535,9 @@ def main(argv=None):
     workers_wanted = min(workers_wanted, len(jobs))
 
     ideal = projected_seconds(jobs, workers_wanted)
+    likely = projected_seconds(
+        jobs, workers_wanted, efficiency=args.efficiency or MEASURED_EFFICIENCY
+    )
     timed = sum(1 for j in jobs if j["estimate_s"])
     serial = sum(j["estimate_s"] for j in jobs)
 
@@ -515,10 +545,17 @@ def main(argv=None):
     print(f"Sizes: {', '.join(args.sizes)}   Slopes: "
           f"{', '.join(f'{s:g}' for s in args.slopes)} deg")
     if timed:
+        efficiency = args.efficiency or MEASURED_EFFICIENCY
         print(f"Serial estimate (from {timed} previous run(s)): "
               f"{format_duration(serial)}")
-        print(f"Parallel estimate, ignoring contention: {format_duration(ideal)} "
-              "(a lower bound)")
+        print(f"Parallel, ignoring contention:  {format_duration(ideal)} "
+              "(a lower bound, and 2.4x optimistic on the one run measured)")
+        print(f"Parallel, at {efficiency:.0%} efficiency:    "
+              f"{format_duration(likely)}  <- expect this")
+        if efficiency == MEASURED_EFFICIENCY and workers_wanted != MEASURED_AT_WORKERS:
+            print(f"   ({efficiency:.0%} was measured at {MEASURED_AT_WORKERS} "
+                  f"workers, not {workers_wanted}; efficiency falls as workers "
+                  "are added)")
     else:
         print("No previous runtimes, so no estimate. The first run will supply them.")
     print(f"Worker trees: {args.root}")
@@ -560,9 +597,17 @@ def main(argv=None):
         if kind == "fail":
             print(f"         {payload.get('error', '')}", flush=True)
 
-    # One job alone first, to fill a cache worth copying.
+    # One job alone first, to fill a cache worth copying — and it must be the
+    # SHORTEST one. The warm-up runs with every other worker idle, so its length
+    # is pure serial time. Taking jobs[0] meant taking the longest: on the full
+    # matrix that is ramp90_s at 1:27:31 spent alone with 15 workers waiting.
+    # Any job fills the cache equally well.
     if not args.no_seed_cache and len(trees) > 1:
-        first = jobs[0]
+        warmup_index = min(
+            range(len(jobs)),
+            key=lambda i: jobs[i]["estimate_s"] or float("inf"),
+        )
+        first = jobs[warmup_index]
         print(f"\nWarming the Taichi cache on one run: {first['part']} "
               f"@ {first['slope']:g} deg")
         completed, failed = run_matrix([first], trees[:1], log_dir, args.threads,
@@ -574,7 +619,7 @@ def main(argv=None):
             return 1
         seeded = seed_cache(trees[0], trees)
         print(f"Copied the warmed cache to {seeded} worker(s)")
-        jobs = jobs[1:]
+        jobs = jobs[:warmup_index] + jobs[warmup_index + 1:]
         first_completed, first_failed = completed, failed
     else:
         first_completed, first_failed = [], []
