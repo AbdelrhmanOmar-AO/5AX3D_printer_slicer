@@ -734,6 +734,7 @@ laptop.
 | Backend recorded beside each number | 3.9's consequence 4. The reports in `reports/` do not record which backend produced them; all 48 used the stock mix, but nothing in the files says so. Worth adding before any run happens on another machine. |
 | `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
+| `-Parallel N` for the matrix | Designed, not built, by choice (handoff section 3): partition by part+size so no two workers share `data/` paths, per-worker Taichi cache dirs, a concurrency-safe progress log. Waiting on a measurement from the 36-core lab machine. |
 
 ## 6. Quick index
 

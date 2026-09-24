@@ -68,49 +68,102 @@ here.
 | Blender | 5.2.1 LTS, on PATH |
 | Repo | `C:\Users\Abdo Yasser\5AX3D_printer_slicer` |
 
-### A university PC was considered and rejected (2026-09-24)
+### Two university machines were assessed (2026-09-24)
 
-A lab machine was offered as a way to get runs off the laptop. Its specs were
-compared against the laptop's and it is **slower**, so it is not the answer to
-the runtime problem:
+Both were offered as somewhere to move the long runs. **One is slower and was
+rejected; the other is worth taking, and changes how the matrix should be run.**
 
-| | Laptop | Lab PC |
-|---|---|---|
-| CPU | Ryzen 5 5600H (Zen 3, 2021) | Xeon Silver 4112 (Skylake-SP, 2017) |
-| Cores / threads | 6 / 12 | 4 / 8 |
-| Base / boost | 3.3 / **4.2 GHz** | 2.6 / **3.0 GHz** |
-| RAM | Ample | 128 GB |
-| GPU | Radeon integrated + the CUDA GPU the golden was captured on | Quadro P600, **2 GB VRAM** |
+| | Laptop | Lab PC A | **Lab PC B** |
+|---|---|---|---|
+| CPU | Ryzen 5 5600H (Zen 3, 2021) | Xeon Silver 4112 (Skylake-SP, 2017) | **2 x Xeon Gold 6254** (Cascade Lake, 2019) |
+| Cores / threads | 6 / 12 | 4 / 8 | **36 / 72** (two sockets) |
+| Base / boost | 3.3 / **4.2 GHz** | 2.6 / 3.0 GHz | 3.1 / 4.0 GHz |
+| RAM | Ample | 128 GB | 64 GB |
+| GPU | The CUDA GPU the golden was captured on | Quadro P600, 2 GB VRAM | **RTX A6000, 48 GB VRAM** |
+| Verdict | The reference machine | **Rejected** | **Take it** — see below |
 
-The reasoning, since the lab machine's numbers look larger at a glance:
+Everything below is reasoned from clock and architecture. **Nothing on either
+lab machine has been measured yet.**
 
-* `order_atoms` is 86 % of runtime and is a **sequential** 31 630-iteration
-  loop (section 7a), so **single-core speed decides**. The Ryzen boosts 40 %
-  higher and Zen 3 does more work per clock than Skylake: roughly **1.7x** in
-  the laptop's favour on that path, and about **3x** on all-core work.
-  *Estimated from the clock and architecture, not measured.* The 19.9-hour
-  matrix would be about **34 hours** there.
-* **128 GB of RAM buys nothing.** Peak measured usage is 0.18 GB.
-* **The P600 is a downgrade, and its 2 GB could bite.** A better GPU does not
-  help the bottleneck (7a), but the five CUDA field stages have to fit, and
-  2 GB is tighter than what the baseline was captured on.
-* The "65.8 GB" the lab machine reports for the P600 is Windows adding shared
-  system memory to the card's own 2 GB. Not usable VRAM.
+#### Why single-core speed is what matters
 
-**Where it could still be used:** exploratory P2 runs, where a new orientation
-field is only being checked for sanity and is never compared against the
-committed baseline. It must **not** be used for P2.5's comparison, because the
-baseline it compares against was measured on the laptop.
+`order_atoms` is 86 % of runtime and is a sequential 31 630-iteration loop
+(section 7a). Core count does nothing for it; clock and per-clock throughput do.
+On that path the laptop's 4.2 GHz Zen 3 beats both lab machines, so **neither
+makes one run faster.** RAM is irrelevant either way: peak measured usage across
+the whole pipeline is 0.18 GB.
 
-**If it is ever used, measure it first** — one run, twelve minutes on the
-estimate above, and it doubles as the known-answer check:
+#### Lab PC A: rejected
+
+Roughly **1.7x slower** per core than the laptop (3.0 GHz against 4.2, on an
+architecture four years older), so the 19.9-hour matrix would take about 34
+hours. Its 128 GB buys nothing, and the P600's 2 GB of real VRAM is tighter than
+what the baseline was captured on. The reported "65.8 GB" for that card is
+Windows adding shared system memory to its 2 GB.
+
+#### Lab PC B: take it, for throughput rather than speed
+
+Per run it is roughly a wash with the laptop. What it offers is **36 physical
+cores against a matrix of 48 independent runs.**
+
+The partition is set by a constraint this tool already documents: every run of a
+given part writes the same `data/` paths whatever its `max_slope`
+(`tools/overhang_report.py` docstring), so **two concurrent runs of one part
+would silently overwrite each other's intermediates.** That is the same class of
+failure as correction 4.7 and must not be got wrong.
+
+But the matrix is 8 parts x 2 sizes = **16 distinct `solid_name`s**, each with 3
+slopes. So:
+
+> **Run the 16 part+size combinations concurrently, each doing its 3 slopes in
+> sequence.** No two workers ever share a `data/` filename.
+
+16 workers on 36 cores is about 2 cores each, which is close to all the
+sequential loop can use. Estimated **75 to 90 minutes** for the full matrix
+against the laptop's 19.9 hours — roughly **13x** on wall-clock, from a change
+to the runner script and none to the slicer.
+
+#### Why that matters more than the speed
+
+It **dissolves correction 3.9.** Re-baselining on a new machine costs 34 hours
+on Lab PC A, which is fatal; on Lab PC B it costs about 90 minutes. So the stock
+baseline can be re-run there, the whole comparison stays on one consistent
+machine as 3.9 requires, and every P2.5 iteration becomes a 90-minute loop
+instead of a 20-hour one.
+
+It may also return **`l`-size parts** to gate D0's options: about 384 hours
+serial becomes plausibly 24 to 36 hours. The A6000's 48 GB also gives the CUDA
+field stages far more headroom than the laptop for large parts.
+
+#### Two hazards the parallel runner must handle
+
+1. **Taichi's offline kernel cache.** A single interrupted run already produced
+   `Lock C:/taichi_cache/ticache/ticache.lock failed`. Sixteen processes sharing
+   that directory will contend. Each worker needs its own cache directory.
+2. **`reports/matrix_progress.csv`.** Sixteen processes appending to the
+   safeguard log added after the laptop restarted mid-run. Needs a lock, or
+   per-worker files merged at the end.
+
+Both fail quietly, so both need tests.
+
+#### Order of work, decided with the operator
+
+The runner is **not built yet, by choice**: measure the machine before writing
+code against an estimate.
+
+1. Get access, and ask IT the questions in the list below.
+2. Set it up with the existing `scripts\setup_laptop.ps1` and
+   `scripts\fix_tool_paths.ps1`.
+3. Run the 12-minute known-answer check (below). It confirms the environment
+   *and* measures real per-run speed.
+4. Then build `-Parallel N` with measured numbers in hand.
 
 ```powershell
 python tools/overhang_report.py data/param/ramp45_xs.json --max-slope 7
 ```
 
-Expect about 0.2 % unsupported and `printable: True`. If the wall-clock beats
-the laptop's ~7 minutes, the estimate above is wrong and worth revisiting.
+Expect about 0.2 % unsupported and `printable: True`. The wall-clock against the
+laptop's ~7 minutes is the number that decides whether the estimates above hold.
 
 Setup pain already solved, all documented in `README.md`:
 
