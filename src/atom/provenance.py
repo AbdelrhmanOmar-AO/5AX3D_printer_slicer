@@ -1,229 +1,287 @@
-"""Which machine and toolchain produced a result.
+"""Where a reported number came from (build plan task P1.7).
 
-Why this exists
----------------
-`docs/plan_corrections.md` 3.9 established that the same part sliced on two
-different backends gives a different toolpath — 2.4 % more points, three fewer
-deposition runs. Different machines are the same problem: the committed baseline
-was measured on the operator's laptop, and a run on the 36-core lab machine
-**overwrites the report for its part and slope** with nothing in the file to show
-a different machine made it.
+Plan §0 rule 10: record the machine and backend beside every reported number,
+and never pool runs from different machines or backends. Forcing the stages
+onto one backend changes the toolpath structurally, not just its last digits
+(``docs/plan_corrections.md`` 3.9), so a stock run from one machine compared
+with an overhang-aware run from another would credit the difference to the
+contribution.
 
-That is how a stock-vs-overhang-aware comparison silently credits a hardware
-difference to the contribution. This module makes each report say where it came
-from.
+Every overhang report carries a ``provenance`` block built here:
 
-Two distinct facts, deliberately kept apart
--------------------------------------------
-``pipeline``
-    The machine and toolchain that produced the **toolpath**. This is the one
-    that matters for comparability, and ``--reanalyse`` must carry it forward
-    unchanged: re-scoring an archived toolpath on another machine does not move
-    where that toolpath was computed.
+``source``
+    ``"pipeline"`` when the report tool ran the pipeline itself,
+    ``"skip-pipeline"`` when it measured a toolpath already on disk (its origin
+    is then unknown), or ``"backfilled"`` for reports written before P1.7 and
+    filled in afterwards from known values.
+``machine``, ``os``, ``python``
+    The computer that ran the pipeline: host name, OS and Python version.
+``taichi``
+    Taichi version, as ``"1.7.4"``.
+``ti_arch_setting``
+    ``ATOM_TI_ARCH`` as set for the run, or ``"stock mix"`` when unset (each
+    stage on its own default backend).
+``stage_arches``
+    ``{stage: backend}``: the backend each stage **actually** started on, as
+    recorded by `atom.ti_env` (``"cuda"``, ``"x64"``, ...). A GPU request that
+    silently fell back to the CPU shows up here.
+``machine_profile``
+    ``ATOM_MACHINE``, or ``"reference"`` when unset.
+``git_commit``, ``code_modified``
+    The commit the pipeline ran from, and whether ``src/``, ``tools/`` or
+    ``config/`` had uncommitted changes at the time. ``None`` when unknown.
+``recorded_utc``
+    When the pipeline run finished.
+``metrics_version``
+    The metric definition the numbers were computed with.
 ``scored``
-    The machine that computed the **metrics** from that toolpath. Refreshed by
-    ``--reanalyse``. Useful for tracing a metrics change, not for comparability.
+    Where and when the metrics were last computed. ``--reanalyse`` re-scores an
+    archived toolpath, possibly on another machine and commit, while everything
+    above still describes the run that produced the toolpath.
 
-Conflating the two would have made ``--reanalyse`` on the lab machine relabel
-all 48 laptop-measured runs as lab-measured, which is exactly the corruption
-this is meant to prevent.
-
-No ``from __future__ import annotations`` here: this is imported alongside
-Taichi kernels and the repository has walked into that twice already
-(corrections 3.2 and 4.10).
+Comparability
+-------------
+Two runs are comparable when they share `COMPARABILITY_FIELDS`: machine,
+backend (the setting and every stage's actual backend), Taichi version and
+machine profile. Agreed with the operator on 2026-09-23. The git commit is
+deliberately excluded, since code changes between runs are the point of a
+comparison. Host names compare case-insensitively.
 """
 
+from __future__ import annotations
+
+import json
 import os
 import platform
 import subprocess
-import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
-#: Fields that decide whether two results are comparable. Host name is
-#: deliberately excluded: the same machine renamed is still the same machine,
-#: and two identically-specified machines are still two machines — the CPU
-#: string plus core count is the better discriminator, and `host` is kept for
-#: humans rather than for the comparison.
-COMPARABLE_FIELDS = (
-    "cpu",
-    "cpu_logical",
-    "ti_arch",
+#: ``ti_arch_setting`` when ``ATOM_TI_ARCH`` is unset.
+STOCK_MIX = "stock mix"
+
+SOURCE_PIPELINE = "pipeline"
+SOURCE_SKIP_PIPELINE = "skip-pipeline"
+SOURCE_BACKFILLED = "backfilled"
+VALID_SOURCES = frozenset({SOURCE_PIPELINE, SOURCE_SKIP_PIPELINE, SOURCE_BACKFILLED})
+
+#: Every key a provenance block must have (values may be None where unknown).
+REQUIRED_FIELDS: tuple[str, ...] = (
+    "source",
+    "machine",
+    "os",
+    "python",
     "taichi",
-    "blender",
+    "ti_arch_setting",
+    "stage_arches",
+    "machine_profile",
+    "git_commit",
+    "code_modified",
+    "recorded_utc",
+    "metrics_version",
+    "scored",
+)
+
+#: The fields two runs must share to be pooled in one table.
+COMPARABILITY_FIELDS: tuple[str, ...] = (
+    "machine",
+    "ti_arch_setting",
+    "stage_arches",
+    "taichi",
     "machine_profile",
 )
 
-#: Marks how a record was obtained. Reports written before provenance existed
-#: can be filled in from `docs/handoff.md` and `tests/golden/baseline.md`, which
-#: is worth doing — they are the baseline — but must not be passed off as
-#: measured.
-CAPTURED = "captured"
-RECONSTRUCTED = "reconstructed-from-docs"
-
-_blender_version = None  # cached; the query costs a subprocess
+#: Directories whose uncommitted changes would make ``git_commit`` misleading.
+CODE_DIRECTORIES: tuple[str, ...] = ("src", "tools", "config")
 
 
-def cpu_name():
-    """The processor's marketing name, or the best available substitute.
-
-    ``platform.processor()`` gives "Intel64 Family 6 Model 85 Stepping 7" on
-    Windows and bare "x86_64" on Linux — neither distinguishes a Xeon Gold 6254
-    from a Xeon Silver 4112, which is the distinction that matters here.
-    """
-    if sys.platform == "win32":
-        try:
-            import winreg
-
-            key = winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
-                r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
-            )
-            with key:
-                return str(winreg.QueryValueEx(key, "ProcessorNameString")[0]).strip()
-        except Exception:
-            pass
-    elif sys.platform.startswith("linux"):
-        try:
-            with open("/proc/cpuinfo", encoding="utf-8", errors="replace") as handle:
-                for line in handle:
-                    if line.startswith("model name"):
-                        return line.split(":", 1)[1].strip()
-        except OSError:
-            pass
-    elif sys.platform == "darwin":
-        try:
-            out = subprocess.run(
-                ["sysctl", "-n", "machdep.cpu.brand_string"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if out.returncode == 0 and out.stdout.strip():
-                return out.stdout.strip()
-        except (OSError, subprocess.SubprocessError):
-            pass
-
-    return platform.processor() or platform.machine() or "unknown"
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def blender_version(refresh=False):
-    """Blender's version string, or None if it cannot be asked.
-
-    Blender runs the pipeline's first stage (the remesh), so its version is part
-    of what determines the output — `tests/golden/baseline.md` records it for
-    that reason. Cached: one subprocess per process is plenty.
-    """
-    global _blender_version
-    if _blender_version is not None and not refresh:
-        return _blender_version or None
-
-    version = ""
+def taichi_version() -> str | None:
+    """Taichi's version as ``"1.7.4"``, or None if Taichi is not installed."""
     try:
-        out = subprocess.run(
-            ["blender", "--version"],
-            capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=60,
-        )
-        if out.returncode == 0:
-            # First line is e.g. "Blender 5.2.1 LTS"; the rest is build detail.
-            first = (out.stdout or "").strip().splitlines()
-            if first:
-                version = first[0].strip()
-    except (OSError, subprocess.SubprocessError):
-        pass
-
-    _blender_version = version
-    return version or None
-
-
-def git_commit():
-    """The checked-out commit, or None outside a git checkout."""
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=30,
-            cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-        )
-        if out.returncode == 0 and out.stdout.strip():
-            return out.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return None
-
-
-def taichi_version():
-    """Taichi's version, or None if it is not importable."""
-    try:
-        import taichi as ti
-
-        return ".".join(str(part) for part in ti.__version__)
-    except Exception:
+        import taichi
+    except ImportError:
         return None
+    version = taichi.__version__
+    return ".".join(str(part) for part in version) if isinstance(version, tuple) else str(version)
 
 
-def fingerprint(include_blender=True):
-    """Everything about this machine that could change a result.
+def git_state(repo_root: Path) -> tuple[str | None, bool | None]:
+    """``(commit, code_modified)`` for the repository, or ``(None, None)``."""
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo_root, capture_output=True,
+            text=True, encoding="utf-8", errors="replace", check=True,
+        ).stdout.strip()
+        changed = subprocess.run(
+            ["git", "status", "--porcelain", "--", *CODE_DIRECTORIES], cwd=repo_root,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None, None
+    return commit or None, bool(changed)
 
-    ``include_blender`` exists because the metrics do not touch Blender: a
-    ``scored`` record has no reason to pay for the subprocess.
+
+def read_arch_log(path: Path) -> dict[str, str]:
+    """``{stage: backend}`` from an ``ATOM_TI_ARCH_LOG`` file.
+
+    A stage run twice (``atomize.py``'s warm-up) normally reports the same
+    backend both times. If it ever reports two, both are kept, joined with
+    ``+``, so the disagreement stays visible instead of one silently winning.
     """
-    record = {
-        "recorded": CAPTURED,
-        "host": platform.node() or None,
-        "cpu": cpu_name(),
-        "cpu_logical": os.cpu_count(),
+    seen: dict[str, list[str]] = {}
+    if not Path(path).is_file():
+        return {}
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        stage, actual = entry.get("stage"), entry.get("actual")
+        if stage and actual and actual not in seen.setdefault(stage, []):
+            seen[stage].append(actual)
+    return {stage: "+".join(values) for stage, values in sorted(seen.items())}
+
+
+def scoring_block(repo_root: Path, metrics_version: int) -> dict[str, Any]:
+    """Where and when the metrics are being computed, now."""
+    commit, modified = git_state(repo_root)
+    return {
+        "machine": platform.node() or None,
+        "git_commit": commit,
+        "code_modified": modified,
+        "utc": utc_now(),
+        "metrics_version": metrics_version,
+    }
+
+
+def collect(
+    source: str,
+    stage_arches: dict[str, str] | None,
+    repo_root: Path,
+    metrics_version: int,
+) -> dict[str, Any]:
+    """A provenance block for a run on this machine, now.
+
+    For ``skip-pipeline`` the toolpath's origin is unknown, so the fields that
+    describe the run that produced it are None; only ``scored`` describes this
+    machine.
+    """
+    if source not in VALID_SOURCES:
+        raise ValueError(f"source must be one of {sorted(VALID_SOURCES)}, got {source!r}")
+
+    scored = scoring_block(repo_root, metrics_version)
+    if source == SOURCE_SKIP_PIPELINE:
+        return {
+            "source": source,
+            "machine": None,
+            "os": None,
+            "python": None,
+            "taichi": None,
+            "ti_arch_setting": None,
+            "stage_arches": {},
+            "machine_profile": None,
+            "git_commit": None,
+            "code_modified": None,
+            "recorded_utc": None,
+            "metrics_version": metrics_version,
+            "scored": scored,
+        }
+
+    setting = os.environ.get("ATOM_TI_ARCH", "").strip().lower()
+    return {
+        "source": source,
+        "machine": platform.node() or None,
         "os": platform.platform(),
         "python": platform.python_version(),
         "taichi": taichi_version(),
-        # None means no override, i.e. each stage's own default — the "stock
-        # mix" the golden baseline was captured on. See corrections 3.9.
-        "ti_arch": os.environ.get("ATOM_TI_ARCH") or None,
-        "machine_profile": os.environ.get("ATOM_MACHINE") or "reference",
-        "git_commit": git_commit(),
+        "ti_arch_setting": setting or STOCK_MIX,
+        "stage_arches": dict(sorted((stage_arches or {}).items())),
+        "machine_profile": os.environ.get("ATOM_MACHINE", "").strip() or "reference",
+        "git_commit": scored["git_commit"],
+        "code_modified": scored["code_modified"],
+        "recorded_utc": scored["utc"],
+        "metrics_version": metrics_version,
+        "scored": scored,
     }
-    if include_blender:
-        record["blender"] = blender_version()
-    return record
 
 
-def comparable(a, b):
-    """Whether two records describe the same computation.
+def rescored(block: dict[str, Any], repo_root: Path, metrics_version: int) -> dict[str, Any]:
+    """The same run's provenance, with the scoring updated to now.
 
-    ``None`` on either side means unknown, and unknown is not the same as
-    matching: a report with no provenance cannot be declared comparable to one
-    that has it.
+    Everything describing the run that produced the toolpath is kept.
     """
-    if not a or not b:
-        return False
-    return all(a.get(f) == b.get(f) for f in COMPARABLE_FIELDS)
+    updated = dict(block)
+    updated["metrics_version"] = metrics_version
+    updated["scored"] = scoring_block(repo_root, metrics_version)
+    return updated
 
 
-def describe(record):
-    """One short line for a summary table or a warning."""
-    if not record:
-        return "unknown machine"
-    cpu = record.get("cpu") or "unknown CPU"
-    host = record.get("host")
-    arch = record.get("ti_arch") or "stock backend mix"
-    label = f"{cpu} ({arch})"
-    if host:
-        label += f" on {host}"
-    if record.get("recorded") == RECONSTRUCTED:
-        label += " [from docs, not measured]"
-    return label
+def problems(block: Any) -> list[str]:
+    """What is wrong with a provenance block; an empty list means it is complete."""
+    if not isinstance(block, dict):
+        return ["no provenance block"]
+    found = [f"missing field {name!r}" for name in REQUIRED_FIELDS if name not in block]
+    if found:
+        return found
+    if block["source"] not in VALID_SOURCES:
+        found.append(f"unknown source {block['source']!r}")
+    if not isinstance(block["stage_arches"], dict):
+        found.append("stage_arches is not a mapping")
+    if block["source"] != SOURCE_SKIP_PIPELINE:
+        for name in COMPARABILITY_FIELDS:
+            if not block[name]:
+                found.append(f"{name} is empty")
+    if not isinstance(block["scored"], dict):
+        found.append("scored is not a mapping")
+    return found
 
 
-def group_by_machine(records):
-    """Group records into buckets of mutually comparable ones.
+def comparability_key(block: Any) -> tuple:
+    """The values two runs must share to be comparable (see the module docstring).
 
-    Used to warn when one summary table mixes machines. Returns a list of
-    ``(representative_record, [indices])``, unknown records bucketed together.
+    Reports with no provenance share one key, as do skip-pipeline reports, so
+    each forms its own group rather than merging with a known machine.
     """
-    buckets = []
-    for index, record in enumerate(records):
-        for representative, members in buckets:
-            if comparable(representative, record) or (
-                not representative and not record
-            ):
-                members.append(index)
-                break
-        else:
-            buckets.append((record, [index]))
-    return buckets
+    if not isinstance(block, dict) or problems(block):
+        return ("no provenance recorded",)
+    machine = block["machine"].lower() if isinstance(block["machine"], str) else None
+    return (
+        machine,
+        block["ti_arch_setting"],
+        tuple(sorted(block["stage_arches"].items())),
+        block["taichi"],
+        block["machine_profile"],
+    )
+
+
+def is_known(block: Any) -> bool:
+    """Whether a block says where its run came from: complete, and not skip-pipeline."""
+    return (
+        isinstance(block, dict)
+        and not problems(block)
+        and block["source"] != SOURCE_SKIP_PIPELINE
+    )
+
+
+def describe(block: Any) -> str:
+    """One line naming the machine, backend, Taichi version and profile."""
+    if not isinstance(block, dict) or problems(block):
+        return "no provenance recorded"
+    if block["source"] == SOURCE_SKIP_PIPELINE:
+        return "unknown origin (measured with --skip-pipeline)"
+    arches = sorted(set(block["stage_arches"].values()))
+    backend = block["ti_arch_setting"]
+    if arches:
+        backend += f" ({' + '.join(arches)})"
+    return (
+        f"machine {block['machine']}, backend {backend}, Taichi {block['taichi']}, "
+        f"profile {block['machine_profile']}"
+    )

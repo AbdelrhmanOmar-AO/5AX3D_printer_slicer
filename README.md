@@ -318,6 +318,7 @@ The parameters in the JSON file are:
 * `top_lines` and `bottom_lines` (optional): paths to single-channel, 8-bit-per-pixel PNG files representing the target tangent directions for the top and bottom surfaces, respectively. The mapping is $\[0, 255] \leftarrow \[−\pi/2, \pi/2]\$. The orientation defines a 2D line in the xy-plane. The 2D line field is defined on the upper face of the solid’s bounding box and is planarly projected onto the top and bottom surfaces along the z-axis.
 * `ortho_to_wall` (optional): if true, forces the tool orientation to be parallel to the boundary. By default, this is false, as enabling this feature causes many tool orientation changes that are detrimental to surface quality.
 * `infill` (optional): if true, a gyroid pattern infills the solid.
+* `bed_temp` and `nozzle_temp` (optional, this fork): the bed and nozzle temperatures in °C written into the G-code header. Defaults 55 and 210, the upstream values; leaving them out gives exactly the upstream header. `tools/toolpath_to_gcode.py` takes the same as `--bed-temp` and `--nozzle-temp`.
 
 The inputs and outputs are:
 
@@ -387,6 +388,31 @@ view. Hover over any control for a tooltip.
 **Screenshot:** `--screenshot out.png` saves a picture without opening a
 window. Run `--help` for every option, and see the tool's docstring for which
 file to open when.
+
+### Check G-code before printing (this fork)
+
+`tools/validate_gcode.py` reads a G-code file and checks that the printer can
+run it safely. It never changes the file.
+
+```powershell
+python tools/validate_gcode.py data/gcode/calibration_cube.gcode
+```
+
+It checks:
+
+- every X, Y and screw (Z, U, V) value is within the machine's travel;
+- the bed tilt implied by the three screws stays within the tilt limit;
+- no value is `nan` or infinite;
+- every feed rate (F) is above zero, and below `--max-feed` if you give one;
+- no single move pushes out more than 5 mm of filament (`--max-e` changes
+  that), and retracts and primes balance;
+- the header and footer are there, with the 3Z enable and disable macros
+  around the moves.
+
+It prints `OK: no violations.` and exits with code 0 when the file passes.
+Otherwise it lists each problem with its line number and exits with 1. Add
+`--json` for the full report, or `--machine ours` to check against another
+machine profile.
 
 ### Visualize
 

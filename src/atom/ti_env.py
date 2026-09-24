@@ -34,16 +34,34 @@ original backend, so behaviour is unchanged unless ``ATOM_TI_ARCH`` is set.
     $env:ATOM_TI_ARCH = "cuda"     # PowerShell: force every stage onto CUDA
     $env:ATOM_TI_ARCH = "cpu"      # force every stage onto the CPU
     Remove-Item Env:\\ATOM_TI_ARCH  # back to each stage's own default
+
+Recording the backend each stage really used (build plan P1.7)
+--------------------------------------------------------------
+Because a GPU request can silently become the CPU, a report must record the
+backend each stage **actually** started on, not the one it asked for. When
+``ATOM_TI_ARCH_LOG`` names a file, `init_taichi` appends one JSON line to it
+after ``ti.init``::
+
+    {"stage": "order_atoms", "requested": "cpu", "actual": "x64"}
+
+``tools/overhang_report.py`` sets it for the pipeline it launches. Unset, as
+it is everywhere else, nothing is written and nothing changes.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import sys
+from pathlib import Path
 
 import taichi as ti
 
 #: Environment variable overriding every stage's backend.
 ENV_VAR = "ATOM_TI_ARCH"
+
+#: Environment variable naming a file that records each stage's actual backend.
+ARCH_LOG_ENV_VAR = "ATOM_TI_ARCH_LOG"
 
 #: Backend names accepted in the environment variable and as `default_arch`.
 #: "gpu" asks Taichi to pick any available GPU backend; the others are specific.
@@ -88,7 +106,32 @@ def init_taichi(default_arch: str, **kwargs):
     ``kernel_profiler`` settings.
     """
     name = resolve_arch_name(default_arch)
-    return ti.init(arch=ARCH_NAMES[name], **kwargs)
+    result = ti.init(arch=ARCH_NAMES[name], **kwargs)
+    _record_arch(name)
+    return result
+
+
+def stage_name() -> str:
+    """The running stage's name: its script's file name without ``.py``."""
+    return Path(sys.argv[0]).stem if sys.argv and sys.argv[0] else "unknown"
+
+
+def _record_arch(requested: str) -> None:
+    """Append this stage's actual backend to ``ATOM_TI_ARCH_LOG``, if set.
+
+    A failure to write is reported on stderr rather than raised: losing one
+    provenance line must not abort an hour-long pipeline run. The report then
+    shows that stage's backend as unrecorded.
+    """
+    path = os.environ.get(ARCH_LOG_ENV_VAR)
+    if not path:
+        return
+    entry = {"stage": stage_name(), "requested": requested, "actual": current_arch_name()}
+    try:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry) + "\n")
+    except OSError as exc:
+        print(f"WARNING: could not record the Taichi backend in {path}: {exc}", file=sys.stderr)
 
 
 def current_arch_name() -> str:

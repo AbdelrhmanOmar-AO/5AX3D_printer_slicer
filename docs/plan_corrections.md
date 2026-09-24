@@ -1,5 +1,7 @@
 # Corrections and deviations from SLICER_BUILD_PLAN v3
 
+The plan itself is `docs/SLICER_BUILD_PLAN.md`, currently **v3.3** (2026-09-23).
+
 Everything found so far that contradicts the build plan, or where the
 implementation deliberately departs from it. Build plan section 0 rule 6 says
 to report contradictions rather than work around them silently; this is that
@@ -9,8 +11,11 @@ report.
 **PLAN EDIT** should be corrected in the plan document itself, because a later
 task will be written against the wrong fact.
 
-Last updated: 2026-09-22. Phase P0 complete; the P0.8 matrix is being re-run
-against corrected metrics.
+Last updated: 2026-09-23. Phase P0 complete, P0.8 matrix included, and merged
+into `main` (pull request #2). P1 and P4 are now built in two parallel
+sessions: **each session adds its items only under its own heading in
+section 7**, and they are renumbered into sections 1–4 once, when both
+branches are merged.
 
 ---
 
@@ -185,6 +190,21 @@ exactly. P1.1 should also check the physical pose: build the pose with
 `tests/test_bed_motion.py` pins the gap below 0.2 degrees. The kinematics
 maths is left unchanged.
 
+### 1.10 Plan v3.3 still carries stale P0 text ★ PLAN EDIT
+
+Found when reading v3.3 against the repository after P0 was merged:
+
+| Where in the plan | What it says | What is true |
+|---|---|---|
+| §0.1 and the P0 "Where it lives" line | working branch `claude/new-session-l8g46d` | P0 is in `main`; each session has its own branch (2.13) |
+| §4 lane diagram | `P0 ✅ (P0.8 matrix run pending)` | the matrix is done (48 of 48, metrics v2) |
+| §4 phase table, P0 row | "**Pending:** running the P0.8 matrix" | done |
+| Appendix A, P0 row | "344 unit tests" and "P0.8 matrix (24 runs) **pending**" | 451 unit tests; matrix done |
+| Appendix E source line | corrections "on branch `claude/new-session-l8g46d`" | now in `main` |
+| §0.4 hazard list | numbered 1–15, then 17, 18, 19, then 16 | hazard 16 is out of order |
+
+None of these changes a task. They mislead a cold reader about what is done.
+
 ## 2. Deliberate deviations
 
 ### 2.1 Golden baseline taken at this fork's `main`, not upstream
@@ -258,7 +278,7 @@ orientation steps stay small, and before `add_platform`, which adds sacrificial
 material below the part that is not part of its geometry and would distort both
 the support test and the surface sampling.
 
-### 2.9 Single branch instead of one branch per task
+### 2.9 Single branch instead of one branch per task (superseded by 2.13)
 
 Plan section 0.1 wants `p<phase>/<task-id>-<short-slug>` branches with one pull
 request each. All work is on `claude/new-session-l8g46d`, one commit per task,
@@ -338,6 +358,29 @@ and V with `kinematics3z.forward` (the vendored
 cube this reproduces the toolpath the G-code was written from within
 **0.0001 mm**, so the reader checks that the G-code and the `.npz` belong to
 the same run before it pairs them.
+
+### 2.13 One branch per session, merged into `main` by pull request ★ PLAN EDIT
+
+2.9 described P0: one branch for everything, `main` untouched. On 2026-09-23 the
+operator merged that work (P0, P5.4 and the plan) into `main` through pull
+request #2, merge commit `d2d39c3`. From then on:
+
+* each Claude Code session works on **its own branch**, started from `main`,
+  with one commit per task as before;
+* the operator merges a session's branch into `main` through a pull request;
+  Claude Code never merges into `main` and never pushes to another session's
+  branch;
+* a session that needs another session's finished work gets it by merging
+  `main` into its own branch, never by merging the other branch directly.
+
+Plan §0 rule 2 ("if a dependency is not merged into `main`, stop") therefore
+now applies literally: P4 can use P1.4 once the P1 branch carrying it has been
+merged into `main`.
+
+The golden baseline commit is unchanged: `e7b71ea`, the fork's original `main`
+(2.1). Merging P0 did not move it.
+
+Plan §0.1 should describe this protocol and stop naming a single branch.
 
 ## 3. Environment facts the plan asked to establish
 
@@ -541,6 +584,22 @@ diagnostic the assertion was written to print. `pipeline_stats` now passes
 `encoding="utf-8", errors="replace"` and sets `PYTHONIOENCODING=utf-8` for the
 child, which `run_baseline_matrix.ps1` already did for its own runs.
 
+### 3.11 A fresh session container is missing runtime dependencies
+
+The first unit-test run in a new session container (Python 3.11, 2026-09-23)
+reported **48 failures**, all `ModuleNotFoundError: No module named 'tqdm'`.
+`tqdm` is a runtime dependency in `pyproject.toml`, but `atom` cannot be
+pip-installed there (the `< 3.11` pin), so its dependencies are not pulled in.
+After installing them the suite gave 451 passed, 13 skipped, matching the
+laptop.
+
+It looks like broken code, not a missing package. Before trusting a failing
+first run, install:
+
+```
+pip install pytest pytest-timeout numpy scipy trimesh jsonschema taichi tqdm
+```
+
 ## 4. Implementation hazards found while building
 
 ### 4.1 `M98 P"/macros/enable3Z.g"` parses as an `E3` word
@@ -720,47 +779,56 @@ timer. `tests/test_visualize_5ax.py` now drives the real event loop, but that
 only guards the playback path. The Windows behaviour has to be checked on the
 laptop.
 
-### 4.14 A report that does not name its machine can be quietly contaminated
+### 4.14 Two sessions built provenance independently, and one wasted a day
 
-Found on 2026-09-24, the first time a second machine ran the pipeline. Every
-run writes `reports/baseline_overhang/<part>_ms<deg>.json`, keyed by part and
-slope only — **not by machine.** So a single run on the lab machine overwrote
-the committed, laptop-measured cell for `ramp45_xs` at 7 degrees, and nothing in
-the file or the summary said a different machine had made it.
+Not a bug in the code. A bug in how the work was split, and the most expensive
+one so far.
 
-That is 3.9 arriving in practice rather than in principle. The failure it
-enables is the worst kind for this project: a stock-vs-overhang-aware table with
-one cell from another machine credits a **hardware difference** to the
-contribution, and nothing in the data reveals it.
+On 2026-09-24 the P0.8 session was told that reports not naming their machine
+was urgent — a run on the lab machine had just overwritten a committed,
+laptop-measured cell with nothing in the file to show it. It designed and built
+`src/atom/provenance.py`, wired it through `tools/overhang_report.py`, backfilled
+the 48 reports and wrote 22 tests.
 
-Closed by `src/atom/provenance.py` and the report tool:
+**Plan task P1.7 had already done all of it**, in another session, and merged it
+to `main` the day before — more thoroughly:
 
-* every report carries `provenance.pipeline` (the machine and toolchain that
-  produced the **toolpath**) and `provenance.scored` (the one that computed the
-  metrics);
-* the two are kept apart deliberately. `--reanalyse` re-scores archived
-  toolpaths, so it carries `pipeline` forward unchanged and refreshes `scored`
-  only. Conflating them would have made one `--reanalyse` on the lab machine
-  relabel all 48 laptop runs as lab runs — the exact corruption being guarded
-  against, introduced by the guard;
-* `reports/baseline_overhang.md` now states the machine, and prints a **loud
-  warning listing which runs came from where** when one table mixes machines;
-* a **forced backend counts as a different machine**: `ti_arch` is part of the
-  comparison, because 3.9 is about arithmetic, not only hardware;
-* "unknown" is never treated as "matches mine". A report without provenance
-  cannot be declared comparable to one that has it;
-* `reports/matrix_progress.csv` gained a `machine` column, with a migration
-  that pads older rows rather than writing ragged ones into the crash trail
-  from 4.7.
+| | P1.7, merged | The duplicate |
+|---|---|---|
+| Backend per stage | **All 14, recorded at run time** via `ATOM_TI_ARCH_LOG` | One `ti_arch` field for the whole run |
+| Uncommitted code | `code_modified` | Not recorded |
+| How the record was obtained | `source`: pipeline / skip-pipeline / backfilled | A `recorded` flag, backfill only |
+| Verified on hardware | **Yes** — a laptop run caught a wrong host name in the backfill | No |
+| CPU model | Not recorded | `cpu`, `cpu_logical` |
 
-**The 48 committed reports were backfilled** from `docs/handoff.md` section 3
-and `tests/golden/baseline.md`, and marked `"recorded":
-"reconstructed-from-docs"` rather than `"captured"` — the values are read off
-documentation, not measured at the time. Only `schema_version` changed in those
-files; no metric was touched.
+Everything but the last row is strictly better, so the duplicate was discarded
+whole rather than merged. The CPU model is worth adding to P1.7's block: a host
+name distinguishes machines, but `Intel(R) Xeon(R) Gold 6254` is what a reader
+comparing two timings actually needs, and `platform.processor()` will not give
+it (bare `x86_64` on Linux).
 
-`SCHEMA_VERSION` is 2, and **version 1 remains readable.** Refusing it would
-have discarded the baseline to gain a version number.
+**What caused it.** Three sessions were running. Each kept `docs/handoff.md` and
+this file current, and each pushed to its own branch — but the P0.8 session had
+not pulled `main` for a day, and nothing in its own working tree could have told
+it that P1.7 existed. Its open-items table said provenance was an open item,
+because that was true when it was written.
+
+**What to do instead**, for whoever is in this position next:
+
+> **Before building anything that sounds like infrastructure — provenance,
+> validation, a runner, a report format — `git fetch origin && git log --oneline
+> HEAD..origin/main`.** It costs seconds. A day's work sitting in `main` is
+> invisible from a branch that has not looked.
+
+The same applies to the plan: `docs/SLICER_BUILD_PLAN.md` is now committed, and
+P1.7 is *in it*. Reading the plan's task list would have prevented this. The
+P0.8 session was working from the handoff's summary of the plan rather than the
+plan, and the summary did not enumerate P1's subtasks.
+
+**Not wasted entirely.** The same merge kept four things the duplicate session
+built that nothing else covers: the parallel matrix runner (4.17 and handoff
+section 3), the failing-stage check (4.16), the test-file import fix (4.15), and
+the display-test opt-out (4.13's neighbour, `ATOM_SKIP_DISPLAY_TESTS`).
 
 ### 4.15 No single test file could be run on its own
 
@@ -836,16 +904,18 @@ and a newly added input that is not yet committed is still one a worker needs.
 |---|---|
 | P0.8 matrix | **Done** (2026-09-23): 48 of 48 at metrics v2. The first run, 48 runs in 19.9 h, produced sound tilt and runtime data but unusable unsupported figures; `--reanalyse` recovered 39 of those from their archived toolpaths. |
 | Gates M1, M2, M3, E1 | Deferred by the team until the mechanical design is settled |
-| Gate D0 (tilt budget, benchmark geometry) | Needs the re-run matrix and P2.1's analytic bound |
+| Gate D0 (tilt budget, benchmark geometry) | Matrix done. Still needs P2.1's analytic bound, the team's decision, and ideally M2 |
 | T-shape `underside_angle_deg` | Defaults to 90; gate D0 picks the real value |
 | Thresholds (45 deg effective, 1 % unsupported) | Placeholders, gate D0. Now meaningful: with the metric fixed, parts can actually pass. |
-| `twin_domes` verdict | Reports "not printable" when it has no overhang to measure. Conservative by design but misleading in the table; distinguishing "nothing to measure" from "failed" is worth doing. |
+| `twin_domes` verdict | **Closed** (P0.9b): reports carry `verdict.assessable`, and the summary prints "– no overhang". |
 | Which stage first diverges across backends | 3.9 argues the field solvers, from which stages change backend and how the planner works. Not measured stage by stage. The atom count in `data/frame/<part>.npz` settles it in one command if it ever matters. |
-| Reports do not name the machine that produced them | **Closed** (2026-09-24). Every report now carries a `provenance` block, the summary warns when one table mixes machines, and the 48 committed reports were backfilled. See 4.14. |
-| Backend recorded beside each number | **Closed** by the same change: `ti_arch` is part of the provenance record, and a forced backend counts as a different machine. |
-| `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk |
+| Backend recorded beside each number | **Closed** by plan task **P1.7**: `provenance.stage_arches` records the backend every stage actually started on, and `ti_arch_setting` records whether anything was forced. |
+| `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk. Now plan task **P1.6** |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
-| Parallel matrix runner | **Built** (2026-09-24) as `tools/run_matrix_parallel.py`, with a copy of the working tree per worker rather than the partitioning first sketched — see handoff section 3. Tested with the slicing stubbed; **contention between workers is still unmeasured**, so its 1:27:31 projection is arithmetic rather than an observation. |
+| P4 vs P1.4 ordering | P4 depends on P1.4 (the validator). Which P4 tasks start before P1.4 reaches `main` is the operator's call; P4.1 and P4.3 do not use it |
+| P2 | No session assigned. Waits on gate D0; P2.0 and P2.1 do not |
+| Parallel matrix runner | **Built** (2026-09-24) as `tools/run_matrix_parallel.py`: a copy of the working tree per worker, so no two runs share a `data/` path. Handoff section 3 has the design and the numbers. Tested with the slicing stubbed out; **contention between workers is still unmeasured**, so its projection is arithmetic rather than an observation. |
+| Contention between parallel workers | Unmeasured. The runner's 1:27:31 for 48 runs at 16 workers divides total work by workers and ignores memory bandwidth, the shared GPU and NUMA. One real run settles it. |
 
 ## 6. Quick index
 
@@ -864,7 +934,7 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 4.8 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
 | 3.9 | The golden SHA-256 holds only on the backend mix it was captured on |
 | 4.13 | Create VTK timers after the interactor is initialised, or they never fire on Windows |
-| 4.14 | Reports are keyed by part and slope, not machine; a second machine overwrites them silently |
+| 4.14 | Fetch `main` before building infrastructure; two sessions built provenance twice |
 | 4.16 | `atomize.py` ignores stage exit codes, so one failure becomes twelve — and a stale output can pass for a fresh one |
 | 4.17 | Never hand-write the pipeline's input list; `git ls-files -- data` is the list |
 
@@ -875,3 +945,221 @@ And the two habits that caught most of them:
   chasing (4.6 was found exactly this way).
 * Check a metric against a case whose answer is known before putting its
   output in a table (3.7).
+
+## 7. Parallel sessions: items found during P1 and P4
+
+Two sessions run at once from 2026-09-23 (`docs/handoff.md` section 0). To
+avoid both editing the same numbered list (the 4.12/4.13 collision,
+`handoff.md` 7c), each session adds items **only under its own heading
+below**, numbered `P1-1`, `P1-2`, … or `P4-1`, `P4-2`, …, using the same
+categories as sections 1–4 (factual error, deliberate deviation, environment
+fact, hazard) and the same **PLAN EDIT** marker. When both branches are in
+`main`, the items move into sections 1–4 with ordinary numbers, and every
+citation of them is updated in the same commit.
+
+### 7a. P1 session (`claude/vibrant-rubin-waln7y`)
+
+#### P1-1 A plane through the balls' fixed XY under-reads the tilt ★ PLAN EDIT
+
+*Factual error.* P1.4's `TILT_LIMIT` says to take the bed tilt "through FK or
+a closed-form plane fit through the three ball points". Taken literally (the
+balls at their profile XY, `ball_2dpos_*`, heights Z, U, V), that plane is
+wrong, because the contact points slide in their slots as the bed tilts. Their
+horizontal spacing shrinks by `cos(t)`, so the fixed-XY fit reads
+`arctan(sin t)`: **26.57 degrees at a true 30**, and 9.85 at a true 10.
+
+The exact closed form keeps the bed-frame ball spacing `l1`, `l2` (rigid) and
+solves `g . l1 = z0 - z1`, `g . l2 = z0 - z2` for the in-plane gradient `g`.
+Then `tilt = arcsin(|g|)`. It agrees with `kinematics3z.forward` to 1e-7
+degrees (`atom.screw_tilt.total_tilt_deg`, `tests/test_screw_tilt.py`). On
+the golden cube it gives 5.525987 degrees; the toolpath's largest `theta` is
+5.525986.
+
+A `box` limit needs the direction of the tilt as well. `screw_tilt` ports
+`forward`'s orientation part to numpy for that. It returns the direction the
+toolpath requested, which differs from the bed's physical pose by up to 0.14
+degrees at 30 degrees of tilt (1.9). That gap is a turn about the bed's own
+normal, so the `cone` check is exact and the `box` check is exact to 0.14
+degrees. Taichi's own `forward` is 0.012 degrees off the port on random states,
+because it runs in float32.
+
+The plan should say "`arcsin` of the in-plane gradient, with the bed-frame
+ball spacing", not "plane fit through the three ball points".
+
+#### P1-2 The profile has no maximum feed rate, and the golden exceeds the travel feed ★ PLAN EDIT
+
+*Factual error.* P1.4's `FEED` check says "every F in `(0, profile max]`". The
+machine profile has no maximum feed. The highest feed it names is
+`travel_feedrate` (3000 mm/min), and the golden cube's G-code goes well
+beyond it: **F10725** at most, with 23 lines above 3000.
+
+That is by design. `toolpath_to_gcode.calculate_feedrate` scales the
+deposition feed by (machine distance over X, Y, Z, U, V, E) / (tool-tip
+distance), so a move where the screws travel much further than the nozzle tip
+gets a proportionally higher F (§1 facts; P3.4 verifies it).
+
+Decided with the operator on 2026-09-23: `FEED` always checks that F is finite
+and above zero, and applies an upper limit only when one is passed
+(`--max-feed`, `max_feed=`). A real limit needs a machine number: P3.4's
+`max_screw_speed_mm_s` (gate D3) or a `max_feedrate` from gate M1/P6. It must
+not be invented.
+
+#### P1-3 `docs/conventions.md` gave (25, 25) degrees as 34.6 in total; it is 34.78
+
+*Factual error, corrected.* `cos(total) = cos(a) cos(b)` gives
+`arccos(cos^2 25) = 34.78` degrees. `atom.tilt.total_tilt_from_tilts_deg` already
+computed 34.78, so no code was wrong. Only the document and a comment in
+`tests/test_tilt.py` were. Found when a validator test built from that figure
+disagreed by 0.2 degrees. Both are corrected.
+
+#### P1-4 The shared tokeniser moved from `tools/gcode_stats.py` into `atom.gcode_check`
+
+*Deliberate deviation.* P1.4 step 1 says to "reuse the tokeniser from
+`tools/gcode_stats.py`". The package cannot sensibly import from a script
+directory, so the direction is reversed. `strip_comment`, `parse_words` and
+the quoted-string guard now live in `atom.gcode_check`, and
+`tools/gcode_stats.py` imports them, so they are still importable from there
+(`tools/visualize_5ax.py` uses them). The code moved unchanged. The
+`gcode_stats` tests pass, and the golden statistics of a regenerated
+calibration-cube G-code are identical.
+
+#### P1-5 `Xnan` is invisible to the word parser
+
+*Hazard.* Python writes a NaN as `nan`, so a failed solve would appear in
+G-code as `Xnan`. The word pattern needs digits after the letter, so it does
+not match `Xnan` at all. The word is **silently dropped**, and the axis keeps
+its previous value, which looks perfectly valid. The validator's `NAN` check
+therefore scans the raw text for non-finite words (`nan`, `inf`, `infinity`,
+any case, with a sign) rather than looking at parsed values. Any other G-code
+reader has the same blind spot.
+
+#### P1-6 What "retracts and primes balanced" means in the validator
+
+*Definition the plan left open.* The pipeline writes retract/prime pairs of
+`retract_length` (2 mm), plus one unpaired retract in the header (E30 to E28,
+absolute) and one in the footer. The golden cube has 530 retracts and 529
+primes. So balance cannot mean equal counts. The validator tracks how much
+filament is currently retracted and flags three things: a prime with nothing
+retracted, a prime larger than what is retracted, and a printing move while
+filament is still retracted. Ending the file retracted is correct.
+
+#### P1-7 How provenance is recorded, and what the plan did not specify
+
+*Deliberate deviations and definitions for P1.7.* The block's fields and their
+meaning are in `atom.provenance`. Decisions beyond the plan text, all agreed
+with the operator on 2026-09-23 unless marked:
+
+* **Each stage's actual backend is recorded by the stage itself.**
+  `atom.ti_env.init_taichi` appends `{stage, requested, actual}` to the file
+  named by `ATOM_TI_ARCH_LOG` after `ti.init`. `tools/overhang_report.py`
+  sets it for the pipeline it launches. Unset, nothing happens. This is an
+  edit to a shared file, approved by the operator. The alternative, parsing
+  Taichi's console lines, cannot tell which stage printed which line.
+* **Machine name** is the host name (`platform.node()`), compared
+  case-insensitively.
+* **Comparability**: machine, backend (`ATOM_TI_ARCH` plus every stage's
+  actual backend), Taichi version, and machine profile. The git commit is
+  recorded but does not split groups, since code changes between runs are what
+  a comparison is for.
+* **`scored` is separate from the run.** `--reanalyse` re-scores an archived
+  toolpath, possibly elsewhere and at another commit, and keeps the block that
+  describes the run which produced it. *(Not specified by the plan.)*
+* **`source`** says whether the tool ran the pipeline itself, measured a
+  toolpath already on disk (`--skip-pipeline`: origin unknown, flagged in the
+  summary), or was backfilled. *(Not specified by the plan.)*
+* **Backfill**: all 48 baseline reports got the laptop's host name
+  (`AbdoYasser`), the stock mix and the reference profile. `stage_arches` is
+  **inferred** from each stage's default backend, with the GPU stages on CUDA
+  because the laptop's CUDA works. The commit and run times were not recorded
+  and are `null`.
+* **Checked on the laptop, 2026-09-23.** The known-answer run
+  (`ramp45_xs` at 7 degrees: 0.24 %, printable) recorded all 14 stage
+  backends exactly as inferred. It also recorded the host name as
+  `AbdoYasser`, not `Abdelrahman-personal-laptop`, the name first given for
+  the backfill. `--summarize` then warned that the table mixed two machines,
+  which is the warning working as designed. The operator confirmed it is the
+  same laptop, and the backfill was corrected. **Lesson:** take a machine's
+  name from what the code records (`platform.node()`), not from a name a
+  person reads off the computer.
+* **`schema_version` stays 1.** `provenance` is an added key, and bumping the
+  version would make `load_reports` skip every existing report.
+* **Not given a provenance block** *(not specified by the plan)*:
+  `tests/golden/*.stats.json`, which is the golden record itself, with its
+  environment in `tests/golden/baseline.md`; and
+  `reports/matrix_progress.csv`, which keeps its columns so the file stays one
+  consistent table. Both remain readable next to the per-run JSON, which does
+  carry it.
+
+#### P1-8 The direction round trip is 4.5e-4 rad in 32-bit floats, not 1e-4 ★ PLAN EDIT
+
+*Factual error in a tolerance.* P1.1 step 2 asks the IK->FK round trip to
+return the build direction within **1e-4 rad**. On the CPU backend, in the
+32-bit floats the pipeline uses, it comes back within **4.5e-4 rad** (0.026
+degrees; 99th percentile 3.8e-4). The error is about the same at every tilt,
+from 0 to 29 degrees.
+
+It is rounding, not the maths. The same kernels run with Taichi's
+`default_fp=f64` return the direction to 3e-16 rad, positions to 1e-13 mm and
+screws to 9e-14 mm. The other two round trips meet the plan in 32-bit floats:
+screws 1.2e-4 mm, positions 7.8e-5 mm, against 1e-3 mm.
+
+For scale: 0.026 degrees is 40 times below the 1-degree tessellation step, a
+fifth of the 0.14-degree pose gap (1.9), and about 0.05 mm at the nozzle for a
+point 100 mm from the pivot. It does not matter for printing.
+
+Decided with the operator on 2026-09-23: test both precisions.
+`tests/test_kinematics3z.py` asserts 1e-3 rad in 32-bit floats, and
+`tests/kinematics_f64_roundtrip.py` (run in its own process, since the
+precision is fixed when Taichi starts) asserts the plan's 1e-4 rad and, beyond
+it, 1e-9. The kinematics maths is unchanged.
+
+The plan should state the direction tolerance per precision: 1e-3 rad in
+32-bit floats on the CPU, 1e-4 rad (in fact exact) in 64-bit. CUDA's 32-bit
+rounding has not been measured; it runs on the laptop only.
+
+#### P1-9 A positive `offset` is a first estimate of the lift, not the exact lift
+
+*Factual error in `docs/conventions.md`, corrected.* The document said a
+positive `offset` is "how much the part must be raised". It is how much to
+raise it before solving again. Raising the part moves the tilted bed's corners
+by less than the lift, so one step falls short. At 20 degrees of tilt near the
+bed: 6.10 mm, then 0.37, 0.022, 0.0013, 0.00008, then 0, which is 6.49 mm in
+total over five steps. `kinematics3z.get_plaftorm_size` already loops until the
+offset is zero, so the pipeline is right. Only the description was wrong.
+Anything else that uses `offset` as a lift (P3.3's diagnostics, P4.4's
+safe-travel insertion) must iterate the same way. `tests/test_kinematics3z.py`
+pins that the loop converges.
+
+#### P1-10 Editors strip the trailing space the golden header depends on
+
+*Hazard.* Upstream's header and footer each contain `M400 ; wait ` **with a
+trailing space**, and that space is part of the golden G-code byte for byte.
+When the header moved into a template (`atom.gcode_templates`, P1.2), saving
+the new source file silently stripped it, and the rebuilt header stopped
+matching upstream. The byte-identity check caught it before anything was
+committed. The line is now inserted from code (`WAIT_LINE = "M400 ; wait" + " "`)
+with a comment saying why, and a test pins it. Any other text that must match
+upstream exactly should be built the same way, or stored in a fixture file
+rather than in source.
+
+#### P1-11 How P1.2 wires the temperatures
+
+*Deliberate choices within P1.2.*
+
+* **The option is added only when set.** `atomize.py` appends
+  `--bed-temp`/`--nozzle-temp` to the `toolpath_to_gcode.py` command only
+  when the parameter file has the key, so a file without them runs exactly the
+  upstream command. The logged command is unchanged too.
+* **Values are checked when the parameter file is read**, not an hour later at
+  the G-code stage. The check allows only a finite number of zero or more. No
+  upper limit is imposed: that would be a machine number, and none is given
+  (§0 rule 4).
+* **Formatting:** whole numbers are written as integers (`S60` for 60 or 60.0),
+  others as given (`S60.5`).
+* **One source for the macro strings.** `atom.gcode_check` now takes its 3Z
+  enable/disable markers from `gcode_templates.MACRO_CALLS`, the strings the
+  header writes, rather than keeping a copy.
+
+### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
+
+None yet.

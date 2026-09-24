@@ -7,8 +7,130 @@ with no prior conversation.
 
 Last updated: 2026-09-23. **Phase P0 is complete** — all 48 matrix runs are in
 at metrics v2 — and **P5.4** (toolpath viewer, bed-motion animation, Qt window)
-is built. Two sessions worked in parallel and have now been merged; see
-section 7c.
+is built. Both are **merged into `main`** (pull request #2, merge commit
+`d2d39c3`). **Two sessions now run in parallel: P1 and P4.** Read section 0
+first.
+
+---
+
+## 0. Two sessions are running in parallel (read first)
+
+From 2026-09-23, two Claude Code sessions work at the same time, each on its
+own branch, both started from `main` at `d2d39c3`:
+
+| Session | Phase | Branch |
+|---|---|---|
+| P1 session | **P1**: kinematics and G-code toolchain | `claude/vibrant-rubin-waln7y` |
+| P4 session | **P4**: motion safety for continuous tilt | assigned when the session starts; the P4 session records it in section 0b below |
+
+**P2 has no session yet.** It waits for gate D0 (section 8). P2.0 and P2.1 do
+not need D0 (P2.1 is one of its inputs), but the plan allows at most two
+sessions at once, so P2 starts when one of these two finishes, or when the
+operator says otherwise.
+
+### The one dependency between them
+
+P4 depends on **P1.4, the G-code validator** (`atom.gcode_check`,
+`tools/validate_gcode.py`). P4.1 (clearance model) and P4.3 (nozzle vs printed
+material) do not use it. P4.2 (the swept check) repeats some of the validator's
+axis-range and tilt-limit checks, so it should use P1.4's code rather than
+write its own. The order is the operator's call; ask them.
+
+How the P4 session gets P1.4 once it is built: the operator merges the P1
+branch into `main` through a pull request, then the P4 session merges `main`
+into its own branch (`git fetch origin main` then `git merge origin/main`).
+Never merge the other session's branch directly.
+
+### Who owns which files
+
+Nothing stops either session from editing any file, so this is the agreement
+that keeps the merges clean. If a session needs to change a file the other one
+owns, it stops and asks the operator.
+
+| Owner | Files |
+|---|---|
+| **P1** | `src/atom/gcode_check.py`, `tools/validate_gcode.py`, `src/atom/gcode_templates.py`, the vendored edits P1 lists (`src/atom/kinematics3z.py` header/footer only, `tools/atomize.py`, `tools/sdf_to_isdf.py`, `tools/toolpath_to_gcode.py`, `tools/order_atoms.py`), `tools/overhang_report.py` and the `reports/baseline_overhang/*.json` backfill (P1.7), `tests/golden/baseline.md` |
+| **P4** | `src/atom/clearance.py`, `src/atom/tilt_motion_check.py`, the P4 tools and tests, and, if the operator asks for it, wiring the clearance model into the viewer (`tools/visualize_5ax.py`, `tools/viewer_qt.py`, `src/atom/toolpath_view.py`), which P5.4 left open for P4.1 |
+| **Shared, add-only** | `README.md`, `tests/conftest.py`, `pytest.ini`, `requirements-dev.txt`, `pyproject.toml`: add new lines or sections, never reorder or rewrite existing ones |
+| **Shared, ask first** | `src/atom/machine_profile.py`, `config/machines/*.json`, `src/atom/ti_env.py`, `src/atom/contracts.py`, `src/atom/tilt.py`, `src/atom/bed_motion.py`: both phases read these. A change to one changes the other session's behaviour. |
+
+**G-code parsing belongs to P1.4.** P4 must not write a second G-code parser.
+Hazard: quoted strings must be stripped first (`plan_corrections.md` 4.1).
+
+### The two living documents
+
+Both sessions update this file and `docs/plan_corrections.md`. Last time two
+sessions did that, the only friction was both numbering the same list
+(section 7c). So:
+
+- **In `plan_corrections.md`**, each session adds its items only under its own
+  heading in **section 7** (`7a` for P1, `7b` for P4), numbered `P1-1`, `P1-2`,
+  … and `P4-1`, `P4-2`, …. They are renumbered into sections 1–4 once, when
+  both branches are merged.
+- **In this file**, each session edits only its own status block, **0a** or
+  **0b** below. The rest of the file is shared and is updated at merge time.
+
+### The laptop is shared
+
+One operator does every laptop run. **Never ask for two laptop runs at the same
+time**, and say how long each takes (plan §0.2). This matters most for P1.6,
+which records `order_atoms` timings: anything else running on the laptop
+distorts them. P1 needs several golden runs (~7.5 min each) after its vendored
+edits. P4 is mostly synthetic and CPU-only.
+
+### 0a. P1 session status
+
+*Edited by the P1 session only.*
+
+Branch `claude/vibrant-rubin-waln7y`. After each merge it restarts from `main`;
+most recently rebased onto the merge of P1.1 (pull request #6). The operator
+chose the order P1.4, P1.7, P1.1, P1.2. Proposed next: P1.3, P1.6. P1.5 stays open until
+gate E1 is answered.
+
+The P1.4 golden run took **784 s**, against 457 s when the baseline was
+recorded. The test does not time anything and the hash matched, so the output
+is unaffected.
+Whether the laptop was busy or hot at the time is not known. Worth watching
+before P1.6, which measures `order_atoms` timings.
+
+| Task | Status |
+|---|---|
+| P1.4 G-code validator | **Done** (`58d2fe7`), verified on the laptop 2026-09-23: `pytest --run-pipeline tests/test_golden.py` gave **5 passed, 1 skipped** in 784 s. Golden SHA unchanged, and the real golden G-code validates with zero violations. (The P1.4 commit message expected 4 passed; that miscounted the file's unit tests.) **Merged into `main`** (pull request #4, `fab657f`), so the P4 session can bring it in |
+| P1.2 Templated header/footer + temperatures | **Built.** `atom.gcode_templates`; `kinematics3z.HEADER`/`FOOTER` now come from it, byte-identical to upstream (checked against the evaluated `e7b71ea` f-strings, and by converting the golden toolpath before and after: identical file). Optional `bed_temp`/`nozzle_temp` JSON keys and `--bed-temp`/`--nozzle-temp` options. Klipper raises GATE E1. **Verified on the laptop 2026-09-23:** `pytest --run-pipeline tests/test_golden.py` gave 5 passed, 1 skipped in 522 s, so the golden SHA is unchanged after editing the vendored `kinematics3z.py`, `atomize.py` and `toolpath_to_gcode.py` |
+| P1.1 Kinematics test suite | **Built.** `tests/test_kinematics3z.py` (24 tests) plus `tests/kinematics_f64_roundtrip.py`. No laptop run needed (CPU only). Two findings: the direction round trip is 4.5e-4 rad in 32-bit floats but exact in 64-bit (P1-8, both now tested), and a positive `offset` is a first estimate of the lift (P1-9, `docs/conventions.md` corrected). In `main` (pull request #6) |
+| P1.7 Provenance on reports | **Done**, verified on the laptop 2026-09-23. Every overhang report records its machine, backend (each stage's actual one), Taichi version, profile and commit (`atom.provenance`). All 48 baseline reports are backfilled (`tools/backfill_provenance.py`). `--summarize` states the origin above the table and warns on a mixed table. In `main` (pull request #5) |
+
+**The P1.7 laptop check** was the known-answer run (`ramp45_xs` at 7 degrees:
+0.24 % unsupported, printable). All 14 stages reported exactly the backends
+inferred for the backfill. The laptop's host name, as Python records it, is
+**`AbdoYasser`**. The backfill first used the name `Abdelrahman-personal-laptop`,
+so the summary warned that two machines were mixed, which is the check working.
+The operator confirmed it is the same laptop, and the backfill now uses
+`AbdoYasser` (`plan_corrections.md` 7a, P1-7).
+
+**What P1.4 gives the P4 session** (in `main` since pull request #4):
+
+* `atom.gcode_check`: `check_file(path, profile, max_feed=None, max_e_mm=5.0)`
+  returns a `Report` with `ok`, `violations` (`id`, 1-based `line`, `detail`)
+  and `stats`. The IDs are `AXIS_RANGE`, `TILT_LIMIT`, `NAN`, `FEED`,
+  `EXTRUSION` and `STRUCTURE`. It is numpy only, with no Taichi.
+* The one G-code tokeniser: `gcode_check.strip_comment` and `parse_words`.
+  `tools/gcode_stats.py` now imports them from there.
+* `atom.screw_tilt`: the bed tilt implied by three screw heights, with no
+  Taichi. `total_tilt_deg(z0, z1, z2, profile)` is exact and closed-form;
+  `build_direction(...)` is a numpy port of `kinematics3z.forward`'s
+  orientation part, checked against the Taichi kernel.
+* `tools/validate_gcode.py`: the command line (exit 0 pass, 1 fail, 2 usage).
+
+Two operator decisions (2026-09-23): the feed check has **no upper limit
+unless one is passed**, because the profile has none and the golden reaches
+F10725; and the single-move extrusion limit defaults to **5 mm**.
+
+### 0b. P4 session status
+
+*Edited by the P4 session only.* Record the branch name here first.
+
+Not started.
 
 ---
 
@@ -18,8 +140,8 @@ A fork of [Atomizer](https://github.com/xavierchermain/atomizer) (Chermain et
 al., SGP 2025) being extended for a 5-axis FFF printer with a bed on three
 independent Z lead screws.
 
-The goal, from `SLICER_BUILD_PLAN.md` v3: make Atomizer's tool-orientation field
-**overhang-aware**, so the bed tilts toward overhangs and they print without
+The goal, from `docs/SLICER_BUILD_PLAN.md` (v3.3): make Atomizer's
+tool-orientation field **overhang-aware**, so the bed tilts toward overhangs and they print without
 supports. Stock Atomizer already tilts the bed continuously, point by point; its
 field simply ignores overhangs, constraining only the first layer and
 low-curvature top surfaces.
@@ -29,7 +151,7 @@ usable tilt**. At the reference machine's 30-degree limit that is ~75 degrees. A
 fully horizontal overhang (90 degrees) needs at least 45 degrees of tilt. That
 is a mechanical question (gate M2), not a software one.
 
-Read `SLICER_BUILD_PLAN.md` for the task breakdown, then
+Read `docs/SLICER_BUILD_PLAN.md` for the task breakdown, then
 `docs/plan_corrections.md` for everything in it that is wrong or has been
 deliberately departed from. **Read the corrections file before trusting the plan
 on any specific fact.**
@@ -41,7 +163,10 @@ on any specific fact.**
 - **Claude Code** writes code and tests, and can run only CPU unit tests. No GPU,
   no Blender, and the `atom` package cannot even be installed in the session
   container (Python 3.11 there; `pyproject.toml` pins `< 3.11`). Run tests with
-  `PYTHONPATH=src python3 -m pytest`.
+  `PYTHONPATH=src python3 -m pytest`. A fresh container first needs
+  `pip install pytest pytest-timeout numpy scipy trimesh jsonschema taichi tqdm`.
+  Without `tqdm` alone, 48 tests fail with `ModuleNotFoundError` and look like
+  real failures (`plan_corrections.md` 3.11).
 - **The operator** (the user) reviews, and runs anything needing the GPU laptop
   or the printer. They are a mechanical engineer, **new to git and to coding** —
   explain git concepts in plain language and give exact PowerShell commands.
@@ -341,11 +466,23 @@ stubbed out, which is the only way to test it, so the queue, the isolation, the
 collection and the failure paths are pinned — but no full matrix has been run
 through it.
 
-**Do not commit anything under `reports/` from the lab machine** until reports
-record which machine produced them (corrections, section 5). A run there
-silently overwrites the committed cell for that part and slope, and one
-lab-measured cell inside a laptop-measured baseline is exactly what 3.9 warns
-against.
+**Do not commit anything under `reports/` from the lab machine**, even though
+P1.7 now records the machine in every report. A run there still *overwrites* the
+committed cell for its part and slope — provenance means the mixture is
+detectable, not that it is harmless, and `--summarize` will warn rather than
+prevent it. A lab-measured cell inside a laptop-measured baseline is what 3.9
+warns against.
+
+The workflow that follows from that:
+
+* the **laptop** is the machine that commits, and the one whose runs are
+  comparable to the committed baseline;
+* the **lab machine** is a compute box. Before `git pull` there, discard its
+  results with `git checkout -- reports/`, because otherwise the pull is
+  refused (which is the guard working);
+* to move the baseline to the lab machine, re-run the **whole** matrix there in
+  one go and commit that as a single-machine set. Its provenance block will then
+  say so, and `--summarize` will confirm all 48 are comparable.
 
 Setup pain already solved, all documented in `README.md`:
 
@@ -357,10 +494,15 @@ Setup pain already solved, all documented in `README.md`:
 
 ## 4. Repository conventions
 
-- **Branch:** P0 is on `claude/new-session-l8g46d`. `main` is untouched and
-  holds the golden baseline commit. P5.4 is on `claude/wonderful-hypatia-iwzai1`,
-  which starts from the P0 branch's last commit (`84bae2e`), so merging it
-  brings P0 along. Never push elsewhere without asking.
+- **Branches:** `main` now holds P0, P5.4 and the build plan (pull request #2,
+  merge commit `d2d39c3`, 2026-09-23). Each session works on **its own branch**
+  (section 0) and the operator merges it into `main` through a pull request.
+  Claude Code never merges into `main` and never pushes to another session's
+  branch. The old branches `claude/new-session-l8g46d` (P0) and
+  `claude/wonderful-hypatia-iwzai1` (P5.4) are fully contained in `main`.
+- **Golden baseline commit:** still `e7b71ea` (the fork's original `main`), as
+  recorded in `tests/golden/baseline.md`. Merging P0 into `main` did not change
+  it.
 - **Commits:** one per build-plan task, subject line `P0.7: <what>`. Explain
   *why*, and record anything surprising that was discovered.
 - **Tests:** three tiers, in `pytest.ini` and `tests/conftest.py`.
@@ -379,8 +521,9 @@ Setup pain already solved, all documented in `README.md`:
 
 ## 5. Where the work stands
 
-**Phase P0 is complete**, baseline included. The next work is P2, the
-overhang-aware field: the project's actual contribution.
+**Phase P0 is complete**, baseline included, and merged into `main`. **P1 and
+P4 are in progress in parallel** (section 0). P2, the overhang-aware field and
+the project's actual contribution, follows once gate D0 is taken.
 
 | Task | Status |
 |---|---|
@@ -396,7 +539,7 @@ overhang-aware field: the project's actual contribution.
 | P5.4b Bed-motion animation | **Built and checked on the laptop** (Play and smooth playback confirmed by the operator). Side-by-side view deferred until P2 |
 | P5.4 UI | **Qt window built** (`tools/viewer_qt.py`): side panel, timeline, toggle switches, dropdown. Needs `conda install -c conda-forge pyside6 pyvistaqt` once; falls back to the classic window without it. Laptop check pending |
 
-**450 unit tests pass; 13 skipped** (the `pipeline` and `benchmark` tiers, plus
+**451 unit tests pass; 13 skipped** (the `pipeline` and `benchmark` tiers, plus
 the 7 viewer display tests, which skip where there is no display; under
 `xvfb-run` with PySide6 and pyvistaqt installed those 7 run too). In the
 session container the Qt tests need `pip install pyside6 pyvistaqt` and
@@ -449,15 +592,15 @@ measurement and reasoning: `docs/plan_corrections.md` **3.9**;
 
 ### The immediate next step
 
-**P0 is finished, baseline included.** The next work is **P2**, the
-overhang-aware orientation field — the project's contribution. Everything it
-depends on is in place: the tilt contracts (P0.6), the conventions document, the
-benchmark parts, validated metrics, and a baseline that says exactly what is
-wrong with the current field.
+**P1 and P4 are in progress** (section 0). The build plan v3.3 set this order:
+P1 and P4 in parallel, and P2 once the team has taken gate D0.
 
-Start with **P2.1** (document the orientation-field pipeline and the analytic
-tilt bound), then **P2.2** (the overhang constraint itself). P2.5 re-runs this
-same matrix with the flag on and compares, so keep the reports committed.
+When P2 starts, begin with **P2.0** (field-only evaluation, so each field change
+does not cost a full run) and **P2.1** (document the orientation-field pipeline
+and the analytic tilt bound; it feeds D0), then **P2.2** (the overhang
+constraint itself) once D0 is recorded. P2.5 re-runs this same matrix with the
+flag on and compares, so keep the reports committed. P2.5 also needs P1.7
+(provenance on every report) and P2.3 uses P4.1 (the clearance model).
 
 Two things to re-run after any change to the metrics or to a vendored file:
 
@@ -492,16 +635,16 @@ metrics changed mid-study.
 ### After that
 
 1. **P1** — kinematics test suite, templated header/footer, infill parameters,
-   and the G-code validator that P3, P4, P5 and P7 all use. Lane A, unblocked.
-2. **P2** — the overhang-aware field. The core contribution and the only
-   research-shaped phase. Depends on P0.6 (done), P0.7 (done) and P0.8's
-   numbers.
-3. **P4** — motion safety. Lane C, needs only P1.4 and P0.6, so it can run
-   beside P2.
+   provenance on reports, and the G-code validator that P3, P4, P5 and P7 all
+   use. Lane A. **In progress** (section 0a).
+2. **P4** — motion safety. Lane C, needs P1.4 and P0.6. **In progress**
+   (section 0b).
+3. **P2** — the overhang-aware field. The core contribution and the only
+   research-shaped phase. Depends on P0.6 (done), P0.7 (done), P0.8's numbers
+   (done) and gate D0 (open). No session yet.
 
-Note that P1, P2 and P4 are meant to run in parallel, but there is one operator
-doing every laptop run. The plan's advice is at most two Claude Code sessions
-at a time.
+There is one operator doing every laptop run, and the plan's advice is at most
+two Claude Code sessions at a time.
 
 ## 6. What has been built
 

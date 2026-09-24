@@ -1,33 +1,6 @@
 {
-  "schema_version": 2,
+  "schema_version": 1,
   "metrics_version": 2,
-  "provenance": {
-    "pipeline": {
-      "recorded": "reconstructed-from-docs",
-      "host": null,
-      "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
-      "cpu_logical": 12,
-      "os": "Windows-11-10.0.26200",
-      "python": "3.10.21",
-      "taichi": "1.7.4",
-      "ti_arch": null,
-      "machine_profile": "reference",
-      "git_commit": null,
-      "blender": "Blender 5.2.1 LTS"
-    },
-    "scored": {
-      "recorded": "reconstructed-from-docs",
-      "host": null,
-      "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
-      "cpu_logical": 12,
-      "os": "Windows-11-10.0.26200",
-      "python": "3.10.21",
-      "taichi": "1.7.4",
-      "ti_arch": null,
-      "machine_profile": "reference",
-      "git_commit": null
-    }
-  },
   "part": "ramp50_xs",
   "max_slope_deg": 15.0,
   "overhang_aware": false,
@@ -82,5 +55,42 @@
       "max_unsupported_fraction": 0.01,
       "_gate": "D0: placeholders, team decision pending"
     }
+  },
+  "provenance": {
+    "source": "backfilled",
+    "machine": "AbdoYasser",
+    "os": "Windows-10-10.0.26200-SP0",
+    "python": "3.10.21",
+    "taichi": "1.7.4",
+    "ti_arch_setting": "stock mix",
+    "stage_arches": {
+      "add_platform": "cuda",
+      "align_atoms": "cuda",
+      "atomize": "x64",
+      "bpn_to_sdf": "cuda",
+      "compute_tangents": "cuda",
+      "compute_tool_orientations": "cuda",
+      "extract_explicit_atoms": "cuda",
+      "obj_to_bpn": "x64",
+      "order_atoms": "x64",
+      "sdf_df_to_layers": "cuda",
+      "sdf_to_isdf": "x64",
+      "smooth_toolpath_point": "x64",
+      "tesselate_toolpath_orientations": "x64",
+      "toolpath_to_gcode": "cuda"
+    },
+    "machine_profile": "reference",
+    "git_commit": null,
+    "code_modified": null,
+    "recorded_utc": null,
+    "metrics_version": 2,
+    "scored": {
+      "machine": "AbdoYasser",
+      "git_commit": null,
+      "code_modified": null,
+      "utc": null,
+      "metrics_version": 2
+    },
+    "_note": "Backfilled 2026-09-23 (build plan P1.7) from docs/handoff.md and the operator. stage_arches is inferred from each stage's default backend, not recorded at run time; the first run after P1.7 on the same laptop recorded identical values. The commit and finishing time were not recorded and are left as null."
   }
 }
