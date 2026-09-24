@@ -170,6 +170,8 @@ concurrency estimate worthless. So:
 | What | Where |
 |---|---|
 | Repo and all `data/` I/O | `%USERPROFILE%\5AX3D_printer_slicer` (local C:) |
+| Conda | Already installed all-users at `C:\ProgramData\Anaconda3`; **no admin**, so `conda init` is refused — put its `shell\condabin\conda-hook.ps1` in your own `$PROFILE` instead, and point `envs_dirs`/`pkgs_dirs` at `%USERPROFILE%\.conda` |
+| Blender / Git | Portable: the Blender **`.zip`** and **PortableGit**, extracted under `%USERPROFILE%`. The `.msi` and the standard Git installer both demand admin; the portable forms need none |
 | Taichi kernel cache | `%LOCALAPPDATA%\ticache`, via `TI_OFFLINE_CACHE_FILE_PATH` |
 | Durable copy of `reports/` | The `Z:` share, and GitHub |
 
@@ -177,6 +179,14 @@ Nothing has to be copied off the laptop: the repository is **35 MB** and carries
 all 36 benchmark STLs, the 48 JSON reports and the golden baseline. Only
 `reports/toolpaths/` (~220 MB, gitignored) is bulky, and the lab machine will
 generate its own.
+
+**Its graphics context cannot run the viewer tests.** `pytest` there aborted at
+the last test with `Windows fatal exception: access violation` inside
+pyvista's `renderer.close`, which kills the process and took the other 450
+tests with it. Set `ATOM_SKIP_DISPLAY_TESTS=1` on that machine; `tests/_display.py`
+holds the gate and `tests/test_display_gate.py` pins it. Nothing in the slicing
+pipeline touches those tests. Leave the variable unset on the laptop, which can
+run them and found correction 4.13 by doing so.
 
 **Unverified:** the profile path is an 8.3 short name ending `.USE`, which can
 indicate a **temporary profile wiped at logout**. If it is, conda and Blender

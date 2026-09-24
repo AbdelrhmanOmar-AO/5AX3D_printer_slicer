@@ -8,14 +8,15 @@ No `from __future__ import annotations` here; the window drives
 visualize_5ax, which imports Taichi kernels for G-code.
 """
 
-import os
 import sys
 
 import numpy as np
 import pytest
 
-if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
-    pytest.skip("needs a display (run under xvfb-run on Linux)", allow_module_level=True)
+import _display
+
+if _display.NO_DISPLAY:
+    pytest.skip(_display.NO_DISPLAY_REASON, allow_module_level=True)
 pytest.importorskip("pyvistaqt")
 qtpy = pytest.importorskip("qtpy")
 

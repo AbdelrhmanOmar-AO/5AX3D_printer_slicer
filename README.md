@@ -254,6 +254,23 @@ Three things look alarming and are not:
   $env:TI_OFFLINE_CACHE_FILE_PATH = "$env:LOCALAPPDATA\ticache"
   ```
 
+#### `Windows fatal exception: access violation` during `pytest`
+
+The run dies partway through, in `pyvista/plotting/renderer.py`, and takes the
+whole suite with it — an access violation kills the process rather than failing
+one test. It happens where a real graphics window cannot open: a remote desktop
+session, a headless machine, or a driver VTK does not get on with. The viewer
+tests are the only ones that open windows, and nothing in the slicing pipeline
+depends on them. Skip them on that machine:
+
+```powershell
+$env:ATOM_SKIP_DISPLAY_TESTS = "1"          # this session
+[Environment]::SetEnvironmentVariable('ATOM_SKIP_DISPLAY_TESTS','1','User')   # permanently
+```
+
+Leave it unset anywhere a window does open: those tests found the Windows-only
+Play bug in `docs/plan_corrections.md` 4.13, which no headless test could see.
+
 #### "No module named ..." after a `git pull`
 
 Dependencies are added as the work progresses, and a `git pull` brings the new
