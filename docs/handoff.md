@@ -35,12 +35,24 @@ Each on its own branch:
 The plan allows at most two sessions at once. Three ran, and **it cost a day of
 duplicated work** (`plan_corrections.md` 4.14): the P0.8 session built
 provenance on reports from scratch while P1.7, already in `main`, had done it
-better. Neither session could see the other from its own branch.
+better.
 
-> **Before building anything that sounds like infrastructure, run
-> `git fetch origin && git log --oneline HEAD..origin/main`, and read
-> `docs/SLICER_BUILD_PLAN.md` for whether a task already covers it.** Seconds,
-> against a day.
+**Every branch above is on `origin` and readable by every session.** Nothing was
+hidden; the duplicating session did not fetch. And `main` alone is not enough to
+check — P4.1 to P4.3 are on a branch and not in `main`, so they are the next
+thing at risk of being written twice.
+
+> **Before building anything that sounds like infrastructure:**
+>
+> ```
+> git fetch --all --prune
+> git log --oneline HEAD..origin/main
+> git for-each-ref --sort=-committerdate \
+>     --format='%(committerdate:short) %(refname:short) %(subject)' refs/remotes/
+> ```
+>
+> **and read `docs/SLICER_BUILD_PLAN.md` for whether a task already covers it.**
+> Seconds, against a day.
 
 **P2 has no session yet.** It waits for gate D0 (section 8). P2.0 and P2.1 do
 not need D0 (P2.1 is one of its inputs), but the plan allows at most two
@@ -995,14 +1007,38 @@ comparison and the one thing worth salvaging from it (the CPU model: a host name
 distinguishes machines, but `Intel(R) Xeon(R) Gold 6254` is what a reader
 comparing two timings needs, and `platform.processor()` will not give it).
 
-**Why neither session could have noticed:**
+**Why it happened — and it was not that the work was hidden.**
 
-* each was on its own branch, and a branch cannot see `main` moving;
-* each kept this file current, and the P0.8 session's own open-items table said
-  provenance was open — which was true when it was written;
+Every session's branch is pushed to `origin`. `git fetch --all` shows `main` and
+every other session's branch at any moment. P1.7 was sitting in `main`, in
+public, for a day. **The P0.8 session simply did not look**, and said so in an
+earlier draft of this section as though a branch *could not* see `main` move.
+That is false, and worth correcting here because the false version teaches the
+next session that duplication is unavoidable.
+
+What actually went wrong:
+
+* nothing *prompts* a session to fetch. It has to be a habit, and it was not
+  one;
+* each session kept this file current, and the P0.8 session's own open-items
+  table said provenance was open — true when written, and a stale document
+  reads exactly like a current one;
 * the build plan was not committed at the time, so "is there already a task for
-  this?" could not be answered from the repository. **It is committed now**
+  this?" had no answer in the repository. **It is committed now**
   (`docs/SLICER_BUILD_PLAN.md`), and P1.7 is in it.
+
+**Fetching `main` alone is not enough, either.** P4.1 to P4.3 exist only on
+`claude/phase-p4-build-fzqw55` and are not in `main` at all, so a session that
+checks only `main` could duplicate *those* next. The check is:
+
+```
+git fetch --all --prune
+git log --oneline HEAD..origin/main
+git for-each-ref --sort=-committerdate --format='%(committerdate:short) %(refname:short) %(subject)' refs/remotes/
+```
+
+The third line lists every branch with its latest commit. It takes seconds and
+it is the one that would have caught this.
 
 **The rule that follows**, and the one worth carrying into P2:
 

@@ -811,18 +811,36 @@ name distinguishes machines, but `Intel(R) Xeon(R) Gold 6254` is what a reader
 comparing two timings actually needs, and `platform.processor()` will not give
 it (bare `x86_64` on Linux).
 
-**What caused it.** Three sessions were running. Each kept `docs/handoff.md` and
-this file current, and each pushed to its own branch — but the P0.8 session had
-not pulled `main` for a day, and nothing in its own working tree could have told
-it that P1.7 existed. Its open-items table said provenance was an open item,
-because that was true when it was written.
+**What caused it, stated accurately.** Not invisibility. Every session pushes to
+`origin`, so `git fetch --all` shows `main` and every other branch at any moment,
+and P1.7 sat in `main` in public for a day. **The P0.8 session did not look.**
+
+An earlier draft of this entry said "nothing in its own working tree could have
+told it that P1.7 existed". That was wrong, and the wrong version is worse than
+useless: it frames an avoidable mistake as an unavoidable one.
+
+What is true is narrower. Nothing *prompts* a fetch; it has to be a habit. And a
+stale document reads exactly like a current one — the P0.8 session's own
+open-items table said provenance was open, which was true when it was written
+and false by the time it was read.
 
 **What to do instead**, for whoever is in this position next:
 
 > **Before building anything that sounds like infrastructure — provenance,
-> validation, a runner, a report format — `git fetch origin && git log --oneline
-> HEAD..origin/main`.** It costs seconds. A day's work sitting in `main` is
-> invisible from a branch that has not looked.
+> validation, a runner, a report format — fetch and look at every branch, not
+> just `main`.**
+>
+> ```
+> git fetch --all --prune
+> git log --oneline HEAD..origin/main
+> git for-each-ref --sort=-committerdate \
+>     --format='%(committerdate:short) %(refname:short) %(subject)' refs/remotes/
+> ```
+>
+> `main` alone is not enough: P4.1 to P4.3 exist only on
+> `claude/phase-p4-build-fzqw55`, so a session checking only `main` could
+> duplicate those next. The third command lists every branch with its latest
+> commit, and would have caught this one in seconds.
 
 The same applies to the plan: `docs/SLICER_BUILD_PLAN.md` is now committed, and
 P1.7 is *in it*. Reading the plan's task list would have prevented this. The
@@ -946,7 +964,7 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 4.8 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
 | 4.11 | `git ls-files` reports the index, not what is committed |
 | 4.13 | Create VTK timers after the interactor is initialised, or they never fire on Windows |
-| 4.14 | Fetch `main` before building infrastructure; two sessions built provenance twice |
+| 4.14 | Fetch **every branch**, not just `main`, before building infrastructure; two sessions built provenance twice |
 | 4.15 | Add `src/` in `conftest.py`, or no single test file can be run alone |
 | 4.16 | `atomize.py` ignores stage exit codes, so one failure becomes twelve — and a stale output can pass for a fresh one |
 | 4.17 | Never hand-write the pipeline's input list; `git ls-files -- data` is the list |
@@ -961,10 +979,10 @@ And the habits that caught most of them:
 * **When a measurement contradicts the hardware, the measurement is wrong.** A
   better GPU running five times slower was a cold kernel cache, not a slow GPU
   (handoff section 3). Never benchmark a fresh machine on its first run.
-* **Fetch `main` and read the plan's task list before building infrastructure.**
-  A day's work sitting in `main` is invisible from a branch that has not looked
-  (4.14), and no amount of keeping these documents current prevents it, because
-  a document is only as current as the branch it sits on.
+* **Fetch every branch and read the plan's task list before building
+  infrastructure.** Nothing is hidden — every session pushes to `origin`, so one
+  `git fetch --all` shows all of it. What is missing is the habit, and a stale
+  document reads exactly like a current one (4.14).
 
 ## 7. Parallel sessions: items found during P1 and P4
 
