@@ -162,7 +162,8 @@ field stages far more headroom than the laptop for large parts.
    So the runner must **warm one cache with a single run, then copy that
    directory to each worker before starting.** Copying a few hundred megabytes
    sixteen times costs seconds. Do not simply point each worker at an empty
-   directory.
+   directory. Measured on the lab machine: a cold run's GPU stages cost 49.9 /
+   56.6 / 45.7 / 151.9 s against 8.7 / 10.5 / 16.0 / 30.7 s warm.
 2. **`reports/matrix_progress.csv`.** Sixteen processes appending to the
    safeguard log added after the laptop restarted mid-run. Needs a lock, or
    per-worker files merged at the end.
@@ -245,18 +246,55 @@ Timing, against the committed laptop run of the same part and slope
 | Extracting atoms | 0.9 s | 3.1 s |
 | **Toolpath planner (CPU)** | **230.7 s** | **354.8 s** |
 
-**Read this carefully before trusting it.** The CPU stage is 1.54x slower,
-roughly what the two processors predict. The GPU stages are 3.4x to 7x slower
-*on a far better GPU*, which is not physically sensible: that is first-run
-kernel compilation into an empty cache, not compute. The laptop's figures come
-from a machine whose cache had been warm for weeks. **A warm-cache re-run is
-still outstanding**, and until it exists the only trustworthy ratio here is the
-planner's **1.54x**.
+Those cold figures are **not** the machine's speed. The CPU stage was 1.54x
+slower, roughly what the two processors predict, but the GPU stages were 3.4x to
+7x slower *on a far better GPU*, which is not physically sensible. It was
+first-run kernel compilation into an empty cache. A warm-cache re-run confirmed
+it:
 
-On that ratio, 48 runs would take about 30 hours there serially against the
-laptop's 19.9, and roughly 2 to 4 hours with 16 workers. The concurrency case
-survives — it never rested on per-run speed — but this document's earlier
-"roughly a wash per run" estimate was wrong, by about 50 %.
+| Stage | Laptop | Lab PC B, **warm** | Ratio |
+|---|---:|---:|---:|
+| Direction computation | 7.1 s | 8.7 s | 1.23x |
+| Implicit layers | 8.8 s | 10.5 s | 1.19x |
+| Tangent computation | 13.5 s | 16.0 s | 1.19x |
+| Atoms alignment | 26.6 s | 30.7 s | 1.15x |
+| Extracting atoms | 0.9 s | 0.9 s | 1.00x |
+| Toolpath planner | 230.7 s | 282.0 s | 1.22x |
+| **Whole pipeline** | **341.4 s** | **414.4 s** | **1.21x** |
+
+**The lab machine is 1.21x slower per run**, uniformly across stages. Even the
+planner carried compilation in the cold run (354.8 s against 282.0 warm), and
+the ordering rate went from 70.9 to 89.2 steps/s. Wall-clock was 6.96 minutes
+against the laptop's ~7.
+
+Two lessons, both cheap to forget: **a cold cache inflates the GPU stages five
+to sevenfold**, so never benchmark a fresh machine on its first run; and when a
+ratio contradicts the hardware, the measurement is wrong, not the hardware.
+
+#### What that means for the matrix
+
+Projected from the 48 committed runtimes rather than estimated:
+
+| | |
+|---|---|
+| Laptop, serial (recorded) | **21.8 h**, mean 27.2 min/run (observed wall-clock 19.9 h) |
+| Lab PC B, serial (x 1.21) | 26.4 h |
+| Lab PC B, 16 workers, one per part+size | **3.7 h** |
+| Lab PC B, 16 **worker copies** + work queue | **~1.7 to 2 h** |
+
+The 3.7 h is a critical path, not a throughput limit: `ramp80_s` and `ramp90_s`
+each need 3.7 h for their three slopes while the fastest worker finishes in 21
+minutes, because slopes of one part cannot run concurrently without overwriting
+each other's `data/` files.
+
+**That limit is removable, and cheaply.** The working tree is 35 MB, so each
+worker can have its own copy — 16 copies is 560 MB against 931 GB free. Then
+nothing is shared, all 48 runs are independent, and a work queue keeps every
+worker busy: bounded by total work over 16, about 1.7 h, or 2 to 3 h with
+contention. Against the laptop's 19.9 h that is roughly **10x**.
+
+It is also the simpler code: no partitioning by part and size, no sequencing of
+slopes, just N directories and a queue. **This is the design to build.**
 
 **Do not commit anything under `reports/` from the lab machine** until reports
 record which machine produced them (corrections, section 5). A run there
