@@ -5,23 +5,42 @@ with no prior conversation.
 
 **Keep this file updated as the work progresses.**
 
-Last updated: 2026-09-23. **Phase P0 is complete** — all 48 matrix runs are in
-at metrics v2 — and **P5.4** (toolpath viewer, bed-motion animation, Qt window)
-is built. Both are **merged into `main`** (pull request #2, merge commit
-`d2d39c3`). **Two sessions now run in parallel: P1 and P4.** Read section 0
-first.
+Last updated: 2026-09-24. **630 unit tests pass, 14 skipped.**
+
+* **P0 complete** (48 matrix runs at metrics v2) and **P5.4** (viewer, bed
+  motion, Qt window) built — both in `main`.
+* **P1**: P1.1, P1.2, P1.4 and P1.7 are in `main`. P1.3 pushed for its laptop
+  check.
+* **P4**: P4.1, P4.2 and P4.3 are built on `claude/phase-p4-build-fzqw55` and
+  **not yet in `main`**.
+* **This session** (P0.8 follow-on: the parallel matrix runner and the lab
+  machine) is on `claude/new-session-l8g46d`, **not yet in `main`**.
+* **P2**, the actual contribution, has no session.
+
+**Three sessions have been running at once, not two.** Read section 0, then 0c,
+which records the one thing that went wrong because of it.
 
 ---
 
-## 0. Two sessions are running in parallel (read first)
+## 0. Three sessions are running in parallel (read first)
 
-From 2026-09-23, two Claude Code sessions work at the same time, each on its
-own branch, both started from `main` at `d2d39c3`:
+Each on its own branch:
 
-| Session | Phase | Branch |
-|---|---|---|
-| P1 session | **P1**: kinematics and G-code toolchain | `claude/vibrant-rubin-waln7y` |
-| P4 session | **P4**: motion safety for continuous tilt | assigned when the session starts; the P4 session records it in section 0b below |
+| Session | Phase | Branch | In `main`? |
+|---|---|---|---|
+| P1 session | **P1**: kinematics and G-code toolchain | `claude/vibrant-rubin-waln7y` | P1.1, P1.2, P1.4, P1.7 yes; P1.3 no |
+| P4 session | **P4**: motion safety for continuous tilt | `claude/phase-p4-build-fzqw55` | **No** — P4.1, P4.2, P4.3 await a merge |
+| P0.8 follow-on | matrix runner, lab machine, test plumbing | `claude/new-session-l8g46d` | **No** — see 0c |
+
+The plan allows at most two sessions at once. Three ran, and **it cost a day of
+duplicated work** (`plan_corrections.md` 4.14): the P0.8 session built
+provenance on reports from scratch while P1.7, already in `main`, had done it
+better. Neither session could see the other from its own branch.
+
+> **Before building anything that sounds like infrastructure, run
+> `git fetch origin && git log --oneline HEAD..origin/main`, and read
+> `docs/SLICER_BUILD_PLAN.md` for whether a task already covers it.** Seconds,
+> against a day.
 
 **P2 has no session yet.** It waits for gate D0 (section 8). P2.0 and P2.1 do
 not need D0 (P2.1 is one of its inputs), but the plan allows at most two
@@ -130,7 +149,47 @@ F10725; and the single-move extrusion limit defaults to **5 mm**.
 
 *Edited by the P4 session only.* Record the branch name here first.
 
-Not started.
+Branch `claude/phase-p4-build-fzqw55`. As of 2026-09-24 it carries five commits
+that are **not in `main`**: P4.1 (clearance model), P4.2 (swept check between
+toolpath points), P4.3 (nozzle versus printed material at any tilt), and the
+viewer wiring. Its own status text lives on that branch, so this stub is what a
+reader of `main` sees; read the branch for the detail.
+
+### 0c. P0.8 follow-on session status
+
+*Edited by this session only.*
+
+Branch `claude/new-session-l8g46d`, merged up to `main` on 2026-09-24 and not
+yet merged down into it. What it carries that `main` does not:
+
+| | |
+|---|---|
+| `tools/run_matrix_parallel.py` | The parallel matrix runner (section 3). 34 tests |
+| Failing-stage check | In `run_pipeline`: names the first stage that produced nothing *or* left a file from an earlier run (`plan_corrections.md` 4.16) |
+| `ATOM_SKIP_DISPLAY_TESTS` | `tests/_display.py`. A VTK access violation on the lab machine killed the whole suite rather than one test |
+| `tests/conftest.py` | Adds `src/` to `sys.path`, so a single test file can be run alone (4.15) |
+| `machine` column | In `reports/matrix_progress.csv`, from P1.7's `provenance.machine`, with a padding migration for older logs |
+| Section 3 | The two lab machines assessed and measured |
+
+**Two convention breaches to declare, both deliberate and both the operator's
+to rule on:**
+
+1. **`tools/overhang_report.py` is P1's file** (section 0, "Who owns which
+   files"), and this session edited it — the failing-stage check and the
+   progress-log column. The edits are additive and were re-applied *onto* P1.7's
+   version after this session's duplicate provenance work was discarded whole,
+   so P1's own code is untouched. It also added a `verify_stages` flag to
+   `run_pipeline` so P1.7's arch-log test, which stubs `subprocess.run` and
+   therefore writes no artifact, can opt out for a stated reason instead of the
+   check being weakened.
+2. **Corrections 4.14 to 4.17 went straight into section 4**, rather than under
+   a per-session heading in section 7 as the convention now asks. This session
+   is merging rather than staying in flight, so they are already in their final
+   place. **Those four numbers are taken** — P1 and P4 must not reuse them.
+
+**Outstanding on the lab machine:** the first real parallel run is still owed.
+The one attempted on 2026-09-24 failed on a missing input, which is fixed;
+section 3 has the detail and the command.
 
 ---
 
@@ -456,6 +515,53 @@ What it does, and why each part is there:
   each try to use all 36 cores. Worth trying with and without.
 * Per-run stdout goes to `reports/worker_logs/` (gitignored).
 
+#### It also makes the laptop 4x faster, which matters more
+
+The runner is not a lab-machine tool. It is "use the cores you have", and the
+laptop has six. Projected from the same 48 committed runtimes:
+
+| Workers | Full matrix (48) | `xs` only (24) |
+|---|---|---|
+| 1 (the serial script) | 21:46 | 2:48 |
+| 2 | 10:53 | 1:24 |
+| **3** | **7:15** | **0:56** |
+| **4** | **5:26** | **0:42** |
+| 6 | 3:37 | 0:28 |
+
+**So losing access to the lab machine costs roughly 1.5x, not 15x.** And the
+laptop is the reference machine — the committed baseline was measured there — so
+its runs are the ones directly comparable to it, which the lab machine's are
+not (3.9, 4.14).
+
+Use **3 or 4 workers on the laptop, not 6.** The 5600H is a 45 W part: serial
+runs keep one or two cores busy and hold full boost, while four workers run all
+six hot and throttle. The table assumes no throttling, so 6 will not deliver
+3:37. Each worker also needs its stage outputs on disk — a 21 MB tree plus a few
+hundred MB of `data/` per worker — so check free space before starting.
+
+#### The first real run failed, and why
+
+Attempted 2026-09-24 on the lab machine, `--sizes xs --workers 8`. The warm-up
+run failed after 3:32 and **the runner stopped rather than starting eight
+workers to fail identically**, which is what it is designed to do.
+
+The cause was a missing input: `tools/compute_tangents.py` loads
+`data/image/0.png` as its default tangent field whenever `--top_lines` is not
+given, which is every benchmark part, and the worker trees were built from a
+hand-written list of inputs that did not include it. Stage 6 died in every
+worker. Corrections **4.17** (never hand-write the input list; `git ls-files --
+data` is the list) and **4.16** (`atomize.py` ignores every stage's exit code, so
+one failure became twelve) record it. Both are fixed.
+
+**The run is still owed.** On the lab machine:
+
+```powershell
+Remove-Item -Recurse -Force $env:USERPROFILE\..\5ax3d_workers   # stale trees
+git checkout -- reports/
+git pull
+python tools/run_matrix_parallel.py --sizes xs --workers 8
+```
+
 **Still unmeasured:** contention between workers. The 1:27:31 is arithmetic, not
 an observation. The honest first step on the lab machine is
 `--sizes xs --workers 8`, whose serial estimate is 2:48:31, so a real figure
@@ -538,10 +644,18 @@ the project's actual contribution, follows once gate D0 is taken.
 | P5.4a Toolpath viewer | **Built**, pulled forward at the operator's request (`plan_corrections.md` 2.11). Laptop check pending |
 | P5.4b Bed-motion animation | **Built and checked on the laptop** (Play and smooth playback confirmed by the operator). Side-by-side view deferred until P2 |
 | P5.4 UI | **Qt window built** (`tools/viewer_qt.py`): side panel, timeline, toggle switches, dropdown. Needs `conda install -c conda-forge pyside6 pyvistaqt` once; falls back to the classic window without it. Laptop check pending |
+| P1.1 / P1.2 / P1.4 / P1.7 | **Done and in `main`.** Section 0a has each one's laptop check |
+| P1.3 | Pushed for its laptop check (section 0a) |
+| P1.5 firmware templates | Blocked on gate E1 |
+| P1.6 `order_atoms` without `kernel_profiler` | Proposed, not started. Needs an undisturbed laptop |
+| P4.1 / P4.2 / P4.3 | **Built on `claude/phase-p4-build-fzqw55`, not in `main`** (section 0b) |
+| Parallel matrix runner | **Built** on this session's branch, not in `main` (section 0c). 48 runs in ~1.5 h on the lab machine, ~5.5 h on the laptop, against 21.8 h serially. **Contention between workers is still unmeasured** |
+| P2 | No session. Waits on gate D0; P2.0 and P2.1 do not |
 
-**451 unit tests pass; 13 skipped** (the `pipeline` and `benchmark` tiers, plus
-the 7 viewer display tests, which skip where there is no display; under
-`xvfb-run` with PySide6 and pyvistaqt installed those 7 run too). In the
+**630 unit tests pass; 14 skipped** (the `pipeline` and `benchmark` tiers, plus
+the viewer display tests, which skip where there is no display or where
+`ATOM_SKIP_DISPLAY_TESTS` is set; under `xvfb-run` with PySide6 and pyvistaqt
+installed they run too). In the
 session container the Qt tests need `pip install pyside6 pyvistaqt` and
 `apt-get install libegl1 libxkbcommon-x11-0 libxcb-cursor0` (plus the other
 `libxcb-*` libraries Qt lists). The Play fix
@@ -836,10 +950,12 @@ PowerShell being closed — and lost about 40 minutes of work in total.
 Three flaws in the metric were found and fixed before this run
 (`plan_corrections.md` 4.5, 4.6, 1.8); 3.7 records the validation.
 
-## 7c. Two sessions ran in parallel, and have been merged
+## 7c. What running sessions in parallel has actually cost
 
-Worth knowing, because the branch history shows it and the numbering of the
-corrections moved.
+Two merges, two lessons, one of them expensive. Worth reading before starting a
+third session alongside two others.
+
+### The first merge, 2026-09-23: the viewer session
 
 For about a day two Claude Code sessions worked on the same branch family: one
 finished **P0.8** (the 48-run matrix, the resume machinery, metrics v2) and one
@@ -856,11 +972,45 @@ follow it. Nothing else was renumbered, so any other reference either session
 wrote still points where it did. If an older note cites "4.12" for the VTK
 timer, it means 4.13.
 
-**The lesson for the next parallel pair:** the code merged without a single
-conflict, and the only friction was two people numbering a list. If two
-sessions run again, have each append its corrections under a session-specific
-heading and renumber once at merge time, rather than both editing the same
-counter.
+**The lesson drawn at the time:** the code merged without a single conflict, and
+the only friction was two people numbering a list. Hence the section 7 convention
+in section 0 — each session appends corrections under its own heading, and they
+are renumbered once at merge time.
+
+### The second merge, 2026-09-24: the same code, written twice
+
+That lesson was the wrong one, or at least the small one. The second merge cost
+**a day of duplicated work**, and numbering had nothing to do with it.
+
+The P0.8 session was told that reports not naming their machine was urgent — a
+lab-machine run had just overwritten a committed, laptop-measured cell. It built
+`src/atom/provenance.py`, wired it through the report tool, backfilled all 48
+reports and wrote 22 tests. **Plan task P1.7 had done all of it the day before
+and merged it to `main`**, recording the backend of all 14 stages at run time
+rather than one field per run, detecting uncommitted code, and verified on the
+laptop where a real run caught a wrong host name in the backfill.
+
+The duplicate was discarded whole. `plan_corrections.md` **4.14** has the
+comparison and the one thing worth salvaging from it (the CPU model: a host name
+distinguishes machines, but `Intel(R) Xeon(R) Gold 6254` is what a reader
+comparing two timings needs, and `platform.processor()` will not give it).
+
+**Why neither session could have noticed:**
+
+* each was on its own branch, and a branch cannot see `main` moving;
+* each kept this file current, and the P0.8 session's own open-items table said
+  provenance was open — which was true when it was written;
+* the build plan was not committed at the time, so "is there already a task for
+  this?" could not be answered from the repository. **It is committed now**
+  (`docs/SLICER_BUILD_PLAN.md`), and P1.7 is in it.
+
+**The rule that follows**, and the one worth carrying into P2:
+
+> Two sessions on disjoint code merge cleanly. Two sessions on *shared
+> infrastructure* duplicate each other silently, and no amount of
+> document-keeping prevents it, because a document is only as current as the
+> branch it sits on. Before building infrastructure: fetch `main`, read the
+> plan's task list, and if a task already names it, say so and stop.
 
 **Also relevant:** `pyproject.toml` gained an optional `gui` extra (PySide6,
 pyvistaqt). Without it the viewer falls back to the classic pyvista window, and

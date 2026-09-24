@@ -199,11 +199,15 @@ Found when reading v3.3 against the repository after P0 was merged:
 | §0.1 and the P0 "Where it lives" line | working branch `claude/new-session-l8g46d` | P0 is in `main`; each session has its own branch (2.13) |
 | §4 lane diagram | `P0 ✅ (P0.8 matrix run pending)` | the matrix is done (48 of 48, metrics v2) |
 | §4 phase table, P0 row | "**Pending:** running the P0.8 matrix" | done |
-| Appendix A, P0 row | "344 unit tests" and "P0.8 matrix (24 runs) **pending**" | 451 unit tests; matrix done |
+| Appendix A, P0 row | "344 unit tests" and "P0.8 matrix (24 runs) **pending**" | **630** unit tests (2026-09-24); matrix done, and 48 runs rather than 24 (1.4) |
 | Appendix E source line | corrections "on branch `claude/new-session-l8g46d`" | now in `main` |
 | §0.4 hazard list | numbered 1–15, then 17, 18, 19, then 16 | hazard 16 is out of order |
 
 None of these changes a task. They mislead a cold reader about what is done.
+
+A test count in a document goes stale the week it is written. The live figure is
+whatever `pytest -q` prints; `docs/handoff.md`'s header carries the last one
+recorded and the date it was recorded on.
 
 ## 2. Deliberate deviations
 
@@ -913,9 +917,14 @@ and a newly added input that is not yet committed is still one a worker needs.
 | `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk. Now plan task **P1.6** |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
 | P4 vs P1.4 ordering | P4 depends on P1.4 (the validator). Which P4 tasks start before P1.4 reaches `main` is the operator's call; P4.1 and P4.3 do not use it |
+| P4 branch not merged | P4.1, P4.2 and P4.3 are built on `claude/phase-p4-build-fzqw55` and are **not in `main`** (2026-09-24). They touch the viewer, which P5.4 also touches, so the merge needs care. |
+| This session's branch not merged | `claude/new-session-l8g46d` carries the parallel runner, the failing-stage check, `ATOM_SKIP_DISPLAY_TESTS` and the conftest fix. Handoff section 0c lists them and declares two convention breaches for the operator to rule on. |
 | P2 | No session assigned. Waits on gate D0; P2.0 and P2.1 do not |
 | Parallel matrix runner | **Built** (2026-09-24) as `tools/run_matrix_parallel.py`: a copy of the working tree per worker, so no two runs share a `data/` path. Handoff section 3 has the design and the numbers. Tested with the slicing stubbed out; **contention between workers is still unmeasured**, so its projection is arithmetic rather than an observation. |
-| Contention between parallel workers | Unmeasured. The runner's 1:27:31 for 48 runs at 16 workers divides total work by workers and ignores memory bandwidth, the shared GPU and NUMA. One real run settles it. |
+| Contention between parallel workers | Unmeasured. The runner's 1:27:31 for 48 runs at 16 workers divides total work by workers and ignores memory bandwidth, the shared GPU and NUMA. One real run settles it: `--sizes xs --workers 8` on the lab machine, under an hour. |
+| CPU model in the provenance block | P1.7 records the machine's **host name**, not its processor. A host name distinguishes machines; `Intel(R) Xeon(R) Gold 6254` is what a reader comparing two timings needs. `platform.processor()` will not give it — the Windows registry or `/proc/cpuinfo` will. Worth adding to `atom.provenance`; see 4.14. |
+| Correction numbers 4.14 to 4.17 | **Taken** by this session, straight into section 4 rather than a per-session heading in section 7, because it is merging rather than staying in flight. P1 and P4 must not reuse them. |
+| A third concurrent session | The plan allows two. Three ran, and 4.14 is what it cost. |
 
 ## 6. Quick index
 
@@ -928,23 +937,34 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 1.6 | `forward()` has no X-then-Y tilt decomposition to confirm against |
 | 1.7 | IK failure is NaN in `offset`; a non-zero `offset` is a clearance, not an error |
 | 1.8 | The plan's 1.5 x height support radius overrides its own 65-degree cone |
+| 1.9 | IK→FK agrees with itself by construction; check the physical pose too |
+| 3.2 | `from __future__ import annotations` breaks any module with a Taichi kernel |
+| 3.9 | The golden SHA-256 holds only on the backend mix it was captured on |
 | 4.5 | The bed-contact rule must anchor to the part's lowest point |
 | 4.6 | Sampling by face centroid under-measures large flat faces; subdivide first |
 | 4.7 | An overwriting run makes an interrupted re-run look complete; version the metrics |
 | 4.8 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
-| 3.9 | The golden SHA-256 holds only on the backend mix it was captured on |
+| 4.11 | `git ls-files` reports the index, not what is committed |
 | 4.13 | Create VTK timers after the interactor is initialised, or they never fire on Windows |
 | 4.14 | Fetch `main` before building infrastructure; two sessions built provenance twice |
+| 4.15 | Add `src/` in `conftest.py`, or no single test file can be run alone |
 | 4.16 | `atomize.py` ignores stage exit codes, so one failure becomes twelve — and a stale output can pass for a fresh one |
 | 4.17 | Never hand-write the pipeline's input list; `git ls-files -- data` is the list |
 
-And the two habits that caught most of them:
+And the habits that caught most of them:
 
 * Before a long run, do one short run and compare against what you expect. A
   figure that does not move when the thing it depends on changes is worth
   chasing (4.6 was found exactly this way).
 * Check a metric against a case whose answer is known before putting its
   output in a table (3.7).
+* **When a measurement contradicts the hardware, the measurement is wrong.** A
+  better GPU running five times slower was a cold kernel cache, not a slow GPU
+  (handoff section 3). Never benchmark a fresh machine on its first run.
+* **Fetch `main` and read the plan's task list before building infrastructure.**
+  A day's work sitting in `main` is invisible from a branch that has not looked
+  (4.14), and no amount of keeping these documents current prevents it, because
+  a document is only as current as the branch it sits on.
 
 ## 7. Parallel sessions: items found during P1 and P4
 
