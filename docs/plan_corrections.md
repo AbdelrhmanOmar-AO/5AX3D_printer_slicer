@@ -731,6 +731,7 @@ laptop.
 | Thresholds (45 deg effective, 1 % unsupported) | Placeholders, gate D0. Now meaningful: with the metric fixed, parts can actually pass. |
 | `twin_domes` verdict | Reports "not printable" when it has no overhang to measure. Conservative by design but misleading in the table; distinguishing "nothing to measure" from "failed" is worth doing. |
 | Which stage first diverges across backends | 3.9 argues the field solvers, from which stages change backend and how the planner works. Not measured stage by stage. The atom count in `data/frame/<part>.npz` settles it in one command if it ever matters. |
+| Reports do not name the machine that produced them | **Now urgent.** A run on the lab machine silently overwrites the committed cell for that part and slope, so a laptop-measured baseline can acquire a lab-measured cell with nothing in the file to show it. Must be closed before any matrix run happens off the laptop. |
 | Backend recorded beside each number | 3.9's consequence 4. The reports in `reports/` do not record which backend produced them; all 48 used the stock mix, but nothing in the files says so. Worth adding before any run happens on another machine. |
 | `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |

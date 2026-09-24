@@ -150,6 +150,19 @@ field stages far more headroom than the laptop for large parts.
    `ti.init(offline_cache_file_path=...)` works too, but the environment
    variable is what a worker wrapper should use, since it needs no edit to any
    of the 13 stages.
+
+   **But a per-worker cache starts empty, and an empty cache is expensive.**
+   The lab machine's first ever run (2026-09-24, cold cache) spent 49.9 s on
+   direction computation against the laptop's 7.1 s, 56.6 s on implicit layers
+   against 8.8 s, and 151.9 s on atom alignment against 26.6 s — the GPU
+   stages, which compile the most kernels, on a far better GPU. Sixteen
+   independent caches would pay that sixteen times: perhaps 80 minutes of pure
+   compilation on a job estimated at 2 to 4 hours.
+
+   So the runner must **warm one cache with a single run, then copy that
+   directory to each worker before starting.** Copying a few hundred megabytes
+   sixteen times costs seconds. Do not simply point each worker at an empty
+   directory.
 2. **`reports/matrix_progress.csv`.** Sixteen processes appending to the
    safeguard log added after the laptop restarted mid-run. Needs a lock, or
    per-worker files merged at the end.
@@ -212,6 +225,44 @@ python tools/overhang_report.py data/param/ramp45_xs.json --max-slope 7
 
 Expect about 0.2 % unsupported and `printable: True`. The wall-clock against the
 laptop's ~7 minutes is the number that decides whether the estimates above hold.
+
+#### Result of that check on Lab PC B (2026-09-24)
+
+**It passed, identically to the laptop**: 0.24 % unsupported, `printable: True`,
+worst effective overhang 45.0 degrees, max tilt used 0.61 degrees. The machine
+computes correct results, on Blender 5.2.1 LTS (the same version as the laptop)
+and Taichi on `Arch.cuda` against the A6000.
+
+Timing, against the committed laptop run of the same part and slope
+(`reports/baseline_overhang/ramp45_xs_ms7.json`):
+
+| Stage | Laptop | Lab PC B (cold cache) |
+|---|---:|---:|
+| Direction computation | 7.1 s | 49.9 s |
+| Implicit layers | 8.8 s | 56.6 s |
+| Tangent computation | 13.5 s | 45.7 s |
+| Atoms alignment | 26.6 s | 151.9 s |
+| Extracting atoms | 0.9 s | 3.1 s |
+| **Toolpath planner (CPU)** | **230.7 s** | **354.8 s** |
+
+**Read this carefully before trusting it.** The CPU stage is 1.54x slower,
+roughly what the two processors predict. The GPU stages are 3.4x to 7x slower
+*on a far better GPU*, which is not physically sensible: that is first-run
+kernel compilation into an empty cache, not compute. The laptop's figures come
+from a machine whose cache had been warm for weeks. **A warm-cache re-run is
+still outstanding**, and until it exists the only trustworthy ratio here is the
+planner's **1.54x**.
+
+On that ratio, 48 runs would take about 30 hours there serially against the
+laptop's 19.9, and roughly 2 to 4 hours with 16 workers. The concurrency case
+survives — it never rested on per-run speed — but this document's earlier
+"roughly a wash per run" estimate was wrong, by about 50 %.
+
+**Do not commit anything under `reports/` from the lab machine** until reports
+record which machine produced them (corrections, section 5). A run there
+silently overwrites the committed cell for that part and slope, and one
+lab-measured cell inside a laptop-measured baseline is exactly what 3.9 warns
+against.
 
 Setup pain already solved, all documented in `README.md`:
 
