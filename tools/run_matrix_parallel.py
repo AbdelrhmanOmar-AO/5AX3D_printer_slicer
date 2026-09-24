@@ -81,21 +81,66 @@ DEFAULT_WORKER_ROOT = REPO_ROOT.parent / "5ax3d_workers"
 #: commits), no archived toolpaths, no previous reports.
 WORKER_CONTENT = ("src", "tools", "config", "scripts", "pyproject.toml")
 
-#: Input subdirectories of `data/` a worker needs, and the only patterns copied
-#: from each.
-#:
-#: Patterns, not whole folders. `data/mesh/` accumulates `.obj` files that
-#: Blender writes during a run, and on the operator's machine that made a worker
-#: copy 53 MB instead of 21. Size is the lesser problem: a worker starting with
-#: another run's intermediates has a silent-corruption path. If Blender fails in
-#: a worker, a stale `.obj` left lying there lets the rest of the pipeline carry
-#: on with **the wrong geometry** and write a plausible but wrong report. A
-#: worker must start with inputs only.
-DATA_INPUTS = {"mesh": ("*.stl",), "param": ("*.json",)}
+#: Fallback list of `data/` inputs, used only when git cannot be asked.
+#: `data_input_paths` is the real answer; see why there.
+FALLBACK_DATA_INPUTS = {
+    "mesh": ("*.stl",),
+    "param": ("*.json",),
+    "image": ("*.png",),
+}
 
-#: Output subdirectories of `data/`, created empty in each worker.
+
+def data_input_paths():
+    """Every tracked file under `data/` — the pipeline's inputs, by definition.
+
+    **Not a hand-written list.** Everything a run generates is gitignored (each
+    `data/*/` has its own `.gitignore`), so "tracked under `data/`" is exactly
+    "input", and it stays correct as stages change.
+
+    Enumerating them by hand failed twice in one afternoon:
+
+    * copying whole folders dragged in Blender's `.obj` intermediates, so a
+      worker could start with another run's geometry;
+    * narrowing to `*.stl` and `*.json` then dropped `data/image/0.png`, and
+      **every** run needs it — `tools/compute_tangents.py` hardcodes it as the
+      default target-tangent field when no `--top_lines` is given. Stage 6 died
+      in every worker, and because `atomize.py` ignores stage exit codes it
+      produced twelve more failures behind it.
+
+    `git ls-files` rather than `git ls-tree HEAD` here, deliberately, and
+    despite correction 4.11: that correction is about "has this been committed",
+    where the index lies. This asks "is this an input", and a newly added input
+    that has not been committed yet is still an input a worker needs.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--", "data"],
+            cwd=str(REPO_ROOT), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60,
+        )
+        if result.returncode == 0:
+            paths = [
+                Path(line.strip()) for line in result.stdout.splitlines()
+                if line.strip() and not line.strip().endswith(".gitignore")
+            ]
+            if paths:
+                return paths
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    paths = []
+    for name, patterns in FALLBACK_DATA_INPUTS.items():
+        for pattern in patterns:
+            paths += [
+                path.relative_to(REPO_ROOT)
+                for path in (REPO_ROOT / "data" / name).glob(pattern)
+            ]
+    return paths
+
+#: Output subdirectories of `data/`, created empty in each worker. `image` is
+#: absent because it holds committed inputs and the input copy creates it.
 DATA_OUTPUTS = (
-    "basis", "direction", "frame", "gcode", "image", "log", "phasor",
+    "basis", "direction", "frame", "gcode", "log", "phasor",
     "point_normal", "sdf", "toolpath", "toolpath_planner", "triphasor",
 )
 
@@ -192,12 +237,10 @@ def tree_megabytes():
             total += source.stat().st_size
         elif source.is_dir():
             total += sum(f.stat().st_size for f in source.rglob("*") if f.is_file())
-    for name, patterns in DATA_INPUTS.items():
-        source = REPO_ROOT / "data" / name
-        if not source.is_dir():
-            continue
-        for pattern in patterns:
-            total += sum(f.stat().st_size for f in source.glob(pattern) if f.is_file())
+    for relative in data_input_paths():
+        source = REPO_ROOT / relative
+        if source.is_file():
+            total += source.stat().st_size
     return total / 1e6
 
 
@@ -225,15 +268,13 @@ def create_worker(root, index, overwrite=False):
         else:
             shutil.copy2(source, worker / name)
 
-    for name, patterns in DATA_INPUTS.items():
-        source = REPO_ROOT / "data" / name
-        target = worker / "data" / name
-        target.mkdir(parents=True, exist_ok=True)
-        if not source.is_dir():
+    for relative in data_input_paths():
+        source = REPO_ROOT / relative
+        if not source.is_file():
             continue
-        for pattern in patterns:
-            for path in source.glob(pattern):
-                shutil.copy2(path, target / path.name)
+        target = worker / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
 
     for name in DATA_OUTPUTS:
         (worker / "data" / name).mkdir(parents=True, exist_ok=True)

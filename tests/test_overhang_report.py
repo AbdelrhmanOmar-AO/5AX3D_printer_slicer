@@ -11,6 +11,8 @@ No `from __future__ import annotations`: this drives Taichi through the tool.
 import csv
 import json
 import math
+import os
+import time
 
 import numpy as np
 import pytest
@@ -209,6 +211,101 @@ LAB_MACHINE = dict(
     cpu="Intel(R) Xeon(R) Gold 6254 CPU @ 3.10GHz",
     cpu_logical=72,
 )
+
+
+# --------------------------------------------------------------------------
+# Naming the stage that actually failed
+# --------------------------------------------------------------------------
+
+
+def _stage_tree(root, part, through=None, mtime=None):
+    """Create the artifacts of every stage up to and including `through`."""
+    made = []
+    for label, template in overhang_report.STAGE_ARTIFACTS:
+        path = root / template.format(part=part)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        made.append(label)
+        if through is not None and label == through:
+            break
+    return made
+
+
+def test_a_complete_run_reports_no_failed_stage(tmp_path):
+    started = time.time()
+    _stage_tree(tmp_path, "ramp45_xs", mtime=started + 1)
+    assert overhang_report.first_failed_stage("ramp45_xs", started, tmp_path) is None
+
+
+def test_the_first_missing_stage_is_named(tmp_path):
+    """The real failure: stage 6 died and twelve more failed behind it.
+
+    `tools/compute_tangents.py` loads `data/image/0.png` as its default tangent
+    field, that file was missing from the worker trees, and because `atomize.py`
+    ignores stage exit codes the log was a wall of downstream complaints around
+    one cause.
+    """
+    started = time.time()
+    _stage_tree(tmp_path, "ramp45_xs", through="5 implicit layers",
+                mtime=started + 1)
+
+    failure = overhang_report.first_failed_stage("ramp45_xs", started, tmp_path)
+
+    assert failure is not None
+    label, path, reason = failure
+    assert label == "6 tangents"
+    assert "basis" in str(path)
+    assert "produced nothing" in reason
+
+
+def test_the_earliest_failure_is_named_not_the_loudest(tmp_path):
+    """A later stage's missing output is a symptom; the first gap is the cause."""
+    started = time.time()
+    _stage_tree(tmp_path, "ramp45_xs", through="2 point-normal cloud",
+                mtime=started + 1)
+    # Something much later also exists, as it would from a previous run.
+    late = tmp_path / "data" / "gcode" / "ramp45_xs.gcode"
+    late.parent.mkdir(parents=True, exist_ok=True)
+    late.write_bytes(b"x")
+
+    label, _, _ = overhang_report.first_failed_stage("ramp45_xs", started, tmp_path)
+    assert label == "3 SDF"
+
+
+def test_a_stale_artifact_counts_as_a_failure(tmp_path):
+    """The dangerous case: the file exists, so nothing looks wrong, but it is
+    the *previous* run's. Without this the report would be quietly wrong."""
+    started = time.time()
+    _stage_tree(tmp_path, "ramp45_xs", mtime=started + 1)
+
+    stale = tmp_path / "data" / "basis" / "ramp45_xs.npz"
+    old = started - 3600
+    os.utime(stale, (old, old))
+
+    failure = overhang_report.first_failed_stage("ramp45_xs", started, tmp_path)
+    assert failure is not None
+    label, _, reason = failure
+    assert label == "6 tangents"
+    assert "earlier run" in reason
+
+
+def test_freshness_allows_for_timestamp_granularity(tmp_path):
+    """A file written a moment before the recorded start is not stale."""
+    started = time.time()
+    _stage_tree(tmp_path, "ramp45_xs",
+                mtime=started - overhang_report.FRESHNESS_TOLERANCE_S / 2)
+    assert overhang_report.first_failed_stage("ramp45_xs", started, tmp_path) is None
+
+
+def test_the_stage_list_covers_the_whole_pipeline():
+    """13 stages, ending at the G-code, so no stage can fail unnoticed."""
+    labels = [label for label, _ in overhang_report.STAGE_ARTIFACTS]
+    assert len(labels) == 13
+    assert labels[0].startswith("1 ")
+    assert "G-code" in labels[-1]
+    assert any("tangents" in label for label in labels)
 
 
 # --------------------------------------------------------------------------

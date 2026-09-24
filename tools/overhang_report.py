@@ -119,6 +119,58 @@ def parse_stage_times(log_text):
     }
 
 
+#: What each pipeline stage must leave behind, in order, as
+#: (stage label, path template). Used to name the *first* stage that produced
+#: nothing, because `atomize.py` cannot.
+#:
+#: `tools/atomize.py` runs all 13 stages with `os.system` and **ignores every
+#: return code**. One early failure therefore produces twelve more, and the only
+#: thing that finally errors is this tool finding no toolpath — behind a log full
+#: of downstream noise. Worse, in a working tree that has run this part before,
+#: the stale outputs of the *previous* run are still sitting there, so a failed
+#: stage can be read as a successful one and the report is quietly wrong.
+#:
+#: Checking these, with freshness, turns both cases into one clear message.
+STAGE_ARTIFACTS = (
+    ("1 remesh (Blender)", "data/mesh/{part}.obj"),
+    ("2 point-normal cloud", "data/point_normal/{part}.npz"),
+    ("3 SDF", "data/sdf/{part}.npz"),
+    ("4 direction field", "data/direction/{part}.npz"),
+    ("5 implicit layers", "data/phasor/{part}.npz"),
+    ("6 tangents", "data/basis/{part}.npz"),
+    ("7 atom alignment", "data/triphasor/{part}.npz"),
+    ("8 explicit atoms", "data/frame/{part}.npz"),
+    ("9 order atoms", "data/toolpath/{part}.npz"),
+    ("10a smooth", "data/toolpath/{part}_smoothed.npz"),
+    ("10b tesselate", "data/toolpath/{part}_smoothed_tesselated.npz"),
+    ("10c add platform", "data/toolpath/{part}_platform.npz"),
+    ("11 G-code", "data/gcode/{part}.gcode"),
+)
+
+#: Slack on the freshness comparison, for filesystem timestamp granularity and
+#: any clock adjustment during a long run.
+FRESHNESS_TOLERANCE_S = 5.0
+
+
+def first_failed_stage(part, started_wall_s, root=None):
+    """The first stage whose artifact is missing or older than this run.
+
+    Returns (label, path, reason) or None if every stage delivered. "Older than
+    this run" is the case that matters most: the file exists, so nothing looks
+    wrong, but it belongs to a previous run of the same part.
+    """
+    root = REPO_ROOT if root is None else Path(root)
+    for label, template in STAGE_ARTIFACTS:
+        path = root / template.format(part=part)
+        if not path.is_file():
+            return label, path, "produced nothing"
+        if path.stat().st_mtime < started_wall_s - FRESHNESS_TOLERANCE_S:
+            return label, path, (
+                "left a file from an earlier run; this run did not rewrite it"
+            )
+    return None
+
+
 def run_pipeline(param_path, max_slope_deg):
     """Run `tools/atomize.py`, optionally overriding ``max_slope``.
 
@@ -134,6 +186,7 @@ def run_pipeline(param_path, max_slope_deg):
         temporary.write_text(json.dumps(params, indent=4), encoding="utf-8")
 
         started = time.perf_counter()
+        started_wall = time.time()
         result = subprocess.run(
             [sys.executable, "tools/atomize.py", str(temporary)], cwd=REPO_ROOT
         )
@@ -144,6 +197,19 @@ def run_pipeline(param_path, max_slope_deg):
             f"atomize.py exited {result.returncode} for {param_path}. "
             "The report cannot be written."
         )
+
+    # atomize.py exits 0 even when a stage failed, so its exit code proves
+    # nothing. Find the first stage that did not deliver and say so.
+    failure = first_failed_stage(params["solid_name"], started_wall)
+    if failure is not None:
+        label, path, reason = failure
+        raise SystemExit(
+            f"Stage {label} {reason}: {path}\n"
+            "atomize.py runs every stage with os.system and ignores the exit "
+            "codes, so the stages after this one will have failed too and the "
+            "log will be mostly their complaints. This is the one to fix."
+        )
+
     return elapsed, params
 
 

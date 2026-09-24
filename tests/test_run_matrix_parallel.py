@@ -139,6 +139,36 @@ def test_a_worker_gets_inputs_only_not_leftovers(tmp_path, monkeypatch):
         stale.unlink(missing_ok=True)
 
 
+def test_a_worker_gets_the_default_tangent_image(tmp_path):
+    """The bug that broke the first parallel run, pinned.
+
+    `tools/compute_tangents.py` loads `data/image/0.png` in its *else* branch,
+    so every run without an explicit `--top_lines` needs it. Enumerating inputs
+    by hand missed it, stage 6 died in the worker, and `atomize.py`'s ignored
+    exit codes turned that into twelve failures.
+    """
+    worker = rmp.create_worker(tmp_path, 0)
+    assert (worker / "data" / "image" / "0.png").is_file(), (
+        "compute_tangents.py's default tangent field is missing from the worker"
+    )
+
+
+def test_inputs_come_from_git_rather_than_a_hand_written_list(tmp_path):
+    """Everything a run generates is gitignored, so tracked-under-data is
+    exactly input — and it stays correct as stages change, which two hand-written
+    lists did not."""
+    paths = rmp.data_input_paths()
+    assert paths, "no inputs found at all"
+    names = {str(p).replace("\\", "/") for p in paths}
+    assert "data/image/0.png" in names
+    assert any(n.endswith(".stl") for n in names)
+    assert any(n.endswith(".json") for n in names)
+    assert not any(n.endswith(".obj") for n in names), (
+        "a Blender intermediate is not an input"
+    )
+    assert not any(n.endswith(".gitignore") for n in names)
+
+
 def test_a_worker_has_no_git_directory(tmp_path):
     """So a worker tree can never be committed from, and 16 copies of history
     are not paid for."""

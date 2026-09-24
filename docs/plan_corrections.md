@@ -776,6 +776,60 @@ broken the moment anyone runs one file, which is the normal way to work on one.
 
 `conftest.py` now adds `src/` explicitly, next to `tools/`.
 
+### 4.16 `atomize.py` ignores every stage's exit code
+
+Found when the first parallel run failed. `tools/atomize.py` runs all 13 stages
+with `os.system` and **checks no return code.** One early failure therefore
+produces twelve more, and the only thing that finally errors is
+`overhang_report.py` finding no toolpath — behind a log that is almost entirely
+the later stages complaining about inputs that were never made. Diagnosing the
+first parallel failure took a directory listing per stage to find the one real
+cause.
+
+The dangerous version is not that one. **In a working tree that has already run
+that part, the previous run's outputs are still there.** A failed stage then
+leaves a file that *looks* like its output, the pipeline carries on, and the
+report is quietly wrong. A fresh worker tree turns that into a loud missing-file
+error; the operator's own repository would not.
+
+`overhang_report.run_pipeline` now checks, after `atomize.py` returns, that every
+stage's artifact exists **and was written by this run**, and names the first one
+that was not:
+
+    Stage 6 tangents produced nothing: data/basis/twin_domes_xs.npz
+
+The freshness half is the part that matters: it catches the stale-output case,
+where nothing looks wrong.
+
+The vendored `atomize.py` is left alone. Making it check its own exit codes would
+be the better fix and would need the golden test re-run; this covers the same
+ground from outside without touching a vendored file.
+
+### 4.17 `compute_tangents.py` needs `data/image/0.png` for every run
+
+`tools/compute_tangents.py` takes optional `--top_lines` and `--bottom_lines`
+PNGs. With neither given — which is every benchmark part — it loads
+**`data/image/0.png`** as the default and then disables the constraint. So that
+committed file is a hard dependency of the whole pipeline, not of an optional
+feature.
+
+This broke the first parallel run. The runner built worker trees with a
+hand-written list of inputs (`*.stl` and `*.json`), stage 6 died in every worker,
+and 4.16 turned that into twelve failures.
+
+The general lesson, having got this wrong twice within an hour — first by copying
+whole folders and dragging in Blender's `.obj` intermediates, then by narrowing
+to two patterns and dropping this PNG:
+
+> **Do not enumerate the pipeline's inputs by hand.** Everything a run generates
+> is gitignored, so `git ls-files -- data` *is* the list of inputs, and it stays
+> correct as stages change.
+
+`run_matrix_parallel.data_input_paths` does that. It uses `git ls-files` rather
+than `git ls-tree HEAD` deliberately, and despite 4.11: that correction is about
+"has this been committed", where the index lies; this asks "is this an input",
+and a newly added input that is not yet committed is still one a worker needs.
+
 ## 5. Open plan items not yet resolved
 
 | Item | Status |
@@ -811,6 +865,8 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 3.9 | The golden SHA-256 holds only on the backend mix it was captured on |
 | 4.13 | Create VTK timers after the interactor is initialised, or they never fire on Windows |
 | 4.14 | Reports are keyed by part and slope, not machine; a second machine overwrites them silently |
+| 4.16 | `atomize.py` ignores stage exit codes, so one failure becomes twelve — and a stale output can pass for a fresh one |
+| 4.17 | Never hand-write the pipeline's input list; `git ls-files -- data` is the list |
 
 And the two habits that caught most of them:
 
