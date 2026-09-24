@@ -791,7 +791,7 @@ broken the moment anyone runs one file, which is the normal way to work on one.
 | Backend recorded beside each number | **Closed** by the same change: `ti_arch` is part of the provenance record, and a forced backend counts as a different machine. |
 | `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
-| `-Parallel N` for the matrix | Designed, not built, by choice (handoff section 3): partition by part+size so no two workers share `data/` paths, per-worker Taichi cache dirs, a concurrency-safe progress log. Waiting on a measurement from the 36-core lab machine. |
+| Parallel matrix runner | **Built** (2026-09-24) as `tools/run_matrix_parallel.py`, with a copy of the working tree per worker rather than the partitioning first sketched — see handoff section 3. Tested with the slicing stubbed; **contention between workers is still unmeasured**, so its 1:27:31 projection is arithmetic rather than an observation. |
 
 ## 6. Quick index
 

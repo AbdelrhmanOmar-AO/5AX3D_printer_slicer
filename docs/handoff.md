@@ -294,7 +294,52 @@ worker busy: bounded by total work over 16, about 1.7 h, or 2 to 3 h with
 contention. Against the laptop's 19.9 h that is roughly **10x**.
 
 It is also the simpler code: no partitioning by part and size, no sequencing of
-slopes, just N directories and a queue. **This is the design to build.**
+slopes, just N directories and a queue.
+
+#### Built: `tools/run_matrix_parallel.py` (2026-09-24)
+
+```powershell
+python tools/run_matrix_parallel.py --sizes xs s --workers 16 --dry-run   # plan only
+python tools/run_matrix_parallel.py --sizes xs s --workers 16             # run it
+python tools/run_matrix_parallel.py --sizes xs s --workers 16 --resume    # after a stop
+```
+
+`--dry-run` prints the plan, the disk estimate and the projected wall-clock
+without creating or running anything. **Do that first on any new machine.**
+On this repository's numbers it reports 48 runs, 21:46:43 serial, **1:27:31 at
+16 workers** — stated as a lower bound, because it ignores contention between
+workers.
+
+What it does, and why each part is there:
+
+* **A copy of the working tree per worker** (21 MB measured, no `.git`), so no
+  two runs can share a `data/` path. This is the whole point; a test asserts no
+  worker tree ever hosts two runs at once.
+* **A queue, not a partition.** Workers pull the next job as they free up.
+* **Longest job first**, estimated from the committed runtimes, with unmeasured
+  jobs scheduled *before* known ones — an unmeasured job might be the long one,
+  and assuming it is short is what leaves one worker grinding alone at the end.
+* **One warm-up run alone**, then its Taichi cache is copied to every worker.
+  Sixteen cold caches would pay the compilation cost sixteen times.
+* **Results collected as each job finishes**, never batched at the end, so an
+  interruption keeps everything completed — correction 4.7 cost 12 hours by not
+  doing this.
+* **A run that exits 0 but writes no report counts as failed.** Otherwise it
+  leaves a gap `--resume` treats as never attempted, forever.
+* `--threads N` caps each worker's Taichi CPU threads via
+  `TI_CPU_MAX_NUM_THREADS` (verified on Taichi 1.7.4), so sixteen workers do not
+  each try to use all 36 cores. Worth trying with and without.
+* Per-run stdout goes to `reports/worker_logs/` (gitignored).
+
+**Still unmeasured:** contention between workers. The 1:27:31 is arithmetic, not
+an observation. The honest first step on the lab machine is
+`--sizes xs --workers 8`, whose serial estimate is 2:48:31, so a real figure
+arrives in well under an hour.
+
+**Not yet run anywhere.** 32 tests cover the orchestration with the real slicing
+stubbed out, which is the only way to test it, so the queue, the isolation, the
+collection and the failure paths are pinned — but no full matrix has been run
+through it.
 
 **Do not commit anything under `reports/` from the lab machine** until reports
 record which machine produced them (corrections, section 5). A run there

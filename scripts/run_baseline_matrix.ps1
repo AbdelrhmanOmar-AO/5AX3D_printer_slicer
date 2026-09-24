@@ -44,6 +44,18 @@
     .\scripts\run_baseline_matrix.ps1 -Sizes xs
     .\scripts\run_baseline_matrix.ps1 -Sizes xs,s -Slopes 7,30
     .\scripts\run_baseline_matrix.ps1 -Sizes xs,s -Resume   # after an interruption
+
+.NOTES
+    This runs the matrix one combination at a time, which is right on a machine
+    with a handful of cores. On a many-core machine use the parallel runner
+    instead — it gives each worker its own copy of the working tree, so no two
+    runs can overwrite each other's `data/` intermediates:
+
+        python tools/run_matrix_parallel.py --sizes xs s --workers 16 --dry-run
+        python tools/run_matrix_parallel.py --sizes xs s --workers 16
+
+    Measured from the 48 committed runtimes: 21.8 h serially against about 1.5 h
+    at 16 workers. See docs/handoff.md section 3.
 #>
 
 [CmdletBinding()]

@@ -15,3 +15,7 @@ run2.stats.json
 # the metrics can be re-scored with --reanalyse instead of re-slicing, which is
 # a local concern; the JSON reports are the committed artifact.
 reports/toolpaths/
+
+# Per-run stdout from tools/run_matrix_parallel.py. One file per run, kept so a
+# failure can be diagnosed after the fact; local diagnostics, not an artifact.
+reports/worker_logs/
