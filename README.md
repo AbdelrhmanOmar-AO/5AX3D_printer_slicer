@@ -244,7 +244,15 @@ Three things look alarming and are not:
   compiled-kernel cache, so it recompiles instead of reusing. Results are
   unaffected, but every stage pays the compilation cost again. Clear it with
   `ti cache clean -p C:/taichi_cache/ticache`, or delete the folder; an
-  interrupted run can leave the lock behind.
+  interrupted run can leave the lock behind. To move the cache somewhere else
+  entirely — a local disk when the home directory is a network share, or a
+  per-process directory when several runs go at once — set
+  `TI_OFFLINE_CACHE_FILE_PATH`. Verified on Taichi 1.7.4, and it needs no edit
+  to any stage:
+
+  ```powershell
+  $env:TI_OFFLINE_CACHE_FILE_PATH = "$env:LOCALAPPDATA\ticache"
+  ```
 
 #### "No module named ..." after a `git pull`
 

@@ -139,12 +139,50 @@ field stages far more headroom than the laptop for large parts.
 
 1. **Taichi's offline kernel cache.** A single interrupted run already produced
    `Lock C:/taichi_cache/ticache/ticache.lock failed`. Sixteen processes sharing
-   that directory will contend. Each worker needs its own cache directory.
+   that directory will contend. Each worker needs its own cache directory —
+   **no code change required**, the path is relocatable per process by
+   environment variable, verified on Taichi 1.7.4:
+
+   ```powershell
+   $env:TI_OFFLINE_CACHE_FILE_PATH = "$env:LOCALAPPDATA\ticache"
+   ```
+
+   `ti.init(offline_cache_file_path=...)` works too, but the environment
+   variable is what a worker wrapper should use, since it needs no edit to any
+   of the 13 stages.
 2. **`reports/matrix_progress.csv`.** Sixteen processes appending to the
    safeguard log added after the laptop restarted mid-run. Needs a lock, or
    per-worker files merged at the end.
 
 Both fail quietly, so both need tests.
+
+#### Lab PC B: no usable `C:\` home, but local scratch works
+
+The operator's home directory there is a network share (`Z:` and `U:`, one
+volume, 627 GB free). **`%TEMP%` is nevertheless on local `C:`, writable, with
+931 GB free** (`C:\Users\CA7387~1.USE\AppData\Local\Temp`); `D:` reports 0 GB
+and is unusable.
+
+That matters because the pipeline writes large `.npz` files at every one of 13
+stages, and running it over SMB would put I/O on the critical path and make the
+concurrency estimate worthless. So:
+
+| What | Where |
+|---|---|
+| Repo and all `data/` I/O | `%USERPROFILE%\5AX3D_printer_slicer` (local C:) |
+| Taichi kernel cache | `%LOCALAPPDATA%\ticache`, via `TI_OFFLINE_CACHE_FILE_PATH` |
+| Durable copy of `reports/` | The `Z:` share, and GitHub |
+
+Nothing has to be copied off the laptop: the repository is **35 MB** and carries
+all 36 benchmark STLs, the 48 JSON reports and the golden baseline. Only
+`reports/toolpaths/` (~220 MB, gitignored) is bulky, and the lab machine will
+generate its own.
+
+**Unverified:** the profile path is an 8.3 short name ending `.USE`, which can
+indicate a **temporary profile wiped at logout**. If it is, conda and Blender
+would have to be reinstalled every session. Test by writing a file to
+`%USERPROFILE%`, logging out and back in, and reading it. If it does not
+survive, ask IT for a persistent local folder.
 
 #### Order of work, decided with the operator
 
