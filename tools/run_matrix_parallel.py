@@ -70,6 +70,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 import overhang_report as orep  # noqa: E402
+from atom import provenance as prov  # noqa: E402
 
 #: Where worker copies live by default. Deliberately outside the repository, so
 #: a stray worker tree can never be committed, and on the same volume so copying
@@ -357,6 +358,28 @@ def seed_cache(source_worker, workers):
 # --------------------------------------------------------------------------
 
 
+_PARENT_GIT_ENV = None
+
+
+def parent_git_env():
+    """The parent repository's commit, for every worker's provenance.
+
+    A worker tree is a copy with no `.git`, so a run inside it cannot ask git
+    which commit it is: it would record none, or, if the worker root sat inside
+    some other repository, that repository's commit. The runner states it
+    instead (`atom.provenance`, "Where the commit comes from"). Worked out once
+    per process: the copies are all made from the same tree.
+    """
+    global _PARENT_GIT_ENV
+    if _PARENT_GIT_ENV is None:
+        commit, modified = prov.git_state(REPO_ROOT)
+        _PARENT_GIT_ENV = {
+            prov.GIT_COMMIT_ENV_VAR: commit or "",
+            prov.CODE_MODIFIED_ENV_VAR: {True: "true", False: "false"}.get(modified, ""),
+        }
+    return dict(_PARENT_GIT_ENV)
+
+
 def run_job(worker, job, log_dir, threads=None):
     """Run one (part, slope) inside a worker tree. Returns (ok, seconds, log_path).
 
@@ -378,6 +401,10 @@ def run_job(worker, job, log_dir, threads=None):
     # workers each trying to use every core.
     if threads:
         env["TI_CPU_MAX_NUM_THREADS"] = str(threads)
+    # For the report's provenance: which commit, and how many runs shared the
+    # machine, since that inflates the runtime it records (1.47x at 8 workers).
+    env.update(parent_git_env())
+    env[prov.PARALLEL_WORKERS_ENV_VAR] = str(job.get("pool_size", 1))
 
     started = time.monotonic()
     with log_path.open("w", encoding="utf-8", errors="replace") as handle:
@@ -434,6 +461,10 @@ def run_matrix(jobs, workers, log_dir, threads=None, on_event=None):
     appends to one file, and sixteen threads appending to the crash trail is the
     ragged-CSV problem again.
     """
+    for job in jobs:
+        # How many runs can share the machine with this one: recorded in its
+        # report, because it changes the runtime (`run_job`).
+        job["pool_size"] = len(workers)
     queue = list(jobs)
     lock = threading.Lock()
     completed, failed = [], []
@@ -678,6 +709,11 @@ def main(argv=None):
     if reports:
         orep.SUMMARY_PATH.write_text(orep.summarize(reports), encoding="utf-8")
         print(f"\nWrote {orep.SUMMARY_PATH} from {len(reports)} report(s)")
+        # The same warning `--summarize` prints. It is also inside the file, but
+        # a mixed table must not be discovered only by opening it.
+        warning = orep.provenance_warning(reports)
+        if warning:
+            print("\n" + warning)
 
     if not args.keep_workers:
         print(f"Removing worker trees under {args.root}")

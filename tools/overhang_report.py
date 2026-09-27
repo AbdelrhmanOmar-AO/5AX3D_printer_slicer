@@ -655,12 +655,25 @@ def _size_of(part):
     return match.group(1) if match else None
 
 
+def run_condition(report):
+    """How the run shared its machine: ``"alone"``, ``"8 workers"``, or
+    ``"not recorded"`` for a report that predates the field (P1.7 follow-up)."""
+    workers = (report.get("provenance") or {}).get("parallel_workers")
+    if workers is None:
+        return "not recorded"
+    return "alone" if workers == 1 else f"{workers} workers"
+
+
 def _timing_section(reports):
     """How pipeline cost scaled with part volume, from the runs themselves.
 
     Nobody has published how Atomizer's ordering stage scales, so this is a
     result in its own right rather than only a planning aid. It is built from
     whatever has been run; a single size gives a single row.
+
+    Each row says whether the run had the machine to itself. Runs made in a
+    worker pool are slower by contention (1.47x at 8 workers on the lab
+    machine), so their times measure the load as much as the part.
     """
     timed = [r for r in reports if r.get("runtime", {}).get("total_s", 0) > 0]
     if not timed:
@@ -689,7 +702,7 @@ def _timing_section(reports):
             f"| `{report['part']}` | {report['max_slope_deg']:g}° | "
             f"{volume:,.0f} | {points:,} | "
             + ("n/a" if math.isnan(ordering) else f"{ordering / 60:.1f}")
-            + f" | {total / 60:.1f} |"
+            + f" | {total / 60:.1f} | {run_condition(report)} |"
         )
 
     section = [
@@ -698,10 +711,21 @@ def _timing_section(reports):
         "How the pipeline's cost scaled with part size. `order_atoms` is the "
         "stage that dominates, and it runs on the CPU.",
         "",
-        "| Part | max_slope | Volume mm³ | Toolpath points | order_atoms min | Total min |",
-        "|---|---|---|---|---|---|",
+        "| Part | max_slope | Volume mm³ | Toolpath points | order_atoms min | Total min | Run |",
+        "|---|---|---|---|---|---|---|",
         *rows,
     ]
+
+    conditions = {run_condition(r) for r in timed}
+    if conditions != {"alone"}:
+        section += [
+            "",
+            "**Not all of these runs had the machine to itself** (the Run "
+            "column). A run sharing it with others is slower by contention, "
+            "1.47x at 8 workers on the lab machine, so compare times only "
+            "between runs made the same way, and do not fit a scaling curve "
+            "across them.",
+        ]
 
     sizes = {_size_of(r["part"]) for r in timed} - {None}
     if len(sizes) < 2:

@@ -38,6 +38,26 @@ Every overhang report carries a ``provenance`` block built here:
     Where and when the metrics were last computed. ``--reanalyse`` re-scores an
     archived toolpath, possibly on another machine and commit, while everything
     above still describes the run that produced the toolpath.
+``parallel_workers``, ``taichi_cpu_threads`` *(optional; added 2026-09-27)*
+    How many runs shared the machine: the size of the worker pool
+    `tools/run_matrix_parallel.py` ran this one in, or 1 for a run on its own.
+    And the per-process Taichi thread cap (``TI_CPU_MAX_NUM_THREADS``), or None
+    when uncapped. Reports written before these existed simply lack them.
+
+    These do **not** change the metrics, which are deterministic on one machine,
+    but they change the **runtime**: on the lab machine a run took 1.47x longer
+    with eight at once than alone (``docs/handoff.md`` section 3). So they are
+    not comparability fields; the summary's runtime table shows them instead,
+    so load-inflated timings are never read as the machine's speed.
+
+Where the commit comes from
+---------------------------
+From ``git`` in the repository, normally. A parallel worker runs in a copy of
+the working tree with no ``.git``, so there ``git`` either fails (commit
+unknown) or, if the copy happens to sit inside some other repository, answers
+for **that** one. The runner therefore states the parent repository's commit
+in ``ATOM_GIT_COMMIT`` and ``ATOM_CODE_MODIFIED``, and when those are set they
+are used instead of asking ``git``. Set but empty means "known to be unknown".
 
 Comparability
 -------------
@@ -95,6 +115,13 @@ COMPARABILITY_FIELDS: tuple[str, ...] = (
 #: Directories whose uncommitted changes would make ``git_commit`` misleading.
 CODE_DIRECTORIES: tuple[str, ...] = ("src", "tools", "config")
 
+#: Set by `tools/run_matrix_parallel.py` for its workers (see the docstring).
+GIT_COMMIT_ENV_VAR = "ATOM_GIT_COMMIT"
+CODE_MODIFIED_ENV_VAR = "ATOM_CODE_MODIFIED"
+PARALLEL_WORKERS_ENV_VAR = "ATOM_PARALLEL_WORKERS"
+#: Taichi's own per-process CPU thread cap.
+TAICHI_THREADS_ENV_VAR = "TI_CPU_MAX_NUM_THREADS"
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -111,7 +138,16 @@ def taichi_version() -> str | None:
 
 
 def git_state(repo_root: Path) -> tuple[str | None, bool | None]:
-    """``(commit, code_modified)`` for the repository, or ``(None, None)``."""
+    """``(commit, code_modified)`` for the repository, or ``(None, None)``.
+
+    ``ATOM_GIT_COMMIT``, when set, is used instead of asking ``git`` (see the
+    module docstring); ``ATOM_CODE_MODIFIED`` is then ``true``, ``false`` or
+    empty for unknown.
+    """
+    if GIT_COMMIT_ENV_VAR in os.environ:
+        commit = os.environ[GIT_COMMIT_ENV_VAR].strip() or None
+        modified = os.environ.get(CODE_MODIFIED_ENV_VAR, "").strip().lower()
+        return commit, {"true": True, "false": False}.get(modified)
     try:
         commit = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=repo_root, capture_output=True,
@@ -124,6 +160,25 @@ def git_state(repo_root: Path) -> tuple[str | None, bool | None]:
     except (OSError, subprocess.CalledProcessError):
         return None, None
     return commit or None, bool(changed)
+
+
+def _int_from_env(name: str) -> int | None:
+    value = os.environ.get(name, "").strip()
+    try:
+        return int(value) if value else None
+    except ValueError:
+        return None
+
+
+def run_conditions() -> dict[str, Any]:
+    """``parallel_workers`` and ``taichi_cpu_threads`` for a run on this process.
+
+    ``parallel_workers`` is 1 unless the parallel runner said otherwise.
+    """
+    return {
+        "parallel_workers": _int_from_env(PARALLEL_WORKERS_ENV_VAR) or 1,
+        "taichi_cpu_threads": _int_from_env(TAICHI_THREADS_ENV_VAR),
+    }
 
 
 def read_arch_log(path: Path) -> dict[str, str]:
@@ -193,6 +248,8 @@ def collect(
             "recorded_utc": None,
             "metrics_version": metrics_version,
             "scored": scored,
+            "parallel_workers": None,
+            "taichi_cpu_threads": None,
         }
 
     setting = os.environ.get("ATOM_TI_ARCH", "").strip().lower()
@@ -210,6 +267,7 @@ def collect(
         "recorded_utc": scored["utc"],
         "metrics_version": metrics_version,
         "scored": scored,
+        **run_conditions(),
     }
 
 

@@ -17,6 +17,9 @@ the operator on 2026-09-23:
 * ``scripts/run_baseline_matrix.ps1`` sets neither ``ATOM_TI_ARCH`` nor
   ``ATOM_MACHINE``, so every run used the stock backend mix and the
   ``reference`` profile;
+* ``scripts/run_baseline_matrix.ps1`` runs one combination at a time, so every
+  run had the machine to itself (``parallel_workers: 1``) with no Taichi thread
+  cap. Added 2026-09-27, when the parallel runner made that worth recording;
 * Windows 11 (10.0.26200, which ``platform.platform()`` reports as
   ``Windows-10-10.0.26200-SP0``), Python 3.10.21, Taichi 1.7.4, and a working
   CUDA driver (Taichi started on CUDA reports ``Arch.cuda``).
@@ -102,6 +105,10 @@ BACKFILL = {
         "utc": None,
         "metrics_version": 2,
     },
+    # scripts/run_baseline_matrix.ps1 runs one combination at a time, so each of
+    # the 48 had the machine to itself; no Taichi thread cap was set.
+    "parallel_workers": 1,
+    "taichi_cpu_threads": None,
     "_note": (
         "Backfilled 2026-09-23 (build plan P1.7) from docs/handoff.md and the "
         "operator. stage_arches is inferred from each stage's default backend, "

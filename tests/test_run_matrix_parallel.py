@@ -618,3 +618,88 @@ def test_nothing_to_do_is_reported_rather_than_run(tmp_path, capsys):
                      "--root", str(tmp_path / "w")])
     assert code == 0
     assert "already has a current result" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------
+# What a worker's report records about how it ran (P1.7 follow-up)
+# --------------------------------------------------------------------------
+
+
+def test_a_worker_is_told_the_commit_and_the_pool_size(monkeypatch, tmp_path):
+    """The worker tree has no .git, and its runtime depends on how many ran at once."""
+    from atom import provenance as prov
+
+    seen = {}
+
+    def fake_run(command, cwd, env, stdout, stderr):
+        seen.update(env)
+        return type("Result", (), {"returncode": 0})()
+
+    # The parent's git state is worked out before any job; seed it, so the
+    # stubbed subprocess.run below is only ever the worker's run.
+    monkeypatch.setattr(rmp, "_PARENT_GIT_ENV", {
+        prov.GIT_COMMIT_ENV_VAR: "b" * 40, prov.CODE_MODIFIED_ENV_VAR: "false",
+    })
+    monkeypatch.setattr(rmp.subprocess, "run", fake_run)
+    job = {"part": "ramp45_xs", "slope": 7.0, "estimate_s": 0.0, "pool_size": 8}
+    rmp.run_job(tmp_path, job, tmp_path)
+
+    assert seen[prov.GIT_COMMIT_ENV_VAR] == "b" * 40
+    assert seen[prov.CODE_MODIFIED_ENV_VAR] == "false"
+    assert seen[prov.PARALLEL_WORKERS_ENV_VAR] == "8"
+
+
+def test_the_parent_commit_is_the_repositorys(monkeypatch):
+    from atom import provenance as prov
+
+    monkeypatch.delenv(prov.GIT_COMMIT_ENV_VAR, raising=False)
+    monkeypatch.setattr(rmp, "_PARENT_GIT_ENV", None)
+    commit, modified = prov.git_state(rmp.REPO_ROOT)
+    env = rmp.parent_git_env()
+    assert env[prov.GIT_COMMIT_ENV_VAR] == (commit or "")
+    assert env[prov.CODE_MODIFIED_ENV_VAR] == {True: "true", False: "false"}.get(modified, "")
+
+
+def test_the_pool_size_is_the_number_of_workers(monkeypatch, tmp_path):
+    """The warm-up runs in a pool of one; everything after in the full pool."""
+    pools = []
+
+    def fake_run_job(worker, job, log_dir, threads=None):
+        pools.append(job["pool_size"])
+        return True, 0.01, tmp_path / "l.log"
+
+    monkeypatch.setattr(rmp, "run_job", fake_run_job)
+    monkeypatch.setattr(rmp, "collect", lambda w, j: _stub_report(j["part"], j["slope"]))
+    monkeypatch.setattr(orep, "append_progress", lambda report: None)
+    monkeypatch.setattr(orep, "load_reports", lambda quiet=False: [])
+    monkeypatch.setattr(rmp, "create_worker",
+                        lambda root, i, overwrite=False: tmp_path / f"w{i}")
+    monkeypatch.setattr(rmp, "seed_cache", lambda source, workers: len(workers) - 1)
+    jobs = [{"part": f"p{i}", "slope": 7.0, "estimate_s": 60.0 * (i + 1)} for i in range(4)]
+    monkeypatch.setattr(rmp, "build_jobs", lambda *a, **k: [dict(j) for j in jobs])
+
+    rmp.main(["--sizes", "xs", "--workers", "3", "--root", str(tmp_path / "w"),
+              "--keep-workers"])
+
+    assert pools == [1, 3, 3, 3]
+
+
+def test_a_mixed_table_is_announced_on_screen(monkeypatch, tmp_path, capsys):
+    """The warning is in the summary file too, but must not be found only there."""
+    monkeypatch.setattr(rmp, "run_job", lambda w, j, l, t=None: (True, 0.01, tmp_path / "l.log"))
+    monkeypatch.setattr(rmp, "collect", lambda w, j: _stub_report(j["part"], j["slope"]))
+    monkeypatch.setattr(orep, "append_progress", lambda report: None)
+    monkeypatch.setattr(orep, "load_reports", lambda quiet=False: [{"part": "a"}, {"part": "b"}])
+    monkeypatch.setattr(orep, "summarize", lambda reports: "table\n")
+    monkeypatch.setattr(orep, "SUMMARY_PATH", tmp_path / "summary.md")
+    monkeypatch.setattr(orep, "provenance_warning", lambda reports: "WARNING: this table mixes 2 provenance groups")
+    monkeypatch.setattr(rmp, "create_worker",
+                        lambda root, i, overwrite=False: tmp_path / f"w{i}")
+    monkeypatch.setattr(rmp, "seed_cache", lambda source, workers: len(workers) - 1)
+    monkeypatch.setattr(rmp, "build_jobs",
+                        lambda *a, **k: [{"part": "p", "slope": 7.0, "estimate_s": 60.0}])
+
+    rmp.main(["--sizes", "xs", "--workers", "1", "--root", str(tmp_path / "w"),
+              "--keep-workers"])
+
+    assert "WARNING: this table mixes 2 provenance groups" in capsys.readouterr().out
