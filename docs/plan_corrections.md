@@ -1290,6 +1290,24 @@ The 48 baseline reports are backfilled with `parallel_workers: 1`, since
 fields are optional, so reports that predate them stay complete; the table
 shows "not recorded" for them.
 
+#### P1-15 How P1.6 switches the profiler
+
+*Deliberate choices within P1.6.*
+
+* **The switch lives in a new module, `atom.ti_profiler`,** not in
+  `atom.ti_env`, which is on the shared "ask first" list (`docs/handoff.md`
+  section 0). It needs no Taichi import, so it is testable anywhere.
+* **Unknown values are refused**, as `ATOM_TI_ARCH`'s are. `1 true yes on`
+  mean on; `0 false no off` or unset mean off. A typo that silently left the
+  profiler on would distort the very timing this task measures.
+* **Its printed table goes behind the same switch.** Upstream printed the
+  kernel table after every run; with the profiler off there is nothing to
+  print.
+* **The time is measured on the stage alone**, `order_atoms.py` on the golden
+  run's own `data/sdf` and `data/frame` files, with the profiler off and then
+  on. A full golden run carries four minutes of other stages and the laptop's
+  thermal state, which swamp a difference of this size.
+
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
 None yet.

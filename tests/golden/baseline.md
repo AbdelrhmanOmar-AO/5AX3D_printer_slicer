@@ -131,6 +131,9 @@ be chosen with this in mind — see the note in that task.
 |---|---|---|
 | 2026-09-21 | P0.5, machine constants moved into profiles (first vendored edit) | Pass, 3 tests in 457 s. G-code byte-identical. |
 | 2026-09-23 | P0.4 exit criterion: whole pipeline under `ATOM_TI_ARCH=cpu` | **Hash differs by design** — see "It is not deterministic across backends" above and correction 3.9. Run took 1194 s. |
+| 2026-09-23 | P1.4, G-code validator (no vendored edit; adds a validator test to this file) | Pass, 5 passed, 1 skipped in 784 s. The golden G-code validates with zero violations. |
+| 2026-09-23 | P1.2, header/footer from templates; temperatures (vendored: `kinematics3z.py`, `atomize.py`, `toolpath_to_gcode.py`) | Pass, 5 passed, 1 skipped in 522 s. G-code byte-identical. |
+| 2026-09-27 | P1.3, infill parameters (vendored: `sdf_to_isdf.py`, `atomize.py`) | Pass, 5 passed, 1 skipped in 674 s. G-code byte-identical. |
 
 ## Re-checking it
 

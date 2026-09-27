@@ -13,8 +13,13 @@ import atom.frame3
 import atom.solid3
 import atom.toolpath3
 from atom.bvh import BVH
+from atom.ti_profiler import profiler_enabled
 
-init_taichi("cpu", offline_cache_cleaning_policy="never", kernel_profiler=True)
+# Build plan P1.6: upstream always profiled this stage. The profiler changes no
+# result, only the time, so it is now off unless ATOM_TI_PROFILER asks for it.
+KERNEL_PROFILER = profiler_enabled()
+
+init_taichi("cpu", offline_cache_cleaning_policy="never", kernel_profiler=KERNEL_PROFILER)
 
 
 def order_atoms():
@@ -223,7 +228,8 @@ def order_atoms():
 
     t1 = time.perf_counter()
 
-    ti.profiler.print_kernel_profiler_info()
+    if KERNEL_PROFILER:
+        ti.profiler.print_kernel_profiler_info()
 
     duration = t1 - t0
 
