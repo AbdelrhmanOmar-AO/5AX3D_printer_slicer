@@ -1060,6 +1060,21 @@ rather than in source.
   viewer is the P4 session's area (`docs/handoff.md` section 0), so this is
   recorded for it, not edited.
 
+#### P1-13 `atomize.py`'s log lists only 10 of its 14 stage commands
+
+*Hazard, found on the laptop 2026-09-27.* `tools/atomize.py` writes a
+"Pipeline commands" section to `data/log/<part>.log`, and it is natural to read
+that as the list of what ran. It is not. It omits the infill stage
+(`sdf_to_isdf.py`) and the last four stages (`tesselate`, `add_platform`,
+`toolpath_to_gcode`, `ratrig_to_craftware`), although all of them run.
+
+P1.3's first pipeline test asserted that `--infill-period 12` appeared in that
+log. It failed on the laptop after a complete, successful run, because the
+option is on the one command the log never lists. The test was wrong, not the
+feature. It now relies on the plan's own check, a different total extrusion,
+and says why. Anything else that wants to confirm what a stage was given
+should not use this log either.
+
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
 None yet.

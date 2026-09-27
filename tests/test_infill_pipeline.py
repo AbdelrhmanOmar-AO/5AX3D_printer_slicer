@@ -51,8 +51,12 @@ def test_a_longer_infill_period_extrudes_less(repo_root, tmp_path):
     )
     assert result.returncode == 0, "\n".join((result.stdout or "").splitlines()[-40:])
 
-    log = (repo_root / "data" / "log" / f"{PART}.log").read_text(encoding="utf-8")
-    assert "--infill-period 12" in log, "the option never reached the stage's command"
+    # Not checked through data/log/<part>.log: atomize.py lists only 10 of its
+    # 14 stage commands there, and the infill stage (sdf_to_isdf) is not one of
+    # them. A first version of this test looked for the option in the log and
+    # failed on the laptop for that reason alone (plan_corrections 7a, P1-13).
+    # The extrusion comparison below is the plan's own evidence that the
+    # parameter reached the stage.
 
     gcode_path = repo_root / "data" / "gcode" / f"{PART}.gcode"
     stats = gcode_stats.stats_for_file(gcode_path)
@@ -61,7 +65,9 @@ def test_a_longer_infill_period_extrudes_less(repo_root, tmp_path):
         f"total extrusion: golden {golden['total_extrusion_mm']:.3f} mm, "
         f"infill_period 12: {stats['total_extrusion_mm']:.3f} mm ({change:+.2%})"
     )
-    assert stats["total_extrusion_mm"] != golden["total_extrusion_mm"]
+    assert stats["total_extrusion_mm"] != golden["total_extrusion_mm"], (
+        "extrusion is exactly the golden's: infill_period never reached the stage"
+    )
     assert change < 0.0, "a sparser gyroid should hold less material"
 
     report = gcode_check.check_file(gcode_path, machine_profile.load_profile())
