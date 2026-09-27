@@ -8,12 +8,10 @@ No `from __future__ import annotations` here; reading G-code drives the
 Taichi kernels in `atom.kinematics3z`.
 """
 
-import os
-import sys
-
 import numpy as np
 import pytest
 
+import _display
 import visualize_5ax as vt
 from atom import contracts, machine_profile
 from atom import toolpath_view as tv
@@ -218,10 +216,7 @@ def test_end_accepts_a_point_number_or_a_percentage(text, expected):
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(
-    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
-    reason="needs a display (run under xvfb-run on Linux)",
-)
+@pytest.mark.skipif(_display.NO_DISPLAY, reason=_display.NO_DISPLAY_REASON)
 @pytest.mark.parametrize("machine_view", [False, True])
 def test_off_screen_render_writes_a_picture(tmp_path, machine_view):
     """Smoke test: builds the whole window, controls included, off screen.
@@ -245,10 +240,7 @@ def test_off_screen_render_writes_a_picture(tmp_path, machine_view):
     assert output.stat().st_size > 10_000
 
 
-@pytest.mark.skipif(
-    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
-    reason="needs a display (run under xvfb-run on Linux)",
-)
+@pytest.mark.skipif(_display.NO_DISPLAY, reason=_display.NO_DISPLAY_REASON)
 def test_play_button_advances_the_print_at_the_chosen_speed(tmp_path, monkeypatch):
     pytest.importorskip("pyvista")
     import time
@@ -274,10 +266,7 @@ def test_play_button_advances_the_print_at_the_chosen_speed(tmp_path, monkeypatc
     viewer.plotter.close()
 
 
-@pytest.mark.skipif(
-    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
-    reason="needs a display (run under xvfb-run on Linux)",
-)
+@pytest.mark.skipif(_display.NO_DISPLAY, reason=_display.NO_DISPLAY_REASON)
 def test_play_runs_from_the_windows_own_timer(tmp_path):
     """Play must advance with nothing but the window's event loop running.
 
@@ -341,10 +330,7 @@ def test_machine_state_of_gcode_uses_the_written_screw_values(ti_cpu, repo_root)
     np.testing.assert_allclose(state.bed_offset, 0.0)
 
 
-@pytest.mark.skipif(
-    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
-    reason="needs a display (run under xvfb-run on Linux)",
-)
+@pytest.mark.skipif(_display.NO_DISPLAY, reason=_display.NO_DISPLAY_REASON)
 @pytest.mark.parametrize("machine_view", [False, True])
 def test_moving_through_the_print_updates_the_scene_in_place(ti_cpu, tmp_path, machine_view):
     """Playback flickered while every frame removed and re-added each actor.

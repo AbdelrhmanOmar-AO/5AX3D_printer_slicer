@@ -5,23 +5,54 @@ with no prior conversation.
 
 **Keep this file updated as the work progresses.**
 
-Last updated: 2026-09-23. **Phase P0 is complete** — all 48 matrix runs are in
-at metrics v2 — and **P5.4** (toolpath viewer, bed-motion animation, Qt window)
-is built. Both are **merged into `main`** (pull request #2, merge commit
-`d2d39c3`). **Two sessions now run in parallel: P1 and P4.** Read section 0
-first.
+Last updated: 2026-09-24. **630 unit tests pass, 14 skipped.**
+
+* **P0 complete** (48 matrix runs at metrics v2) and **P5.4** (viewer, bed
+  motion, Qt window) built — both in `main`.
+* **P1**: P1.1, P1.2, P1.4 and P1.7 are in `main`. P1.3 pushed for its laptop
+  check.
+* **P4**: P4.1, P4.2 and P4.3 are built on `claude/phase-p4-build-fzqw55` and
+  **not yet in `main`**.
+* **This session** (P0.8 follow-on: the parallel matrix runner and the lab
+  machine) is on `claude/new-session-l8g46d`, **not yet in `main`**.
+* **P2**, the actual contribution, has no session.
+
+**Three sessions have been running at once, not two.** Read section 0, then 0c,
+which records the one thing that went wrong because of it.
 
 ---
 
-## 0. Two sessions are running in parallel (read first)
+## 0. Three sessions are running in parallel (read first)
 
-From 2026-09-23, two Claude Code sessions work at the same time, each on its
-own branch, both started from `main` at `d2d39c3`:
+Each on its own branch:
 
-| Session | Phase | Branch |
-|---|---|---|
-| P1 session | **P1**: kinematics and G-code toolchain | `claude/vibrant-rubin-waln7y` |
-| P4 session | **P4**: motion safety for continuous tilt | assigned when the session starts; the P4 session records it in section 0b below |
+| Session | Phase | Branch | In `main`? |
+|---|---|---|---|
+| P1 session | **P1**: kinematics and G-code toolchain | `claude/vibrant-rubin-waln7y` | P1.1, P1.2, P1.4, P1.7 yes; P1.3 no |
+| P4 session | **P4**: motion safety for continuous tilt | `claude/phase-p4-build-fzqw55` | **No** — P4.1, P4.2, P4.3 await a merge |
+| P0.8 follow-on | matrix runner, lab machine, test plumbing | `claude/new-session-l8g46d` | **No** — see 0c |
+
+The plan allows at most two sessions at once. Three ran, and **it cost a day of
+duplicated work** (`plan_corrections.md` 4.14): the P0.8 session built
+provenance on reports from scratch while P1.7, already in `main`, had done it
+better.
+
+**Every branch above is on `origin` and readable by every session.** Nothing was
+hidden; the duplicating session did not fetch. And `main` alone is not enough to
+check — P4.1 to P4.3 are on a branch and not in `main`, so they are the next
+thing at risk of being written twice.
+
+> **Before building anything that sounds like infrastructure:**
+>
+> ```
+> git fetch --all --prune
+> git log --oneline HEAD..origin/main
+> git for-each-ref --sort=-committerdate \
+>     --format='%(committerdate:short) %(refname:short) %(subject)' refs/remotes/
+> ```
+>
+> **and read `docs/SLICER_BUILD_PLAN.md` for whether a task already covers it.**
+> Seconds, against a day.
 
 **P2 has no session yet.** It waits for gate D0 (section 8). P2.0 and P2.1 do
 not need D0 (P2.1 is one of its inputs), but the plan allows at most two
@@ -131,7 +162,47 @@ F10725; and the single-move extrusion limit defaults to **5 mm**.
 
 *Edited by the P4 session only.* Record the branch name here first.
 
-Not started.
+Branch `claude/phase-p4-build-fzqw55`. As of 2026-09-24 it carries five commits
+that are **not in `main`**: P4.1 (clearance model), P4.2 (swept check between
+toolpath points), P4.3 (nozzle versus printed material at any tilt), and the
+viewer wiring. Its own status text lives on that branch, so this stub is what a
+reader of `main` sees; read the branch for the detail.
+
+### 0c. P0.8 follow-on session status
+
+*Edited by this session only.*
+
+Branch `claude/new-session-l8g46d`, merged up to `main` on 2026-09-24 and not
+yet merged down into it. What it carries that `main` does not:
+
+| | |
+|---|---|
+| `tools/run_matrix_parallel.py` | The parallel matrix runner (section 3). 34 tests |
+| Failing-stage check | In `run_pipeline`: names the first stage that produced nothing *or* left a file from an earlier run (`plan_corrections.md` 4.16) |
+| `ATOM_SKIP_DISPLAY_TESTS` | `tests/_display.py`. A VTK access violation on the lab machine killed the whole suite rather than one test |
+| `tests/conftest.py` | Adds `src/` to `sys.path`, so a single test file can be run alone (4.15) |
+| `machine` column | In `reports/matrix_progress.csv`, from P1.7's `provenance.machine`, with a padding migration for older logs |
+| Section 3 | The two lab machines assessed and measured |
+
+**Two convention breaches to declare, both deliberate and both the operator's
+to rule on:**
+
+1. **`tools/overhang_report.py` is P1's file** (section 0, "Who owns which
+   files"), and this session edited it — the failing-stage check and the
+   progress-log column. The edits are additive and were re-applied *onto* P1.7's
+   version after this session's duplicate provenance work was discarded whole,
+   so P1's own code is untouched. It also added a `verify_stages` flag to
+   `run_pipeline` so P1.7's arch-log test, which stubs `subprocess.run` and
+   therefore writes no artifact, can opt out for a stated reason instead of the
+   check being weakened.
+2. **Corrections 4.14 to 4.17 went straight into section 4**, rather than under
+   a per-session heading in section 7 as the convention now asks. This session
+   is merging rather than staying in flight, so they are already in their final
+   place. **Those four numbers are taken** — P1 and P4 must not reuse them.
+
+**Outstanding on the lab machine:** the first real parallel run is still owed.
+The one attempted on 2026-09-24 failed on a missing input, which is fixed;
+section 3 has the detail and the command.
 
 ---
 
@@ -177,8 +248,15 @@ on any specific fact.**
 
 ## 3. The operator's machine
 
+**Every measured runtime in this document was taken on this laptop.** Per
+correction 3.9 that is not a detail: a run on another machine is a different
+computation, so anything compared against the committed baseline has to run
+here.
+
 | | |
 |---|---|
+| CPU | **AMD Ryzen 5 5600H** (Zen 3, 2021), 6 cores / 12 threads, 3.3 GHz base, 4.2 GHz boost |
+| RAM | Ample; the pipeline's peak measured usage is 0.18 GB, so RAM has never been the constraint |
 | OS | Windows 11 (10.0.26200), PowerShell 5.1 |
 | Username | `Abdo Yasser` — **has a space**, so quote paths: `cd "$HOME\5AX3D_printer_slicer"` |
 | Python | 3.10.21, conda environment `atomizer`, created from **conda-forge** |
@@ -186,6 +264,386 @@ on any specific fact.**
 | GPU | CUDA 13.0 driver, `ti.init(arch=ti.cuda)` reports `Arch.cuda` — working |
 | Blender | 5.2.1 LTS, on PATH |
 | Repo | `C:\Users\Abdo Yasser\5AX3D_printer_slicer` |
+
+### Two university machines were assessed (2026-09-24)
+
+Both were offered as somewhere to move the long runs. **One is slower and was
+rejected; the other is worth taking, and changes how the matrix should be run.**
+
+| | Laptop | Lab PC A | **Lab PC B** |
+|---|---|---|---|
+| CPU | Ryzen 5 5600H (Zen 3, 2021) | Xeon Silver 4112 (Skylake-SP, 2017) | **2 x Xeon Gold 6254** (Cascade Lake, 2019) |
+| Cores / threads | 6 / 12 | 4 / 8 | **36 / 72** (two sockets) |
+| Base / boost | 3.3 / **4.2 GHz** | 2.6 / 3.0 GHz | 3.1 / 4.0 GHz |
+| RAM | Ample | 128 GB | 64 GB |
+| GPU | The CUDA GPU the golden was captured on | Quadro P600, 2 GB VRAM | **RTX A6000, 48 GB VRAM** |
+| Verdict | The reference machine | **Rejected** | **Take it** — see below |
+
+Everything below is reasoned from clock and architecture. **Nothing on either
+lab machine has been measured yet.**
+
+#### Why single-core speed is what matters
+
+`order_atoms` is 86 % of runtime and is a sequential 31 630-iteration loop
+(section 7a). Core count does nothing for it; clock and per-clock throughput do.
+On that path the laptop's 4.2 GHz Zen 3 beats both lab machines, so **neither
+makes one run faster.** RAM is irrelevant either way: peak measured usage across
+the whole pipeline is 0.18 GB.
+
+#### Lab PC A: rejected
+
+Roughly **1.7x slower** per core than the laptop (3.0 GHz against 4.2, on an
+architecture four years older), so the 19.9-hour matrix would take about 34
+hours. Its 128 GB buys nothing, and the P600's 2 GB of real VRAM is tighter than
+what the baseline was captured on. The reported "65.8 GB" for that card is
+Windows adding shared system memory to its 2 GB.
+
+#### Lab PC B: take it, for throughput rather than speed
+
+Per run it is roughly a wash with the laptop. What it offers is **36 physical
+cores against a matrix of 48 independent runs.**
+
+The partition is set by a constraint this tool already documents: every run of a
+given part writes the same `data/` paths whatever its `max_slope`
+(`tools/overhang_report.py` docstring), so **two concurrent runs of one part
+would silently overwrite each other's intermediates.** That is the same class of
+failure as correction 4.7 and must not be got wrong.
+
+But the matrix is 8 parts x 2 sizes = **16 distinct `solid_name`s**, each with 3
+slopes. So:
+
+> **Run the 16 part+size combinations concurrently, each doing its 3 slopes in
+> sequence.** No two workers ever share a `data/` filename.
+
+16 workers on 36 cores is about 2 cores each, which is close to all the
+sequential loop can use. Estimated **75 to 90 minutes** for the full matrix
+against the laptop's 19.9 hours — roughly **13x** on wall-clock, from a change
+to the runner script and none to the slicer.
+
+#### Why that matters more than the speed
+
+It **dissolves correction 3.9.** Re-baselining on a new machine costs 34 hours
+on Lab PC A, which is fatal; on Lab PC B it costs about 90 minutes. So the stock
+baseline can be re-run there, the whole comparison stays on one consistent
+machine as 3.9 requires, and every P2.5 iteration becomes a 90-minute loop
+instead of a 20-hour one.
+
+It may also return **`l`-size parts** to gate D0's options: about 384 hours
+serial becomes plausibly 24 to 36 hours. The A6000's 48 GB also gives the CUDA
+field stages far more headroom than the laptop for large parts.
+
+#### Two hazards the parallel runner must handle
+
+1. **Taichi's offline kernel cache.** A single interrupted run already produced
+   `Lock C:/taichi_cache/ticache/ticache.lock failed`. Sixteen processes sharing
+   that directory will contend. Each worker needs its own cache directory —
+   **no code change required**, the path is relocatable per process by
+   environment variable, verified on Taichi 1.7.4:
+
+   ```powershell
+   $env:TI_OFFLINE_CACHE_FILE_PATH = "$env:LOCALAPPDATA\ticache"
+   ```
+
+   `ti.init(offline_cache_file_path=...)` works too, but the environment
+   variable is what a worker wrapper should use, since it needs no edit to any
+   of the 13 stages.
+
+   **But a per-worker cache starts empty, and an empty cache is expensive.**
+   The lab machine's first ever run (2026-09-24, cold cache) spent 49.9 s on
+   direction computation against the laptop's 7.1 s, 56.6 s on implicit layers
+   against 8.8 s, and 151.9 s on atom alignment against 26.6 s — the GPU
+   stages, which compile the most kernels, on a far better GPU. Sixteen
+   independent caches would pay that sixteen times: perhaps 80 minutes of pure
+   compilation on a job estimated at 2 to 4 hours.
+
+   So the runner must **warm one cache with a single run, then copy that
+   directory to each worker before starting.** Copying a few hundred megabytes
+   sixteen times costs seconds. Do not simply point each worker at an empty
+   directory. Measured on the lab machine: a cold run's GPU stages cost 49.9 /
+   56.6 / 45.7 / 151.9 s against 8.7 / 10.5 / 16.0 / 30.7 s warm.
+2. **`reports/matrix_progress.csv`.** Sixteen processes appending to the
+   safeguard log added after the laptop restarted mid-run. Needs a lock, or
+   per-worker files merged at the end.
+
+Both fail quietly, so both need tests.
+
+#### Lab PC B: no usable `C:\` home, but local scratch works
+
+The operator's home directory there is a network share (`Z:` and `U:`, one
+volume, 627 GB free). **`%TEMP%` is nevertheless on local `C:`, writable, with
+931 GB free** (`C:\Users\CA7387~1.USE\AppData\Local\Temp`); `D:` reports 0 GB
+and is unusable.
+
+That matters because the pipeline writes large `.npz` files at every one of 13
+stages, and running it over SMB would put I/O on the critical path and make the
+concurrency estimate worthless. So:
+
+| What | Where |
+|---|---|
+| Repo and all `data/` I/O | `%USERPROFILE%\5AX3D_printer_slicer` (local C:) |
+| Conda | Already installed all-users at `C:\ProgramData\Anaconda3`; **no admin**, so `conda init` is refused — put its `shell\condabin\conda-hook.ps1` in your own `$PROFILE` instead, and point `envs_dirs`/`pkgs_dirs` at `%USERPROFILE%\.conda` |
+| Blender / Git | Portable: the Blender **`.zip`** and **PortableGit**, extracted under `%USERPROFILE%`. The `.msi` and the standard Git installer both demand admin; the portable forms need none |
+| Taichi kernel cache | `%LOCALAPPDATA%\ticache`, via `TI_OFFLINE_CACHE_FILE_PATH` |
+| Durable copy of `reports/` | The `Z:` share, and GitHub |
+
+Nothing has to be copied off the laptop: the repository is **35 MB** and carries
+all 36 benchmark STLs, the 48 JSON reports and the golden baseline. Only
+`reports/toolpaths/` (~220 MB, gitignored) is bulky, and the lab machine will
+generate its own.
+
+**Its graphics context cannot run the viewer tests.** `pytest` there aborted at
+the last test with `Windows fatal exception: access violation` inside
+pyvista's `renderer.close`, which kills the process and took the other 450
+tests with it. Set `ATOM_SKIP_DISPLAY_TESTS=1` on that machine; `tests/_display.py`
+holds the gate and `tests/test_display_gate.py` pins it. Nothing in the slicing
+pipeline touches those tests. Leave the variable unset on the laptop, which can
+run them and found correction 4.13 by doing so.
+
+**Unverified:** the profile path is an 8.3 short name ending `.USE`, which can
+indicate a **temporary profile wiped at logout**. If it is, conda and Blender
+would have to be reinstalled every session. Test by writing a file to
+`%USERPROFILE%`, logging out and back in, and reading it. If it does not
+survive, ask IT for a persistent local folder.
+
+#### Order of work, decided with the operator
+
+The runner is **not built yet, by choice**: measure the machine before writing
+code against an estimate.
+
+1. Get access, and ask IT the questions in the list below.
+2. Set it up with the existing `scripts\setup_laptop.ps1` and
+   `scripts\fix_tool_paths.ps1`.
+3. Run the 12-minute known-answer check (below). It confirms the environment
+   *and* measures real per-run speed.
+4. Then build `-Parallel N` with measured numbers in hand.
+
+```powershell
+python tools/overhang_report.py data/param/ramp45_xs.json --max-slope 7
+```
+
+Expect about 0.2 % unsupported and `printable: True`. The wall-clock against the
+laptop's ~7 minutes is the number that decides whether the estimates above hold.
+
+#### Result of that check on Lab PC B (2026-09-24)
+
+**It passed, identically to the laptop**: 0.24 % unsupported, `printable: True`,
+worst effective overhang 45.0 degrees, max tilt used 0.61 degrees. The machine
+computes correct results, on Blender 5.2.1 LTS (the same version as the laptop)
+and Taichi on `Arch.cuda` against the A6000.
+
+Timing, against the committed laptop run of the same part and slope
+(`reports/baseline_overhang/ramp45_xs_ms7.json`):
+
+| Stage | Laptop | Lab PC B (cold cache) |
+|---|---:|---:|
+| Direction computation | 7.1 s | 49.9 s |
+| Implicit layers | 8.8 s | 56.6 s |
+| Tangent computation | 13.5 s | 45.7 s |
+| Atoms alignment | 26.6 s | 151.9 s |
+| Extracting atoms | 0.9 s | 3.1 s |
+| **Toolpath planner (CPU)** | **230.7 s** | **354.8 s** |
+
+Those cold figures are **not** the machine's speed. The CPU stage was 1.54x
+slower, roughly what the two processors predict, but the GPU stages were 3.4x to
+7x slower *on a far better GPU*, which is not physically sensible. It was
+first-run kernel compilation into an empty cache. A warm-cache re-run confirmed
+it:
+
+| Stage | Laptop | Lab PC B, **warm** | Ratio |
+|---|---:|---:|---:|
+| Direction computation | 7.1 s | 8.7 s | 1.23x |
+| Implicit layers | 8.8 s | 10.5 s | 1.19x |
+| Tangent computation | 13.5 s | 16.0 s | 1.19x |
+| Atoms alignment | 26.6 s | 30.7 s | 1.15x |
+| Extracting atoms | 0.9 s | 0.9 s | 1.00x |
+| Toolpath planner | 230.7 s | 282.0 s | 1.22x |
+| **Whole pipeline** | **341.4 s** | **414.4 s** | **1.21x** |
+
+**The lab machine is 1.21x slower per run**, uniformly across stages. Even the
+planner carried compilation in the cold run (354.8 s against 282.0 warm), and
+the ordering rate went from 70.9 to 89.2 steps/s. Wall-clock was 6.96 minutes
+against the laptop's ~7.
+
+Two lessons, both cheap to forget: **a cold cache inflates the GPU stages five
+to sevenfold**, so never benchmark a fresh machine on its first run; and when a
+ratio contradicts the hardware, the measurement is wrong, not the hardware.
+
+#### What that means for the matrix
+
+Projected from the 48 committed runtimes rather than estimated:
+
+| | |
+|---|---|
+| Laptop, serial (recorded) | **21.8 h**, mean 27.2 min/run (observed wall-clock 19.9 h) |
+| Lab PC B, serial (x 1.21) | 26.4 h |
+| Lab PC B, 16 workers, one per part+size | **3.7 h** |
+| Lab PC B, 16 **worker copies** + work queue | **~1.7 to 2 h** |
+
+The 3.7 h is a critical path, not a throughput limit: `ramp80_s` and `ramp90_s`
+each need 3.7 h for their three slopes while the fastest worker finishes in 21
+minutes, because slopes of one part cannot run concurrently without overwriting
+each other's `data/` files.
+
+**That limit is removable, and cheaply.** The working tree is 35 MB, so each
+worker can have its own copy — 16 copies is 560 MB against 931 GB free. Then
+nothing is shared, all 48 runs are independent, and a work queue keeps every
+worker busy: bounded by total work over 16, about 1.7 h, or 2 to 3 h with
+contention. Against the laptop's 19.9 h that is roughly **10x**.
+
+It is also the simpler code: no partitioning by part and size, no sequencing of
+slopes, just N directories and a queue.
+
+#### Built: `tools/run_matrix_parallel.py` (2026-09-24)
+
+```powershell
+python tools/run_matrix_parallel.py --sizes xs s --workers 16 --dry-run   # plan only
+python tools/run_matrix_parallel.py --sizes xs s --workers 16             # run it
+python tools/run_matrix_parallel.py --sizes xs s --workers 16 --resume    # after a stop
+```
+
+`--dry-run` prints the plan, the disk estimate and the projected wall-clock
+without creating or running anything. **Do that first on any new machine.**
+On this repository's numbers it reports 48 runs, 21:46:43 serial, **1:27:31 at
+16 workers** — stated as a lower bound, because it ignores contention between
+workers.
+
+What it does, and why each part is there:
+
+* **A copy of the working tree per worker** (21 MB measured, no `.git`), so no
+  two runs can share a `data/` path. This is the whole point; a test asserts no
+  worker tree ever hosts two runs at once.
+* **A queue, not a partition.** Workers pull the next job as they free up.
+* **Longest job first**, estimated from the committed runtimes, with unmeasured
+  jobs scheduled *before* known ones — an unmeasured job might be the long one,
+  and assuming it is short is what leaves one worker grinding alone at the end.
+* **One warm-up run alone**, then its Taichi cache is copied to every worker.
+  Sixteen cold caches would pay the compilation cost sixteen times.
+* **Results collected as each job finishes**, never batched at the end, so an
+  interruption keeps everything completed — correction 4.7 cost 12 hours by not
+  doing this.
+* **A run that exits 0 but writes no report counts as failed.** Otherwise it
+  leaves a gap `--resume` treats as never attempted, forever.
+* `--threads N` caps each worker's Taichi CPU threads via
+  `TI_CPU_MAX_NUM_THREADS` (verified on Taichi 1.7.4), so sixteen workers do not
+  each try to use all 36 cores. Worth trying with and without.
+* Per-run stdout goes to `reports/worker_logs/` (gitignored).
+
+#### It also makes the laptop 4x faster, which matters more
+
+The runner is not a lab-machine tool. It is "use the cores you have", and the
+laptop has six. Projected from the same 48 committed runtimes:
+
+| Workers | Full matrix (48) | `xs` only (24) |
+|---|---|---|
+| 1 (the serial script) | 21:46 | 2:48 |
+| 2 | 10:53 | 1:24 |
+| **3** | **7:15** | **0:56** |
+| **4** | **5:26** | **0:42** |
+| 6 | 3:37 | 0:28 |
+
+**So losing access to the lab machine costs roughly 1.5x, not 15x.** And the
+laptop is the reference machine — the committed baseline was measured there — so
+its runs are the ones directly comparable to it, which the lab machine's are
+not (3.9, 4.14).
+
+Use **3 or 4 workers on the laptop, not 6.** The 5600H is a 45 W part: serial
+runs keep one or two cores busy and hold full boost, while four workers run all
+six hot and throttle. The table assumes no throttling, so 6 will not deliver
+3:37. Each worker also needs its stage outputs on disk — a 21 MB tree plus a few
+hundred MB of `data/` per worker — so check free space before starting.
+
+#### The first real run failed, and why
+
+Attempted 2026-09-24 on the lab machine, `--sizes xs --workers 8`. The warm-up
+run failed after 3:32 and **the runner stopped rather than starting eight
+workers to fail identically**, which is what it is designed to do.
+
+The cause was a missing input: `tools/compute_tangents.py` loads
+`data/image/0.png` as its default tangent field whenever `--top_lines` is not
+given, which is every benchmark part, and the worker trees were built from a
+hand-written list of inputs that did not include it. Stage 6 died in every
+worker. Corrections **4.17** (never hand-write the input list; `git ls-files --
+data` is the list) and **4.16** (`atomize.py` ignores every stage's exit code, so
+one failure became twelve) record it. Both are fixed.
+
+**The run is still owed.** On the lab machine:
+
+```powershell
+Remove-Item -Recurse -Force $env:USERPROFILE\..\5ax3d_workers   # stale trees
+git checkout -- reports/
+git pull
+python tools/run_matrix_parallel.py --sizes xs --workers 8
+```
+
+#### Measured, 2026-09-24: 24 runs in 50:31, 0 failed
+
+`--sizes xs --workers 8` on the lab machine. **This is the run the projections
+were waiting on.**
+
+| | |
+|---|---|
+| Wall-clock | **0:50:31** — 13:21 of it the warm-up, alone |
+| The other 23 runs | 0:37:10 of wall-clock, against **3:12:53** of serial work |
+| **Speedup from 8 workers** | **5.19x — 65 % efficiency** |
+| Per-run slowdown under load | **1.47x** (a run that takes 7 min alone takes ~11 under 8-way load) |
+| Projected, ignoring contention | 0:21:03 — **2.4x optimistic** |
+
+So contention costs about a third, and the tool's old estimate was out by 2.4x.
+It said "a lower bound", which it was, but a lower bound nobody can plan against
+is not much use. `projected_seconds` now takes an `efficiency` and the runner
+prints both figures, with the realistic one as the headline.
+
+**What the full 48 will cost on the lab machine**, at 26:26 of serial work:
+
+| Workers | Efficiency | Estimate |
+|---|---|---|
+| 8 | 65 % (measured) | **5:05** |
+| 16 | 65 % | 2:33 |
+| 16 | 50 % | **3:18** |
+| 36 | 40 % | 1:50 |
+
+Only the first row rests on a measurement. **Efficiency falls as workers are
+added** — they share memory bandwidth, one GPU and two sockets — so take 16
+workers as **3 to 3.5 hours**, not 2:33. Against 21.8 h on the laptop that is
+still 6 to 7x.
+
+#### The warm-up must be the *shortest* job
+
+Found by reading that log. The warm-up runs with every other worker idle, so its
+length is pure serial time — and the runner was taking the **first** job of a
+longest-first list, which is the **longest**. On `xs` that cost 13:21 of the
+50:31. On the full matrix it would have been `ramp90_s @ 30` at **1:27:31 spent
+alone with 15 workers waiting.**
+
+Any job fills the cache equally well, so it now takes the shortest. A test pins
+it, because the symptom is only slowness and slowness is easy to explain away.
+
+**Still unmeasured:** efficiency above 8 workers, and anything on the laptop. The honest first step on the lab machine is
+`--sizes xs --workers 8`, whose serial estimate is 2:48:31, so a real figure
+arrives in well under an hour.
+
+**Not yet run anywhere.** 32 tests cover the orchestration with the real slicing
+stubbed out, which is the only way to test it, so the queue, the isolation, the
+collection and the failure paths are pinned — but no full matrix has been run
+through it.
+
+**Do not commit anything under `reports/` from the lab machine**, even though
+P1.7 now records the machine in every report. A run there still *overwrites* the
+committed cell for its part and slope — provenance means the mixture is
+detectable, not that it is harmless, and `--summarize` will warn rather than
+prevent it. A lab-measured cell inside a laptop-measured baseline is what 3.9
+warns against.
+
+The workflow that follows from that:
+
+* the **laptop** is the machine that commits, and the one whose runs are
+  comparable to the committed baseline;
+* the **lab machine** is a compute box. Before `git pull` there, discard its
+  results with `git checkout -- reports/`, because otherwise the pull is
+  refused (which is the guard working);
+* to move the baseline to the lab machine, re-run the **whole** matrix there in
+  one go and commit that as a single-machine set. Its provenance block will then
+  say so, and `--summarize` will confirm all 48 are comparable.
 
 Setup pain already solved, all documented in `README.md`:
 
@@ -241,10 +699,18 @@ the project's actual contribution, follows once gate D0 is taken.
 | P5.4a Toolpath viewer | **Built**, pulled forward at the operator's request (`plan_corrections.md` 2.11). Laptop check pending |
 | P5.4b Bed-motion animation | **Built and checked on the laptop** (Play and smooth playback confirmed by the operator). Side-by-side view deferred until P2 |
 | P5.4 UI | **Qt window built** (`tools/viewer_qt.py`): side panel, timeline, toggle switches, dropdown. Needs `conda install -c conda-forge pyside6 pyvistaqt` once; falls back to the classic window without it. Laptop check pending |
+| P1.1 / P1.2 / P1.4 / P1.7 | **Done and in `main`.** Section 0a has each one's laptop check |
+| P1.3 | Pushed for its laptop check (section 0a) |
+| P1.5 firmware templates | Blocked on gate E1 |
+| P1.6 `order_atoms` without `kernel_profiler` | Proposed, not started. Needs an undisturbed laptop |
+| P4.1 / P4.2 / P4.3 | **Built on `claude/phase-p4-build-fzqw55`, not in `main`** (section 0b) |
+| Parallel matrix runner | **Built and measured** on this session's branch, not in `main` (section 0c). 24 runs at 8 workers took **50:31, 0 failed**, a 5.19x speedup at 65 % efficiency. The full 48 should take **3 to 3.5 h at 16 workers** against 21.8 h serially |
+| P2 | No session. Waits on gate D0; P2.0 and P2.1 do not |
 
-**451 unit tests pass; 13 skipped** (the `pipeline` and `benchmark` tiers, plus
-the 7 viewer display tests, which skip where there is no display; under
-`xvfb-run` with PySide6 and pyvistaqt installed those 7 run too). In the
+**630 unit tests pass; 14 skipped** (the `pipeline` and `benchmark` tiers, plus
+the viewer display tests, which skip where there is no display or where
+`ATOM_SKIP_DISPLAY_TESTS` is set; under `xvfb-run` with PySide6 and pyvistaqt
+installed they run too). In the
 session container the Qt tests need `pip install pyside6 pyvistaqt` and
 `apt-get install libegl1 libxkbcommon-x11-0 libxcb-cursor0` (plus the other
 `libxcb-*` libraries Qt lists). The Play fix
@@ -539,10 +1005,12 @@ PowerShell being closed — and lost about 40 minutes of work in total.
 Three flaws in the metric were found and fixed before this run
 (`plan_corrections.md` 4.5, 4.6, 1.8); 3.7 records the validation.
 
-## 7c. Two sessions ran in parallel, and have been merged
+## 7c. What running sessions in parallel has actually cost
 
-Worth knowing, because the branch history shows it and the numbering of the
-corrections moved.
+Two merges, two lessons, one of them expensive. Worth reading before starting a
+third session alongside two others.
+
+### The first merge, 2026-09-23: the viewer session
 
 For about a day two Claude Code sessions worked on the same branch family: one
 finished **P0.8** (the 48-run matrix, the resume machinery, metrics v2) and one
@@ -559,11 +1027,69 @@ follow it. Nothing else was renumbered, so any other reference either session
 wrote still points where it did. If an older note cites "4.12" for the VTK
 timer, it means 4.13.
 
-**The lesson for the next parallel pair:** the code merged without a single
-conflict, and the only friction was two people numbering a list. If two
-sessions run again, have each append its corrections under a session-specific
-heading and renumber once at merge time, rather than both editing the same
-counter.
+**The lesson drawn at the time:** the code merged without a single conflict, and
+the only friction was two people numbering a list. Hence the section 7 convention
+in section 0 — each session appends corrections under its own heading, and they
+are renumbered once at merge time.
+
+### The second merge, 2026-09-24: the same code, written twice
+
+That lesson was the wrong one, or at least the small one. The second merge cost
+**a day of duplicated work**, and numbering had nothing to do with it.
+
+The P0.8 session was told that reports not naming their machine was urgent — a
+lab-machine run had just overwritten a committed, laptop-measured cell. It built
+`src/atom/provenance.py`, wired it through the report tool, backfilled all 48
+reports and wrote 22 tests. **Plan task P1.7 had done all of it the day before
+and merged it to `main`**, recording the backend of all 14 stages at run time
+rather than one field per run, detecting uncommitted code, and verified on the
+laptop where a real run caught a wrong host name in the backfill.
+
+The duplicate was discarded whole. `plan_corrections.md` **4.14** has the
+comparison and the one thing worth salvaging from it (the CPU model: a host name
+distinguishes machines, but `Intel(R) Xeon(R) Gold 6254` is what a reader
+comparing two timings needs, and `platform.processor()` will not give it).
+
+**Why it happened — and it was not that the work was hidden.**
+
+Every session's branch is pushed to `origin`. `git fetch --all` shows `main` and
+every other session's branch at any moment. P1.7 was sitting in `main`, in
+public, for a day. **The P0.8 session simply did not look**, and said so in an
+earlier draft of this section as though a branch *could not* see `main` move.
+That is false, and worth correcting here because the false version teaches the
+next session that duplication is unavoidable.
+
+What actually went wrong:
+
+* nothing *prompts* a session to fetch. It has to be a habit, and it was not
+  one;
+* each session kept this file current, and the P0.8 session's own open-items
+  table said provenance was open — true when written, and a stale document
+  reads exactly like a current one;
+* the build plan was not committed at the time, so "is there already a task for
+  this?" had no answer in the repository. **It is committed now**
+  (`docs/SLICER_BUILD_PLAN.md`), and P1.7 is in it.
+
+**Fetching `main` alone is not enough, either.** P4.1 to P4.3 exist only on
+`claude/phase-p4-build-fzqw55` and are not in `main` at all, so a session that
+checks only `main` could duplicate *those* next. The check is:
+
+```
+git fetch --all --prune
+git log --oneline HEAD..origin/main
+git for-each-ref --sort=-committerdate --format='%(committerdate:short) %(refname:short) %(subject)' refs/remotes/
+```
+
+The third line lists every branch with its latest commit. It takes seconds and
+it is the one that would have caught this.
+
+**The rule that follows**, and the one worth carrying into P2:
+
+> Two sessions on disjoint code merge cleanly. Two sessions on *shared
+> infrastructure* duplicate each other silently, and no amount of
+> document-keeping prevents it, because a document is only as current as the
+> branch it sits on. Before building infrastructure: fetch `main`, read the
+> plan's task list, and if a task already names it, say so and stop.
 
 **Also relevant:** `pyproject.toml` gained an optional `gui` extra (PySide6,
 pyvistaqt). Without it the viewer falls back to the classic pyvista window, and

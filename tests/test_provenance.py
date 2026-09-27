@@ -187,7 +187,12 @@ def test_run_pipeline_asks_every_stage_to_record_its_backend(tmp_path, monkeypat
         return types.SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(overhang_report.subprocess, "run", fake_run)
-    _, params, stage_arches = overhang_report.run_pipeline(param, 30.0)
+    # verify_stages=False: subprocess.run is stubbed, so no pipeline artifact
+    # is ever written and the stage check (corrections 4.16) would fire on a
+    # test about the arch log rather than about the pipeline.
+    _, params, stage_arches = overhang_report.run_pipeline(
+        param, 30.0, verify_stages=False
+    )
 
     assert ti_env.ARCH_LOG_ENV_VAR in seen["env"]
     assert stage_arches == {"order_atoms": "x64"}

@@ -244,7 +244,32 @@ Three things look alarming and are not:
   compiled-kernel cache, so it recompiles instead of reusing. Results are
   unaffected, but every stage pays the compilation cost again. Clear it with
   `ti cache clean -p C:/taichi_cache/ticache`, or delete the folder; an
-  interrupted run can leave the lock behind.
+  interrupted run can leave the lock behind. To move the cache somewhere else
+  entirely — a local disk when the home directory is a network share, or a
+  per-process directory when several runs go at once — set
+  `TI_OFFLINE_CACHE_FILE_PATH`. Verified on Taichi 1.7.4, and it needs no edit
+  to any stage:
+
+  ```powershell
+  $env:TI_OFFLINE_CACHE_FILE_PATH = "$env:LOCALAPPDATA\ticache"
+  ```
+
+#### `Windows fatal exception: access violation` during `pytest`
+
+The run dies partway through, in `pyvista/plotting/renderer.py`, and takes the
+whole suite with it — an access violation kills the process rather than failing
+one test. It happens where a real graphics window cannot open: a remote desktop
+session, a headless machine, or a driver VTK does not get on with. The viewer
+tests are the only ones that open windows, and nothing in the slicing pipeline
+depends on them. Skip them on that machine:
+
+```powershell
+$env:ATOM_SKIP_DISPLAY_TESTS = "1"          # this session
+[Environment]::SetEnvironmentVariable('ATOM_SKIP_DISPLAY_TESTS','1','User')   # permanently
+```
+
+Leave it unset anywhere a window does open: those tests found the Windows-only
+Play bug in `docs/plan_corrections.md` 4.13, which no headless test could see.
 
 #### "No module named ..." after a `git pull`
 

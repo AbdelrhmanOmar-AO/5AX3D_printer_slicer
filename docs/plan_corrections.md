@@ -199,11 +199,15 @@ Found when reading v3.3 against the repository after P0 was merged:
 | §0.1 and the P0 "Where it lives" line | working branch `claude/new-session-l8g46d` | P0 is in `main`; each session has its own branch (2.13) |
 | §4 lane diagram | `P0 ✅ (P0.8 matrix run pending)` | the matrix is done (48 of 48, metrics v2) |
 | §4 phase table, P0 row | "**Pending:** running the P0.8 matrix" | done |
-| Appendix A, P0 row | "344 unit tests" and "P0.8 matrix (24 runs) **pending**" | 451 unit tests; matrix done |
+| Appendix A, P0 row | "344 unit tests" and "P0.8 matrix (24 runs) **pending**" | **630** unit tests (2026-09-24); matrix done, and 48 runs rather than 24 (1.4) |
 | Appendix E source line | corrections "on branch `claude/new-session-l8g46d`" | now in `main` |
 | §0.4 hazard list | numbered 1–15, then 17, 18, 19, then 16 | hazard 16 is out of order |
 
 None of these changes a task. They mislead a cold reader about what is done.
+
+A test count in a document goes stale the week it is written. The live figure is
+whatever `pytest -q` prints; `docs/handoff.md`'s header carries the last one
+recorded and the date it was recorded on.
 
 ## 2. Deliberate deviations
 
@@ -779,6 +783,162 @@ timer. `tests/test_visualize_5ax.py` now drives the real event loop, but that
 only guards the playback path. The Windows behaviour has to be checked on the
 laptop.
 
+### 4.14 Two sessions built provenance independently, and one wasted a day
+
+Not a bug in the code. A bug in how the work was split, and the most expensive
+one so far.
+
+On 2026-09-24 the P0.8 session was told that reports not naming their machine
+was urgent — a run on the lab machine had just overwritten a committed,
+laptop-measured cell with nothing in the file to show it. It designed and built
+`src/atom/provenance.py`, wired it through `tools/overhang_report.py`, backfilled
+the 48 reports and wrote 22 tests.
+
+**Plan task P1.7 had already done all of it**, in another session, and merged it
+to `main` the day before — more thoroughly:
+
+| | P1.7, merged | The duplicate |
+|---|---|---|
+| Backend per stage | **All 14, recorded at run time** via `ATOM_TI_ARCH_LOG` | One `ti_arch` field for the whole run |
+| Uncommitted code | `code_modified` | Not recorded |
+| How the record was obtained | `source`: pipeline / skip-pipeline / backfilled | A `recorded` flag, backfill only |
+| Verified on hardware | **Yes** — a laptop run caught a wrong host name in the backfill | No |
+| CPU model | Not recorded | `cpu`, `cpu_logical` |
+
+Everything but the last row is strictly better, so the duplicate was discarded
+whole rather than merged. The CPU model is worth adding to P1.7's block: a host
+name distinguishes machines, but `Intel(R) Xeon(R) Gold 6254` is what a reader
+comparing two timings actually needs, and `platform.processor()` will not give
+it (bare `x86_64` on Linux).
+
+**What caused it, stated accurately.** Not invisibility. Every session pushes to
+`origin`, so `git fetch --all` shows `main` and every other branch at any moment,
+and P1.7 sat in `main` in public for a day. **The P0.8 session did not look.**
+
+An earlier draft of this entry said "nothing in its own working tree could have
+told it that P1.7 existed". That was wrong, and the wrong version is worse than
+useless: it frames an avoidable mistake as an unavoidable one.
+
+What is true is narrower. Nothing *prompts* a fetch; it has to be a habit. And a
+stale document reads exactly like a current one — the P0.8 session's own
+open-items table said provenance was open, which was true when it was written
+and false by the time it was read.
+
+**What to do instead**, for whoever is in this position next:
+
+> **Before building anything that sounds like infrastructure — provenance,
+> validation, a runner, a report format — fetch and look at every branch, not
+> just `main`.**
+>
+> ```
+> git fetch --all --prune
+> git log --oneline HEAD..origin/main
+> git for-each-ref --sort=-committerdate \
+>     --format='%(committerdate:short) %(refname:short) %(subject)' refs/remotes/
+> ```
+>
+> `main` alone is not enough: P4.1 to P4.3 exist only on
+> `claude/phase-p4-build-fzqw55`, so a session checking only `main` could
+> duplicate those next. The third command lists every branch with its latest
+> commit, and would have caught this one in seconds.
+
+The same applies to the plan: `docs/SLICER_BUILD_PLAN.md` is now committed, and
+P1.7 is *in it*. Reading the plan's task list would have prevented this. The
+P0.8 session was working from the handoff's summary of the plan rather than the
+plan, and the summary did not enumerate P1's subtasks.
+
+**Not wasted entirely.** The same merge kept four things the duplicate session
+built that nothing else covers: the parallel matrix runner (4.17 and handoff
+section 3), the failing-stage check (4.16), the test-file import fix (4.15), and
+the display-test opt-out (4.13's neighbour, `ATOM_SKIP_DISPLAY_TESTS`).
+
+### 4.15 No single test file could be run on its own
+
+Found while adding the tests for 4.14. `pytest tests/test_tilt.py` failed with
+`ModuleNotFoundError: No module named 'atom'` while the full suite passed, on
+every test file in the repository.
+
+`tests/conftest.py` put `tools/` on `sys.path` but not `src/`. During a full
+collection, one of the `tools/` modules inserts `src/` as an import side effect,
+and every module imported after it rides on that. So whether an import worked
+depended on **collection order** — invisible while running the whole suite, and
+broken the moment anyone runs one file, which is the normal way to work on one.
+
+`conftest.py` now adds `src/` explicitly, next to `tools/`.
+
+### 4.16 `atomize.py` ignores every stage's exit code
+
+Found when the first parallel run failed. `tools/atomize.py` runs all 13 stages
+with `os.system` and **checks no return code.** One early failure therefore
+produces twelve more, and the only thing that finally errors is
+`overhang_report.py` finding no toolpath — behind a log that is almost entirely
+the later stages complaining about inputs that were never made. Diagnosing the
+first parallel failure took a directory listing per stage to find the one real
+cause.
+
+The dangerous version is not that one. **In a working tree that has already run
+that part, the previous run's outputs are still there.** A failed stage then
+leaves a file that *looks* like its output, the pipeline carries on, and the
+report is quietly wrong. A fresh worker tree turns that into a loud missing-file
+error; the operator's own repository would not.
+
+`overhang_report.run_pipeline` now checks, after `atomize.py` returns, that every
+stage's artifact exists **and was written by this run**, and names the first one
+that was not:
+
+    Stage 6 tangents produced nothing: data/basis/twin_domes_xs.npz
+
+The freshness half is the part that matters: it catches the stale-output case,
+where nothing looks wrong.
+
+The vendored `atomize.py` is left alone. Making it check its own exit codes would
+be the better fix and would need the golden test re-run; this covers the same
+ground from outside without touching a vendored file.
+
+### 4.17 `compute_tangents.py` needs `data/image/0.png` for every run
+
+`tools/compute_tangents.py` takes optional `--top_lines` and `--bottom_lines`
+PNGs. With neither given — which is every benchmark part — it loads
+**`data/image/0.png`** as the default and then disables the constraint. So that
+committed file is a hard dependency of the whole pipeline, not of an optional
+feature.
+
+This broke the first parallel run. The runner built worker trees with a
+hand-written list of inputs (`*.stl` and `*.json`), stage 6 died in every worker,
+and 4.16 turned that into twelve failures.
+
+The general lesson, having got this wrong twice within an hour — first by copying
+whole folders and dragging in Blender's `.obj` intermediates, then by narrowing
+to two patterns and dropping this PNG:
+
+> **Do not enumerate the pipeline's inputs by hand.** Everything a run generates
+> is gitignored, so `git ls-files -- data` *is* the list of inputs, and it stays
+> correct as stages change.
+
+`run_matrix_parallel.data_input_paths` does that. It uses `git ls-files` rather
+than `git ls-tree HEAD` deliberately, and despite 4.11: that correction is about
+"has this been committed", where the index lies; this asks "is this an input",
+and a newly added input that is not yet committed is still one a worker needs.
+
+### 4.18 A cache warm-up run must be the shortest job, not the longest
+
+The parallel runner fills one Taichi cache with a single run before copying it to
+every worker (4.17's neighbour: a cold cache inflates the GPU stages five to
+sevenfold). That run is **alone**, so its length is pure serial time added to the
+job.
+
+It was taking the first job of a longest-first queue — which is the **longest**.
+On the first real run that cost **13:21 of a 50:31 total**, a quarter of the
+wall-clock. On the full matrix it would have taken `ramp90_s` at max_slope 30,
+**1:27:31 spent alone with fifteen workers idle.**
+
+Any job fills the cache equally well. It now takes the shortest.
+
+Worth recording because the symptom is *only slowness*, and slowness on a new
+machine is easy to explain away — which is exactly what happened when the same
+run's cold-cache figures were first read as the machine being slow (3.9's
+neighbour, handoff section 3). A test pins the choice.
+
 ## 5. Open plan items not yet resolved
 
 | Item | Status |
@@ -790,11 +950,19 @@ laptop.
 | Thresholds (45 deg effective, 1 % unsupported) | Placeholders, gate D0. Now meaningful: with the metric fixed, parts can actually pass. |
 | `twin_domes` verdict | **Closed** (P0.9b): reports carry `verdict.assessable`, and the summary prints "– no overhang". |
 | Which stage first diverges across backends | 3.9 argues the field solvers, from which stages change backend and how the planner works. Not measured stage by stage. The atom count in `data/frame/<part>.npz` settles it in one command if it ever matters. |
-| Backend recorded beside each number | 3.9's consequence 4. The reports in `reports/` do not record which backend produced them; all 48 used the stock mix, but nothing in the files says so. Now plan task **P1.7** (provenance block plus backfill). |
+| Backend recorded beside each number | **Closed** by plan task **P1.7**: `provenance.stage_arches` records the backend every stage actually started on, and `ti_arch_setting` records whether anything was forced. |
 | `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk. Now plan task **P1.6** |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
 | P4 vs P1.4 ordering | P4 depends on P1.4 (the validator). Which P4 tasks start before P1.4 reaches `main` is the operator's call; P4.1 and P4.3 do not use it |
+| P4 branch not merged | P4.1, P4.2 and P4.3 are built on `claude/phase-p4-build-fzqw55` and are **not in `main`** (2026-09-24). They touch the viewer, which P5.4 also touches, so the merge needs care. |
+| This session's branch not merged | `claude/new-session-l8g46d` carries the parallel runner, the failing-stage check, `ATOM_SKIP_DISPLAY_TESTS` and the conftest fix. Handoff section 0c lists them and declares two convention breaches for the operator to rule on. |
 | P2 | No session assigned. Waits on gate D0; P2.0 and P2.1 do not |
+| Parallel matrix runner | **Built** (2026-09-24) as `tools/run_matrix_parallel.py`: a copy of the working tree per worker, so no two runs share a `data/` path. Handoff section 3 has the design and the numbers. Tested with the slicing stubbed out; **contention between workers is still unmeasured**, so its projection is arithmetic rather than an observation. |
+| Contention between parallel workers | **Measured at 8 workers** (2026-09-24): 5.19x speedup, 65 % efficiency, each run 1.47x slower under load. The ideal estimate was 2.4x optimistic, so the runner now prints both. **Above 8 workers it is still a guess**, and efficiency falls as workers are added; 16 workers is 3 to 3.5 h for the full 48, not the 2:33 that 65 % would give. |
+| Parallel efficiency on the laptop | Unmeasured. The lab machine's 65 % came from 36 cores and two sockets; a 6-core 45 W laptop will throttle instead, which is a different limit. `--sizes xs --workers 3` settles it in about an hour. |
+| CPU model in the provenance block | P1.7 records the machine's **host name**, not its processor. A host name distinguishes machines; `Intel(R) Xeon(R) Gold 6254` is what a reader comparing two timings needs. `platform.processor()` will not give it — the Windows registry or `/proc/cpuinfo` will. Worth adding to `atom.provenance`; see 4.14. |
+| Correction numbers 4.14 to 4.17 | **Taken** by this session, straight into section 4 rather than a per-session heading in section 7, because it is merging rather than staying in flight. P1 and P4 must not reuse them. |
+| A third concurrent session | The plan allows two. Three ran, and 4.14 is what it cost. |
 
 ## 6. Quick index
 
@@ -807,20 +975,35 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 1.6 | `forward()` has no X-then-Y tilt decomposition to confirm against |
 | 1.7 | IK failure is NaN in `offset`; a non-zero `offset` is a clearance, not an error |
 | 1.8 | The plan's 1.5 x height support radius overrides its own 65-degree cone |
+| 1.9 | IK→FK agrees with itself by construction; check the physical pose too |
+| 3.2 | `from __future__ import annotations` breaks any module with a Taichi kernel |
+| 3.9 | The golden SHA-256 holds only on the backend mix it was captured on |
 | 4.5 | The bed-contact rule must anchor to the part's lowest point |
 | 4.6 | Sampling by face centroid under-measures large flat faces; subdivide first |
 | 4.7 | An overwriting run makes an interrupted re-run look complete; version the metrics |
 | 4.8 | Bed re-centring changes screw heights non-uniformly; compare in one frame |
-| 3.9 | The golden SHA-256 holds only on the backend mix it was captured on |
+| 4.11 | `git ls-files` reports the index, not what is committed |
 | 4.13 | Create VTK timers after the interactor is initialised, or they never fire on Windows |
+| 4.14 | Fetch **every branch**, not just `main`, before building infrastructure; two sessions built provenance twice |
+| 4.15 | Add `src/` in `conftest.py`, or no single test file can be run alone |
+| 4.16 | `atomize.py` ignores stage exit codes, so one failure becomes twelve — and a stale output can pass for a fresh one |
+| 4.17 | Never hand-write the pipeline's input list; `git ls-files -- data` is the list |
+| 4.18 | A warm-up run is serial time: make it the shortest job, never the longest |
 
-And the two habits that caught most of them:
+And the habits that caught most of them:
 
 * Before a long run, do one short run and compare against what you expect. A
   figure that does not move when the thing it depends on changes is worth
   chasing (4.6 was found exactly this way).
 * Check a metric against a case whose answer is known before putting its
   output in a table (3.7).
+* **When a measurement contradicts the hardware, the measurement is wrong.** A
+  better GPU running five times slower was a cold kernel cache, not a slow GPU
+  (handoff section 3). Never benchmark a fresh machine on its first run.
+* **Fetch every branch and read the plan's task list before building
+  infrastructure.** Nothing is hidden — every session pushes to `origin`, so one
+  `git fetch --all` shows all of it. What is missing is the habit, and a stale
+  document reads exactly like a current one (4.14).
 
 ## 7. Parallel sessions: items found during P1 and P4
 
