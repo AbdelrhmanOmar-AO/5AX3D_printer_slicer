@@ -134,6 +134,23 @@ be chosen with this in mind — see the note in that task.
 | 2026-09-23 | P1.4, G-code validator (no vendored edit; adds a validator test to this file) | Pass, 5 passed, 1 skipped in 784 s. The golden G-code validates with zero violations. |
 | 2026-09-23 | P1.2, header/footer from templates; temperatures (vendored: `kinematics3z.py`, `atomize.py`, `toolpath_to_gcode.py`) | Pass, 5 passed, 1 skipped in 522 s. G-code byte-identical. |
 | 2026-09-27 | P1.3, infill parameters (vendored: `sdf_to_isdf.py`, `atomize.py`) | Pass, 5 passed, 1 skipped in 674 s. G-code byte-identical. |
+| 2026-09-27 | P1.6, `order_atoms` kernel profiler off by default (vendored: `order_atoms.py`) | Pass, 5 passed, 1 skipped in 518 s. G-code byte-identical, so the profiler never affected the output. |
+
+### `order_atoms` with and without the kernel profiler (P1.6)
+
+Measured on the golden cube's own `data/sdf` and `data/frame` files, the stage
+alone, straight after the golden run above, in the order off / on / off:
+
+| Run | Kernel profiler | Toolpath planner |
+|---|---|---:|
+| 1 | off | 335.5 s |
+| 2 | on | 338.8 s |
+| 3 | off | 334.9 s |
+
+The profiler costs **3.6 s, 1.1 %**. Real (the two off runs agree within
+0.6 s) but smaller than the laptop's day-to-day drift: this baseline recorded
+331.6 s *with* the profiler on. The stage's time is the algorithm, not the
+instrumentation.
 
 ## Re-checking it
 
