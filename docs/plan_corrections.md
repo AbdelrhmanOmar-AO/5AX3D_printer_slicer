@@ -1258,6 +1258,38 @@ feature. It now relies on the plan's own check, a different total extrusion,
 and says why. Anything else that wants to confirm what a stage was given
 should not use this log either.
 
+#### P1-14 A parallel run's report lost its commit, and its runtime looked like the machine's speed
+
+*Found reviewing `tools/run_matrix_parallel.py` (the P0.8 follow-on session's
+runner) against P1.7, 2026-09-24; fixed 2026-09-27.* Three gaps, none in the
+metrics themselves:
+
+1. **No commit.** Each worker runs in a copy of the working tree with no
+   `.git`, so `provenance.git_state` found no repository and recorded
+   `git_commit: null`. Had the worker root sat inside *another* repository,
+   it would have recorded **that** one's commit. The runner now states the
+   parent's commit and dirty flag in `ATOM_GIT_COMMIT` / `ATOM_CODE_MODIFIED`,
+   which `git_state` uses instead of asking git. Set but empty means "known to
+   be unknown", so git is not asked then either.
+2. **Runtimes under load were indistinguishable.** The lab machine's first
+   parallel run measured each run **1.47x slower** with eight at once than
+   alone. Those runtimes flow into the summary's runtime table and into the
+   points^1.5 scaling result (handoff 7b), and nothing in a report said the
+   machine was shared. Reports now carry `parallel_workers` (the pool size;
+   1 for a run on its own, and for the runner's warm-up) and
+   `taichi_cpu_threads`. The runtime table has a Run column and a note when
+   the conditions differ. These are **not** comparability fields: the metrics
+   are deterministic on one machine, so pooled and solo runs of one machine
+   stay in one group, and only their times are kept apart.
+3. **The mixed-table warning was not printed.** The runner wrote the summary
+   with the warning inside it but never showed it on screen, unlike
+   `--summarize`. It now prints it.
+
+The 48 baseline reports are backfilled with `parallel_workers: 1`, since
+`scripts/run_baseline_matrix.ps1` runs one combination at a time. The two new
+fields are optional, so reports that predate them stay complete; the table
+shows "not recorded" for them.
+
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
 None yet.

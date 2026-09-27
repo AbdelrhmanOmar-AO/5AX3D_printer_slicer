@@ -405,3 +405,101 @@ def test_backfill_refuses_a_different_metrics_version():
     report["metrics_version"] = 1
     with pytest.raises(ValueError, match="metrics version 1"):
         backfill_provenance.backfill_report(report)
+
+
+# --------------------------------------------------------------------------
+# Parallel runs: the commit, and how many runs shared the machine
+# --------------------------------------------------------------------------
+
+
+def test_the_commit_can_be_stated_rather_than_asked(repo_root, monkeypatch):
+    """A parallel worker has no .git; the runner states the parent's commit."""
+    monkeypatch.setenv(prov.GIT_COMMIT_ENV_VAR, "a" * 40)
+    monkeypatch.setenv(prov.CODE_MODIFIED_ENV_VAR, "false")
+
+    def no_git(*args, **kwargs):
+        raise AssertionError("git must not be asked when the commit is stated")
+
+    monkeypatch.setattr(prov.subprocess, "run", no_git)
+    assert prov.git_state(repo_root) == ("a" * 40, False)
+
+
+def test_a_stated_empty_commit_means_unknown_not_ask_git(tmp_path, monkeypatch):
+    """Empty is "known to be unknown": git is not asked, so a worker tree that
+    happens to sit inside another repository cannot record that one's commit."""
+    monkeypatch.setenv(prov.GIT_COMMIT_ENV_VAR, "")
+    monkeypatch.setenv(prov.CODE_MODIFIED_ENV_VAR, "")
+    monkeypatch.setattr(prov.subprocess, "run", lambda *a, **k: pytest.fail("git was asked"))
+    assert prov.git_state(tmp_path) == (None, None)
+
+
+def test_a_run_on_its_own_says_so(repo_root, no_overrides, monkeypatch):
+    monkeypatch.delenv(prov.PARALLEL_WORKERS_ENV_VAR, raising=False)
+    monkeypatch.delenv(prov.TAICHI_THREADS_ENV_VAR, raising=False)
+    block = pipeline_block(repo_root)
+    assert block["parallel_workers"] == 1
+    assert block["taichi_cpu_threads"] is None
+
+
+def test_a_parallel_run_records_its_pool_and_thread_cap(repo_root, no_overrides, monkeypatch):
+    monkeypatch.setenv(prov.PARALLEL_WORKERS_ENV_VAR, "8")
+    monkeypatch.setenv(prov.TAICHI_THREADS_ENV_VAR, "2")
+    block = pipeline_block(repo_root)
+    assert block["parallel_workers"] == 8
+    assert block["taichi_cpu_threads"] == 2
+    assert prov.problems(block) == []
+
+
+def test_sharing_the_machine_does_not_split_comparability(repo_root, no_overrides):
+    """The metrics are deterministic on one machine; only the runtime changes.
+    So a pooled run stays in the same group, and the runtime table shows it."""
+    alone = pipeline_block(repo_root)
+    pooled = copy.deepcopy(alone)
+    pooled["parallel_workers"], pooled["taichi_cpu_threads"] = 16, 2
+    assert prov.comparability_key(alone) == prov.comparability_key(pooled)
+
+
+def test_older_reports_without_the_fields_are_still_complete(repo_root, no_overrides):
+    block = pipeline_block(repo_root)
+    del block["parallel_workers"], block["taichi_cpu_threads"]
+    assert prov.problems(block) == []
+
+
+def test_the_baseline_ran_one_at_a_time(repo_root):
+    for report in committed_reports(repo_root):
+        assert report["provenance"]["parallel_workers"] == 1, report["part"]
+
+
+def _timed(block, part, slope):
+    report = report_with(block, part=part, slope=slope)
+    report["runtime"] = {"total_s": 600.0, "stages": {"Toolpath planner": 400.0}}
+    report["mesh"] = {"volume_mm3": 6000.0}
+    report["toolpath"] = {"point_count": 35000}
+    return report
+
+
+def test_the_runtime_table_says_how_each_run_shared_the_machine(repo_root, no_overrides):
+    alone = pipeline_block(repo_root)
+    pooled = copy.deepcopy(alone)
+    pooled["parallel_workers"] = 8
+    legacy = copy.deepcopy(alone)
+    del legacy["parallel_workers"]
+
+    assert overhang_report.run_condition(report_with(alone)) == "alone"
+    assert overhang_report.run_condition(report_with(pooled)) == "8 workers"
+    assert overhang_report.run_condition(report_with(legacy)) == "not recorded"
+
+    summary = overhang_report.summarize([
+        _timed(alone, "ramp45_xs", 7.0),
+        _timed(pooled, "ramp45_xs", 15.0),
+    ])
+    assert "| Run |" in summary
+    assert "| alone |" in summary and "| 8 workers |" in summary
+    assert "Not all of these runs had the machine to itself" in summary
+
+
+def test_an_all_alone_table_carries_no_contention_note(repo_root, no_overrides):
+    block = pipeline_block(repo_root)
+    summary = overhang_report.summarize([_timed(block, "ramp45_xs", 7.0)])
+    assert "| alone |" in summary
+    assert "Not all of these runs" not in summary
