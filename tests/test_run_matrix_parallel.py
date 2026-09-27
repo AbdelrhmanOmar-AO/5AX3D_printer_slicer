@@ -119,6 +119,67 @@ def test_the_warmup_is_the_shortest_job_not_the_longest(monkeypatch, tmp_path, c
     )
 
 
+def test_choose_warmup_takes_the_shortest():
+    jobs = [
+        {"part": "slow", "slope": 7.0, "estimate_s": 3600.0},
+        {"part": "quick", "slope": 7.0, "estimate_s": 60.0},
+        {"part": "middling", "slope": 7.0, "estimate_s": 600.0},
+    ]
+    assert jobs[rmp.choose_warmup(jobs)]["part"] == "quick"
+
+
+def test_an_unmeasured_job_is_not_chosen_as_the_warmup():
+    """It might be the long one, and the warm-up is the worst place to find out."""
+    jobs = [
+        {"part": "unknown", "slope": 7.0, "estimate_s": 0.0},
+        {"part": "quick", "slope": 7.0, "estimate_s": 60.0},
+    ]
+    assert jobs[rmp.choose_warmup(jobs)]["part"] == "quick"
+
+
+def test_choose_warmup_on_an_empty_queue():
+    assert rmp.choose_warmup([]) is None
+
+
+def test_the_dry_run_names_the_warmup_job(tmp_path, capsys):
+    """A dry run that predicts nothing about the warm-up is worse than useless:
+    the operator was told to check it and had nothing to look at."""
+    rmp.main(["--sizes", "xs", "--workers", "8", "--dry-run",
+              "--root", str(tmp_path / "w")])
+    out = capsys.readouterr().out
+    assert "Warm-up (runs alone" in out
+    assert "SHORTEST" in out
+
+
+def test_the_dry_run_and_the_real_run_agree_on_the_warmup(monkeypatch, tmp_path):
+    """They share `choose_warmup` rather than each deciding. A dry run that
+    predicts a different warm-up from the real one is worse than no dry run."""
+    ran = []
+    monkeypatch.setattr(rmp, "run_job",
+                        lambda w, j, d, t=None: (ran.append(j["part"]),
+                                                 (True, 0.01, tmp_path / "l.log"))[1])
+    monkeypatch.setattr(rmp, "collect",
+                        lambda w, j: _stub_report(j["part"], j["slope"]))
+    monkeypatch.setattr(orep, "append_progress", lambda report: None)
+    monkeypatch.setattr(orep, "load_reports", lambda quiet=False: [])
+    monkeypatch.setattr(rmp, "create_worker",
+                        lambda root, i, overwrite=False: tmp_path / f"w{i}")
+    monkeypatch.setattr(rmp, "seed_cache", lambda s, w: len(w) - 1)
+
+    jobs = [
+        {"part": "slow", "slope": 7.0, "estimate_s": 3600.0},
+        {"part": "quick", "slope": 7.0, "estimate_s": 60.0},
+        {"part": "middling", "slope": 7.0, "estimate_s": 600.0},
+    ]
+    monkeypatch.setattr(rmp, "build_jobs", lambda *a, **k: list(jobs))
+    predicted = jobs[rmp.choose_warmup(jobs)]["part"]
+
+    rmp.main(["--sizes", "xs", "--workers", "3", "--root", str(tmp_path / "w"),
+              "--keep-workers"])
+
+    assert ran[0] == predicted
+
+
 def test_the_measured_efficiency_makes_the_estimate_larger():
     """The ideal was 2.4x optimistic against the first real run, so both are
     reported and the realistic one is the headline."""

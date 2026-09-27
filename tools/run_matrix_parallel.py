@@ -210,6 +210,31 @@ MEASURED_EFFICIENCY = 0.65
 MEASURED_AT_WORKERS = 8
 
 
+def choose_warmup(jobs):
+    """Index of the job to run alone first, to fill a cache worth copying.
+
+    **The shortest one.** The warm-up runs with every other worker idle, so its
+    length is pure serial time added to the job, and any job fills the cache
+    equally well. Taking the first of a longest-first queue took the *longest*:
+    13:21 of a 50:31 run, and on the full matrix it would have been `ramp90_s` at
+    1:27:31 spent alone with fifteen workers waiting (corrections 4.18).
+
+    A job with no estimate sorts last here, deliberately: an unmeasured job might
+    be the long one, and the warm-up is the worst place to find out.
+
+    Shared with the dry run rather than duplicated, because a dry run that
+    predicts a different warm-up from the real one is worse than no dry run —
+    and the earlier version printed no warm-up at all, so an operator told to
+    check it had nothing to look at.
+    """
+    if not jobs:
+        return None
+    return min(
+        range(len(jobs)),
+        key=lambda i: jobs[i]["estimate_s"] or float("inf"),
+    )
+
+
 def projected_seconds(jobs, workers, ratio=1.0, efficiency=1.0):
     """Wall-clock estimate: total work over workers, floored by the longest job.
 
@@ -564,6 +589,19 @@ def main(argv=None):
           "rest), which are the bulk and are not estimated here")
 
     if args.dry_run:
+        if not args.no_seed_cache and workers_wanted > 1:
+            index = choose_warmup(jobs)
+            warmup = jobs[index]
+            estimate = (format_duration(warmup["estimate_s"])
+                        if warmup["estimate_s"] else "unknown")
+            print(f"\nWarm-up (runs alone, fills the cache the workers copy): "
+                  f"{warmup['part']} @ {warmup['slope']:g} deg, ~{estimate}")
+            print("   It must be one of the SHORTEST jobs: it runs with every "
+                  "other worker idle (4.18).")
+        else:
+            print("\nNo warm-up: the workers will each compile their own cache, "
+                  "which is much slower overall.")
+
         print("\n--dry-run: nothing was created or run. Planned order:")
         for index, job in enumerate(jobs, 1):
             estimate = (format_duration(job["estimate_s"])
@@ -603,10 +641,7 @@ def main(argv=None):
     # matrix that is ramp90_s at 1:27:31 spent alone with 15 workers waiting.
     # Any job fills the cache equally well.
     if not args.no_seed_cache and len(trees) > 1:
-        warmup_index = min(
-            range(len(jobs)),
-            key=lambda i: jobs[i]["estimate_s"] or float("inf"),
-        )
+        warmup_index = choose_warmup(jobs)
         first = jobs[warmup_index]
         print(f"\nWarming the Taichi cache on one run: {first['part']} "
               f"@ {first['slope']:g} deg")
