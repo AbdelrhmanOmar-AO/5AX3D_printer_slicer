@@ -195,6 +195,7 @@ verified on both machines** (below).
 | P4.4 Safe travel | **Not needed**: the lab baseline shows no travel problem beyond hairline grazes (P4-8). |
 | Viewer wiring | **Done, checked on the laptop** 2026-09-28: colour mode "Collisions (P4)", red bed in the machine view, collision rows in the card. |
 | P4-4 fix (platform frame) | **Done**, vendored edit to `kinematics3z.get_plaftorm_size`; golden test passed on the laptop after it. |
+| P4-7 fix (extrusion limit) | **Done** 2026-09-28, P1's file with the operator's decision: the validator's extrusion limit is now per mm of travel (0.5 mm of filament per mm, `--max-e-per-mm`); retracts and primes keep the 5 mm cap. **Needs** the laptop's `pytest --run-pipeline tests/test_golden.py` once (the golden G-code must still validate). |
 
 Tool: `python tools/check_motion_safety.py <toolpath .npz, directory or "pattern">`
 runs both checks (`README.md`, "Check a toolpath for collisions").
@@ -230,15 +231,11 @@ Lab timing, both checks: `xs` files 3 to 9 s, `s` files 15 to 57 s.
    operator's permission**); the validator's output is byte-identical (P4-6).
 3. (2026-09-28) The P4 session fixes P4-4; the pull request opened and
    merged; the golden-cube tests for P4.2 and P4.3 stay in the unit tier.
+4. (2026-09-28) P4-7: the validator's extrusion limit goes per mm of travel.
 
 **Still open for the operator:**
 
-1. **P4-7** (P1's file): the validator's 5 mm single-move extrusion limit
-   rejects the platform's own long edges (a 29.7 mm edge extrudes 5.0009 mm),
-   so every part about 30 mm or longer that needs a platform fails
-   `validate_gcode`. Raise the limit, make it per mm of travel, or split the
-   platform's lines?
-2. **P4-8**, only if wanted: a default tolerance above the 0.01 mm float32
+1. **P4-8**, only if wanted: a default tolerance above the 0.01 mm float32
    margin (say 0.1 mm) would hide the hairline grazes. Recommended: leave it,
    so P2's steeper toolpaths are compared on the same strict check.
 

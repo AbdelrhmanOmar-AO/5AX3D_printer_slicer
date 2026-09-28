@@ -215,9 +215,78 @@ def test_negative_feed_is_rejected(reference):
 # --------------------------------------------------------------------------
 
 
-def test_max_e_is_adjustable(reference):
+def test_max_e_per_mm_is_adjustable(reference):
+    """The fixture's line 14 pushes 7.5 mm over 1 mm of travel."""
     text = (FIXTURES / "validate_extrusion.gcode").read_text()
-    assert check(text, reference, max_e_mm=8.0).ok
+    report = check(text, reference)
+    assert "over 1 mm of travel" in report.violations[0].detail
+    assert check(text, reference, max_e_per_mm=8.0).ok
+    assert gcode_check.DEFAULT_MAX_E_PER_MM == 0.5
+    assert report.stats["limits"]["max_e_per_mm"] == 0.5
+
+
+def test_a_long_extruding_move_is_judged_per_mm(reference):
+    """A 30 mm platform edge at the nominal bead pushes out 5.05 mm of
+    filament: over the old 5 mm single-move limit, but 0.168 mm per mm
+    (plan_corrections 7b, P4-7)."""
+    body = (
+        "G1 X150.0 Y145.0 Z85.0 U85.0 V85.0 E0 F3000\n"
+        "G1 E2.00 F2700 ; prime\n"
+        "G1 X180.0 Y145.0 Z85.0 U85.0 V85.0 E5.051400 F600\n"
+    )
+    report = check(with_body(body), reference)
+    assert report.ok, report.violations
+    assert report.stats["largest_e_per_mm"] == pytest.approx(5.0514 / 30.0)
+
+
+def test_a_short_move_with_a_blob_is_rejected(reference):
+    """0.4 mm of filament over 0.5 mm of travel is under any absolute limit
+    but 0.8 mm per mm."""
+    body = (
+        "G1 X150.0 Y145.0 Z85.0 U85.0 V85.0 E0 F3000\n"
+        "G1 E2.00 F2700 ; prime\n"
+        "G1 X150.5 Y145.0 Z85.0 U85.0 V85.0 E0.4 F600\n"
+    )
+    report = check(with_body(body), reference)
+    assert [(v.id, v.line) for v in report.violations] == [(gcode_check.EXTRUSION, 14)]
+    assert "0.5 mm of travel" in report.violations[0].detail
+
+
+def test_travel_is_the_five_axis_machine_distance(reference):
+    """Screw moves count: 0.25 mm of filament over dX = 1, dZ = dU = 0.5 is
+    0.25 / sqrt(1.5) = 0.204 per mm, within 0.21 but over 0.2."""
+    body = (
+        "G1 X150.0 Y145.0 Z85.0 U85.0 V85.0 E0 F3000\n"
+        "G1 E2.00 F2700 ; prime\n"
+        "G1 X151.0 Y145.0 Z85.5 U85.5 V85.0 E0.25 F600\n"
+    )
+    assert check(with_body(body), reference, max_e_per_mm=0.21).ok
+    report = check(with_body(body), reference, max_e_per_mm=0.2)
+    assert report.ids() == {gcode_check.EXTRUSION}
+
+
+def test_extruding_without_moving_is_rejected(reference):
+    """Axis words that go nowhere are zero travel: any E there is a blob."""
+    body = (
+        "G1 X150.0 Y145.0 Z85.0 U85.0 V85.0 E0 F3000\n"
+        "G1 E2.00 F2700 ; prime\n"
+        "G1 X150.0 Y145.0 E0.05 F600\n"
+    )
+    report = check(with_body(body), reference)
+    assert [(v.id, v.line) for v in report.violations] == [(gcode_check.EXTRUSION, 14)]
+
+
+def test_max_e_caps_a_prime(reference):
+    """An E with no axis word has no travel: the absolute ``max_e_mm`` holds."""
+    body = (
+        "G1 X150.0 Y145.0 Z85.0 U85.0 V85.0 E0 F3000\n"
+        "G1 E-6.00 F2700 ; retract\n"
+        "G1 E6.00 F2700 ; prime\n"
+    )
+    report = check(with_body(body), reference)
+    assert [(v.id, v.line) for v in report.violations] == [(gcode_check.EXTRUSION, 14)]
+    assert "without moving" in report.violations[0].detail
+    assert check(with_body(body), reference, max_e_mm=8.0).ok
     assert gcode_check.DEFAULT_MAX_E_MM == 5.0
 
 

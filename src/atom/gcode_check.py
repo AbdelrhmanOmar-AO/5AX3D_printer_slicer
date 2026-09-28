@@ -27,11 +27,19 @@ Checks
     ``toolpath_to_gcode`` scales the feed by machine distance over tool-tip
     distance (``docs/plan_corrections.md`` 7a, P1-2).
 ``EXTRUSION``
-    In relative mode (``M83``), no single E above ``max_e_mm`` (default 5 mm,
-    agreed with the operator 2026-09-23; the golden file's largest is a 2 mm
-    prime). Retracts and primes must balance: no prime without a pending
-    retract, no prime larger than what was retracted, and no extruding move
-    while the filament is still retracted.
+    In relative mode (``M83``), an extruding move may push out at most
+    ``max_e_per_mm`` mm of filament per mm of travel (default 0.5,
+    ``docs/plan_corrections.md`` 7b, P4-7). Travel is the machine distance
+    sqrt(dX^2 + dY^2 + dZ^2 + dU^2 + dV^2), read from the words alone; the
+    nominal 0.9 x 0.45 mm bead is 0.168 mm per mm, and 30 degree G-code
+    measures at most 0.178. A per-mm limit lets long platform edges through
+    and still catches a blob on a short move, which the old 5 mm absolute
+    limit got the wrong way round. An E with no axis word (a retract or a
+    prime) is capped at ``max_e_mm`` (default 5 mm, agreed with the operator
+    2026-09-23; the golden file's largest is a 2 mm prime). Retracts and
+    primes must balance: no prime without a pending retract, no prime larger
+    than what was retracted, and no extruding move while the filament is
+    still retracted.
 ``STRUCTURE``
     The header and footer are present: ``G21`` and ``G90`` before the first
     move, the 3Z enable macro before the first U or V word, and the disable
@@ -56,6 +64,7 @@ Taichi is not needed: this module is numpy only.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
@@ -130,10 +139,16 @@ STRUCTURE = "STRUCTURE"
 #: Every check, in report order.
 CHECK_IDS: tuple[str, ...] = (AXIS_RANGE, TILT_LIMIT, NAN, FEED, EXTRUSION, STRUCTURE)
 
-#: Default for the largest single relative extrusion, in mm of filament.
-#: Agreed with the operator on 2026-09-23. The golden cube's largest is a
-#: 2.0 mm prime; its printing moves are below 0.1 mm.
+#: Default for the largest relative extrusion with no axis word (a retract
+#: or a prime), in mm of filament. Agreed with the operator on 2026-09-23.
+#: The golden cube's largest is a 2.0 mm prime.
 DEFAULT_MAX_E_MM = 5.0
+
+#: Default for the most filament an extruding move may push out per mm of
+#: machine travel (plan_corrections 7b, P4-7). The nominal 0.9 x 0.45 mm
+#: bead on 1.75 mm filament is 0.168; the golden cube is 0.168 throughout
+#: and 30 degree G-code measures at most 0.178.
+DEFAULT_MAX_E_PER_MM = 0.5
 
 #: The tilt tolerance ``kinematics3z.inverse`` applies, in degrees.
 TILT_TOLERANCE_DEG = 1e-4
@@ -294,6 +309,7 @@ def check_lines(
     *,
     max_feed: float | None = None,
     max_e_mm: float = DEFAULT_MAX_E_MM,
+    max_e_per_mm: float = DEFAULT_MAX_E_PER_MM,
 ) -> Report:
     """Validate G-code text, given as lines, against a machine profile.
 
@@ -308,7 +324,11 @@ def check_lines(
         Upper limit for F, in mm/min. ``None`` (the default) checks only that
         F is finite and positive; see the module docstring for why.
     max_e_mm
-        Largest single relative extrusion, in mm of filament.
+        Largest relative extrusion with no axis word (a retract or a prime),
+        in mm of filament.
+    max_e_per_mm
+        Most filament a relative extruding move may push out per mm of
+        machine travel, sqrt(dX^2 + dY^2 + dZ^2 + dU^2 + dV^2).
     """
     dialect = profile.firmware_dialect
     if dialect not in STRUCTURE_MARKERS:
@@ -329,6 +349,7 @@ def check_lines(
     retract_count = 0
     prime_count = 0
     largest_relative_e = 0.0
+    largest_e_per_mm = 0.0
     feeds: list[float] = []
 
     # Screw states to tilt-check after the scan, vectorised: (line, z0, z1, z2).
@@ -400,6 +421,7 @@ def check_lines(
                 ))
 
         # --- AXIS_RANGE, and the modal state ---
+        travel_sq = 0.0
         for axis in MOTION_WORDS & words.keys():
             value = words[axis]
             low, high = limits[axis]
@@ -407,6 +429,8 @@ def check_lines(
                 violations.append(Violation(
                     AXIS_RANGE, number, axis_range_detail(axis, value, low, high),
                 ))
+            if axis in state:
+                travel_sq += (value - state[axis]) ** 2
             state[axis] = value
 
         if words.keys() & {"U", "V"}:
@@ -421,20 +445,30 @@ def check_lines(
         # --- EXTRUSION ---
         if "E" not in words:
             continue
+        moves_axes = bool(MOTION_WORDS & words.keys())
         if relative_extrusion:
             delta = words["E"]
             if delta > largest_relative_e:
                 largest_relative_e = delta
-            if delta > max_e_mm:
+            if moves_axes and delta > 0.0:
+                travel = math.sqrt(travel_sq)
+                if travel > 0.0:
+                    largest_e_per_mm = max(largest_e_per_mm, delta / travel)
+                if delta > max_e_per_mm * travel + EXTRUSION_TOLERANCE_MM:
+                    violations.append(Violation(
+                        EXTRUSION, number,
+                        f"E{_fmt(delta)} over {_fmt(travel)} mm of travel is more than "
+                        f"{_fmt(max_e_per_mm)} mm of filament per mm",
+                    ))
+            elif not moves_axes and delta > max_e_mm:
                 violations.append(Violation(
                     EXTRUSION, number,
-                    f"E{_fmt(delta)} extrudes more than {_fmt(max_e_mm)} mm in one move",
+                    f"E{_fmt(delta)} extrudes more than {_fmt(max_e_mm)} mm without moving",
                 ))
         else:
             delta = words["E"] - last_absolute_e
             last_absolute_e = words["E"]
 
-        moves_axes = bool(MOTION_WORDS & words.keys())
         if not moves_axes and delta < 0.0:
             retract_count += 1
             retracted_mm += -delta
@@ -501,12 +535,14 @@ def check_lines(
         "max_tilt_deg": max_tilt_deg,
         "max_feed": max(feeds) if feeds else None,
         "largest_relative_e_mm": largest_relative_e,
+        "largest_e_per_mm": largest_e_per_mm,
         "retract_count": retract_count,
         "prime_count": prime_count,
         "limits": {
             "tilt_deg": float(profile.max_tilt_angle_deg),
             "max_feed": max_feed,
             "max_e_mm": max_e_mm,
+            "max_e_per_mm": max_e_per_mm,
             "axes": {axis: list(bounds) for axis, bounds in limits.items()},
         },
         "violation_counts": counts,

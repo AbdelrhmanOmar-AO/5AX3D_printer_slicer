@@ -8,7 +8,7 @@ Usage
 -----
     python tools/validate_gcode.py data/gcode/calibration_cube.gcode
     python tools/validate_gcode.py <gcode> --machine ours --json
-    python tools/validate_gcode.py <gcode> --max-feed 12000 --max-e 5
+    python tools/validate_gcode.py <gcode> --max-feed 12000 --max-e-per-mm 0.5 --max-e 5
 
 Exit code
 ---------
@@ -50,6 +50,7 @@ def format_report(report: gcode_check.Report) -> str:
         f"Retracts / primes: {stats['retract_count']} / {stats['prime_count']}; "
         f"largest single extrusion {stats['largest_relative_e_mm']:g} mm"
     )
+    lines.append(f"Most filament per mm of travel: {stats['largest_e_per_mm']:.4g} mm")
     lines.append("")
 
     if report.ok:
@@ -87,11 +88,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Upper limit for F in mm/min. Default: none, only F > 0 is checked.",
     )
     parser.add_argument(
+        "--max-e-per-mm",
+        type=float,
+        default=gcode_check.DEFAULT_MAX_E_PER_MM,
+        help=(
+            "Most filament an extruding move may push out per mm of machine travel "
+            f"(default {gcode_check.DEFAULT_MAX_E_PER_MM:g})."
+        ),
+    )
+    parser.add_argument(
         "--max-e",
         type=float,
         default=gcode_check.DEFAULT_MAX_E_MM,
         help=(
-            "Largest single relative extrusion in mm of filament "
+            "Largest retract or prime (an E with no axis word) in mm of filament "
             f"(default {gcode_check.DEFAULT_MAX_E_MM:g})."
         ),
     )
@@ -107,7 +117,8 @@ def main(argv: list[str] | None = None) -> int:
 
     profile = machine_profile.load_profile(args.machine)
     report = gcode_check.check_file(
-        args.gcode_path, profile, max_feed=args.max_feed, max_e_mm=args.max_e
+        args.gcode_path, profile, max_feed=args.max_feed, max_e_mm=args.max_e,
+        max_e_per_mm=args.max_e_per_mm,
     )
 
     if args.json:

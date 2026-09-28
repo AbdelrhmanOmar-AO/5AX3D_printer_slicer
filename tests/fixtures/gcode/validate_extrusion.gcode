@@ -1,4 +1,4 @@
-; P1.4 validator fixture: 7.5 mm of filament in one move on line 14 (EXTRUSION)
+; P1.4 validator fixture: 7.5 mm of filament over 1 mm of travel on line 14 (EXTRUSION)
 G21 ; set units to millimeters
 G90 ; use absolute coordinates
 M82 ; use absolute distances for extrusion
