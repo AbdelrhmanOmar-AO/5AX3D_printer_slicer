@@ -116,7 +116,7 @@ edits. P4 is mostly synthetic and CPU-only.
 Branch `claude/vibrant-rubin-waln7y`. After each merge it restarts from `main`;
 most recently restarted from `main` after pull requests #8 (P1.3) and #9 (the
 P0.8 follow-on branch) were merged. The operator chose the order P1.4, P1.7,
-P1.1, P1.2, P1.3, then the provenance follow-up below. Proposed next: P1.6.
+P1.1, P1.2, P1.3, the provenance follow-up (pull request #10), then P1.6.
 P1.5 stays open until gate E1 is answered.
 
 The P1.4 golden run took **784 s**, against 457 s when the baseline was
@@ -130,7 +130,8 @@ before P1.6, which measures `order_atoms` timings.
 | P1.4 G-code validator | **Done** (`58d2fe7`), verified on the laptop 2026-09-23: `pytest --run-pipeline tests/test_golden.py` gave **5 passed, 1 skipped** in 784 s. Golden SHA unchanged, and the real golden G-code validates with zero violations. (The P1.4 commit message expected 4 passed; that miscounted the file's unit tests.) **Merged into `main`** (pull request #4, `fab657f`), so the P4 session can bring it in |
 | P1.2 Templated header/footer + temperatures | **Built.** `atom.gcode_templates`; `kinematics3z.HEADER`/`FOOTER` now come from it, byte-identical to upstream (checked against the evaluated `e7b71ea` f-strings, and by converting the golden toolpath before and after: identical file). Optional `bed_temp`/`nozzle_temp` JSON keys and `--bed-temp`/`--nozzle-temp` options. Klipper raises GATE E1. **Verified on the laptop 2026-09-23:** `pytest --run-pipeline tests/test_golden.py` gave 5 passed, 1 skipped in 522 s, so the golden SHA is unchanged after editing the vendored `kinematics3z.py`, `atomize.py` and `toolpath_to_gcode.py`. In `main` (pull request #7) |
 | P1.3 Infill parameters | **Built.** `atom.infill_options`; optional `infill_period` / `shell_thickness` JSON keys (deposition widths) and `--infill-period` / `--shell-thickness` on `tools/sdf_to_isdf.py`; defaults are upstream's 8 and 2. **Golden verified on the laptop 2026-09-27:** 5 passed, 1 skipped in 674 s. `tests/test_infill_pipeline.py` failed on its first laptop run, from a wrong assertion in the test, not the feature (P1-13), after the pipeline itself had run to completion. The G-code that run left was then checked by hand: total extrusion **2894.792 mm against the golden's 3231.197 (-10.4 %)**, and `validate_gcode.py` reports no violations (43 870 lines, largest tilt 5.544 deg). Those are exactly the fixed test's assertions, so the parameter is shown to reach the stage. A formal re-run of the fixed test is optional. In `main` (pull request #8) |
-| P1.7 follow-up: parallel runs | **Built.** A report from `tools/run_matrix_parallel.py` now records the parent repository's commit (worker copies have no `.git`), the worker-pool size (`parallel_workers`) and the Taichi thread cap. The summary's runtime table gains a Run column ("alone" / "8 workers") and a note when runs shared the machine. The runner prints the mixed-provenance warning on screen, not only in the file. The 48 baseline reports now state `parallel_workers: 1`. CPU only; no laptop run needed (`plan_corrections.md` 7a, P1-14). Not yet in `main` |
+| P1.6 `order_atoms` profiler switch | **Done**, verified on the laptop 2026-09-27. `atom.ti_profiler`; `ATOM_TI_PROFILER` switches the kernel profiler on, **off by default** (upstream always ran it). Golden: 5 passed, 1 skipped in 518 s, so the output is unchanged. `order_atoms` alone on the golden files, run off / on / off: **335.5 / 338.8 / 334.9 s**, so the profiler cost **3.6 s, 1.1 %**. Too small to move any matrix estimate, so plan §0.2 and section 7 are unchanged. Not yet in `main` |
+| P1.7 follow-up: parallel runs | **Built.** A report from `tools/run_matrix_parallel.py` now records the parent repository's commit (worker copies have no `.git`), the worker-pool size (`parallel_workers`) and the Taichi thread cap. The summary's runtime table gains a Run column ("alone" / "8 workers") and a note when runs shared the machine. The runner prints the mixed-provenance warning on screen, not only in the file. The 48 baseline reports now state `parallel_workers: 1`. CPU only; no laptop run needed (`plan_corrections.md` 7a, P1-14). In `main` (pull request #10) |
 | P1.1 Kinematics test suite | **Built.** `tests/test_kinematics3z.py` (24 tests) plus `tests/kinematics_f64_roundtrip.py`. No laptop run needed (CPU only). Two findings: the direction round trip is 4.5e-4 rad in 32-bit floats but exact in 64-bit (P1-8, both now tested), and a positive `offset` is a first estimate of the lift (P1-9, `docs/conventions.md` corrected). In `main` (pull request #6) |
 | P1.7 Provenance on reports | **Done**, verified on the laptop 2026-09-23. Every overhang report records its machine, backend (each stage's actual one), Taichi version, profile and commit (`atom.provenance`). All 48 baseline reports are backfilled (`tools/backfill_provenance.py`). `--summarize` states the origin above the table and warns on a mixed table. In `main` (pull request #5) |
 
@@ -702,9 +703,9 @@ the project's actual contribution, follows once gate D0 is taken.
 | P5.4b Bed-motion animation | **Built and checked on the laptop** (Play and smooth playback confirmed by the operator). Side-by-side view deferred until P2 |
 | P5.4 UI | **Qt window built** (`tools/viewer_qt.py`): side panel, timeline, toggle switches, dropdown. Needs `conda install -c conda-forge pyside6 pyvistaqt` once; falls back to the classic window without it. Laptop check pending |
 | P1.1 / P1.2 / P1.4 / P1.7 | **Done and in `main`.** Section 0a has each one's laptop check |
-| P1.3 | Pushed for its laptop check (section 0a) |
+| P1.3 | **Done and in `main`** (pull request #8) |
 | P1.5 firmware templates | Blocked on gate E1 |
-| P1.6 `order_atoms` without `kernel_profiler` | Proposed, not started. Needs an undisturbed laptop |
+| P1.6 `order_atoms` without `kernel_profiler` | **Done** (section 0a): golden unchanged; the profiler cost only **1.1 %** of `order_atoms` |
 | P4.1 / P4.2 / P4.3 | **Built on `claude/phase-p4-build-fzqw55`, not in `main`** (section 0b) |
 | Parallel matrix runner | **Built and measured** on this session's branch, not in `main` (section 0c). 24 runs at 8 workers took **50:31, 0 failed**, a 5.19x speedup at 65 % efficiency. The full 48 should take **3 to 3.5 h at 16 workers** against 21.8 h serially |
 | P2 | No session. Waits on gate D0; P2.0 and P2.1 do not |
@@ -915,9 +916,12 @@ atomics have no deterministic ordering, so `find_best_next` could break ties
 differently and produce a different toolpath. The golden test would have caught
 it.
 
-**Still untested, and cheaper:** `tools/order_atoms.py` passes
-`kernel_profiler=True`, which is not free. Removing it might speed up the CPU
-path with no determinism risk at all.
+**Tested since (P1.6, 2026-09-27): the profiler was nearly free.**
+`tools/order_atoms.py` used to pass `kernel_profiler=True`; it is now off by
+default (`ATOM_TI_PROFILER`). On the golden cube's own files the stage took
+335.5 and 334.9 s without it against 338.8 s with it: **1.1 %**. Output
+unchanged. So the ordering stage's cost is the algorithm, not the
+instrumentation, and none of the matrix estimates move.
 
 Practical consequence: long runs are CPU-bound. A machine with faster or more
 CPU cores helps; a better GPU does not. Sustained load is within a laptop's

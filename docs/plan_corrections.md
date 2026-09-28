@@ -951,7 +951,7 @@ neighbour, handoff section 3). A test pins the choice.
 | `twin_domes` verdict | **Closed** (P0.9b): reports carry `verdict.assessable`, and the summary prints "– no overhang". |
 | Which stage first diverges across backends | 3.9 argues the field solvers, from which stages change backend and how the planner works. Not measured stage by stage. The atom count in `data/frame/<part>.npz` settles it in one command if it ever matters. |
 | Backend recorded beside each number | **Closed** by plan task **P1.7**: `provenance.stage_arches` records the backend every stage actually started on, and `ti_arch_setting` records whether anything was forced. |
-| `order_atoms` with `kernel_profiler=False` | Untested; a possible CPU speedup with no determinism risk. Now plan task **P1.6** |
+| `order_atoms` with `kernel_profiler=False` | **Closed** by P1.6 (2026-09-27): output unchanged, and only **1.1 %** faster (335.2 s mean against 338.8 s). The profiler was not what made the stage slow |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
 | P4 vs P1.4 ordering | P4 depends on P1.4 (the validator). Which P4 tasks start before P1.4 reaches `main` is the operator's call; P4.1 and P4.3 do not use it |
 | P4 branch not merged | P4.1, P4.2 and P4.3 are built on `claude/phase-p4-build-fzqw55` and are **not in `main`** (2026-09-24). They touch the viewer, which P5.4 also touches, so the merge needs care. |
@@ -1289,6 +1289,30 @@ The 48 baseline reports are backfilled with `parallel_workers: 1`, since
 `scripts/run_baseline_matrix.ps1` runs one combination at a time. The two new
 fields are optional, so reports that predate them stay complete; the table
 shows "not recorded" for them.
+
+#### P1-15 How P1.6 switches the profiler
+
+*Deliberate choices within P1.6.*
+
+* **The switch lives in a new module, `atom.ti_profiler`,** not in
+  `atom.ti_env`, which is on the shared "ask first" list (`docs/handoff.md`
+  section 0). It needs no Taichi import, so it is testable anywhere.
+* **Unknown values are refused**, as `ATOM_TI_ARCH`'s are. `1 true yes on`
+  mean on; `0 false no off` or unset mean off. A typo that silently left the
+  profiler on would distort the very timing this task measures.
+* **Its printed table goes behind the same switch.** Upstream printed the
+  kernel table after every run; with the profiler off there is nothing to
+  print.
+* **The time is measured on the stage alone**, `order_atoms.py` on the golden
+  run's own `data/sdf` and `data/frame` files, run off / on / off so that the
+  laptop warming up cannot pass for a speed-up. A full golden run carries four
+  minutes of other stages and the laptop's thermal state, which swamp a
+  difference of this size.
+* **Result (laptop, 2026-09-27):** 335.5 / 338.8 / 334.9 s. The profiler cost
+  **3.6 s, 1.1 %**. The two runs without it agree within 0.6 s, so the
+  difference is real, but it is smaller than the laptop's day-to-day drift:
+  the baseline, made *with* the profiler, recorded 331.6 s. The plan's "if
+  faster, re-estimate the matrix times" does not apply at 1 %.
 
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
