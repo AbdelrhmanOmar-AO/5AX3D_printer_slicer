@@ -544,3 +544,43 @@ def test_an_all_alone_table_carries_no_contention_note(repo_root, no_overrides):
     summary = overhang_report.summarize([_timed(block, "ramp45_xs", 7.0)])
     assert "| alone |" in summary
     assert "Not all of these runs" not in summary
+
+
+# --------------------------------------------------------------------------
+# The laptop baseline, kept after the reference moved to the lab machine
+# --------------------------------------------------------------------------
+
+LAPTOP_ARCHIVE = ("reports", "baseline_overhang_laptop")
+
+
+def laptop_reports(repo_root):
+    paths = sorted(repo_root.joinpath(*LAPTOP_ARCHIVE).glob("*.json"))
+    assert len(paths) == 48
+    return [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+
+
+def test_the_laptop_baseline_is_kept_whole(repo_root):
+    """The serial timings behind the points^1.5 result, and one half of the
+    laptop-vs-lab robustness comparison (P1-16). These are the facts the
+    committed-baseline tests used to pin, now pinned where they stay true."""
+    reports = laptop_reports(repo_root)
+    assert len(overhang_report.provenance_groups(reports)) == 1
+    for report in reports:
+        block = report["provenance"]
+        assert prov.problems(block) == [], report["part"]
+        assert block["machine"] == "AbdoYasser"
+        assert block["parallel_workers"] == 1, "these are the serial timings"
+        assert report["runtime"]["total_s"] > 0, "a laptop report lost its runtime"
+    summary = repo_root.joinpath(*LAPTOP_ARCHIVE, "summary.md").read_text(encoding="utf-8")
+    assert "Measured on: machine AbdoYasser, backend stock mix" in summary
+
+
+def test_the_laptop_archive_is_never_read_as_the_baseline():
+    """No tool may pool it into the live table by accident."""
+    assert overhang_report.REPORT_DIR.name == "baseline_overhang"
+    assert overhang_report.REPORT_DIR.name != LAPTOP_ARCHIVE[1]
+
+
+def test_the_backfill_describes_the_laptop_archive_not_the_live_baseline():
+    assert backfill_provenance.REPORT_DIR.name == LAPTOP_ARCHIVE[1]
+    assert backfill_provenance.BACKFILL["machine"] == "AbdoYasser"

@@ -1,7 +1,8 @@
 """Fill in provenance on overhang reports written before P1.7 (build plan P1.7).
 
-The 48 baseline reports in ``reports/baseline_overhang/`` were produced before
-reports recorded where they came from. Re-running them would cost about 20
+The 48 laptop baseline reports, now kept in ``reports/baseline_overhang_laptop/``
+(the committed baseline moved to the lab machine in pull request #12), were
+produced before reports recorded where they came from. Re-running them would cost about 20
 hours of laptop time, and their origin is known, so it is filled in instead.
 The plan asks for exactly this.
 
@@ -57,7 +58,10 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from atom import provenance as prov  # noqa: E402
 
-REPORT_DIR = REPO_ROOT / "reports" / "baseline_overhang"
+#: The laptop set this backfill describes. Not `reports/baseline_overhang/`:
+#: that holds the lab machine's baseline since pull request #12, whose reports
+#: recorded their own provenance and must not be given the laptop's.
+REPORT_DIR = REPO_ROOT / "reports" / "baseline_overhang_laptop"
 
 #: The stages `tools/atomize.py` runs for a part with infill, and the backend
 #: each asks for by default. `ratrig_to_craftware` and the Blender remesh do

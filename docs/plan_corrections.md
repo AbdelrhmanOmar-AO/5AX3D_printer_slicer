@@ -1314,6 +1314,67 @@ shows "not recorded" for them.
   the baseline, made *with* the profiler, recorded 331.6 s. The plan's "if
   faster, re-estimate the matrix times" does not apply at 1 %.
 
+#### P1-16 The lab machine is the reference for overhang results
+
+*A decision by the operator (2026-09-28), recorded here with what follows from
+it. Changes plan §0 rule 10, §0.2, the compute budget, P0.8's note and P2.5
+(plan v3.4, Appendix H).*
+
+**What was decided.** Pull request #12 re-measured all 48 baseline runs on the
+lab machine (`cad-p07-2065-9`, 2 x Xeon Gold 6254, RTX A6000) with
+`tools/run_matrix_parallel.py`, as one single-machine set. The operator adopted
+it as the committed baseline in `reports/baseline_overhang/`. Every comparison
+against the baseline, P2.5's first of all, therefore runs on the lab machine.
+That is correction 3.9 applied, not relaxed: a comparison is still only valid
+on the machine that measured the baseline; the machine changed.
+
+**Why it is safe.** The laptop and lab sets agree on every conclusion: **0
+verdict changes in 48**, the worst effective overhang moves by at most
+**0.008 degrees**, the tilt used by at most **0.21 degrees**. Only the
+unsupported fraction near overhangs moved: by +0.5 to +1.3 percentage points
+on 7 cells (all upward), and by less than half a point, either way (-0.3 to
++0.5), on 25 more. The overall fraction moved by under 0.05 points everywhere.
+The closest cell to the 1 % threshold (`ramp45_xs` at 7 degrees, 0.24 %)
+keeps 0.76 points of margin. PR #12 reported only the 7 larger moves; the
+count of 32 was found when comparing the two sets for this entry. So both P0.8 results (the 45-degree limit, and theta_eff = theta_geo +
+tilt_used) hold on two machines. The fraction's movement is also a warning
+for P2.5: it is the one metric sensitive to the machine, so a P2.5 change in
+it smaller than about 1.3 points would mean nothing if the two sides came
+from different machines.
+
+**What stays on the laptop.**
+
+* **The golden test.** Its SHA-256 was captured on the laptop's backend mix
+  and is valid only there (3.9). Moving it would mean a new golden record,
+  which nobody has asked for.
+* **Timing.** The lab set's runtimes mix 16, 8 and 1 workers (23 / 23 / 2
+  runs), and a run is about 1.4x slower under 8-way load. The laptop's serial
+  runs are the project's only clean timings, and the points^1.5 result for
+  `order_atoms` comes from them.
+
+**The laptop set is kept, not deleted:** `reports/baseline_overhang_laptop/`
+holds its 48 reports, its summary and a README. The folder is visible so the
+robustness finding and the scaling result stay traceable. No tool reads it,
+and two tests pin that: the live baseline in `reports/baseline_overhang/` is
+never the archive, and `tools/backfill_provenance.py`, whose values describe
+the laptop, now writes only to the archive. Left pointed at
+`reports/baseline_overhang/`, it would have been one command away from
+stamping the laptop's host name on the lab machine's reports.
+
+**The tests that pinned the laptop.** Three tests in `tests/test_provenance.py`
+required the committed baseline to be the laptop's host name and
+`parallel_workers == 1`, so #12 failed them. They now require what must stay
+true whatever the reference machine: one machine across all 48, a recorded
+worker count on every report, and a summary that says so when the worker
+counts differ. The per-stage backends stay pinned.
+
+**Compute budget, lab machine.** Measured (#12 and handoff section 3):
+`xs` only, 8 workers: **0:50:31**; 24 mostly-`s` runs at 8 workers: **2:58:44**
+(6.31x, 79 % efficiency); 16 workers exhaust Taichi's host memory pool (4.19).
+A full 48 at 8 workers is therefore **roughly 3.5 to 4 h**, against about 20 h
+serially on the laptop. That is an estimate from those two runs, not a
+measurement of a full 48 at 8.
+
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
 None yet.
