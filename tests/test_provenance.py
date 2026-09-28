@@ -304,19 +304,35 @@ def test_every_committed_report_carries_complete_provenance(repo_root):
 
 
 def test_the_committed_baseline_is_one_comparable_group(repo_root):
+    """One machine, whichever machine it is.
+
+    The machine name is not asserted against a literal. The baseline was first
+    measured on the operator's laptop and then re-measured in full on the lab
+    machine (pull request #12, 2026-09-28), which is a legitimate thing for it
+    to do; a hard-coded host name turned that move into a test failure. The
+    rule is that all 48 agree with each other (plan section 0 rule 10).
+    """
     reports = committed_reports(repo_root)
     assert len(overhang_report.provenance_groups(reports)) == 1
     assert overhang_report.provenance_warning(reports) is None
+
+    machines = {r["provenance"]["machine"] for r in reports}
+    assert len(machines) == 1, f"the baseline mixes machines: {sorted(machines)}"
+    assert isinstance(next(iter(machines)), str)
+
+    # Facts about the code, not the machine: each stage's own default backend
+    # under the stock mix. These stay pinned.
     block = reports[0]["provenance"]
-    assert block["machine"] == "AbdoYasser"
     assert block["ti_arch_setting"] == prov.STOCK_MIX
     assert block["stage_arches"]["order_atoms"] == "x64"
     assert block["stage_arches"]["compute_tool_orientations"] == "cuda"
 
 
 def test_the_committed_summary_states_where_the_numbers_came_from(repo_root):
+    """The summary names the machine the reports themselves say produced them."""
     summary = (repo_root / "reports" / "baseline_overhang.md").read_text(encoding="utf-8")
-    assert "Measured on: machine AbdoYasser, backend stock mix" in summary
+    machine = committed_reports(repo_root)[0]["provenance"]["machine"]
+    assert f"Measured on: machine {machine}, backend stock mix" in summary
 
 
 def test_backfill_covers_every_stage_that_starts_taichi_in_a_run(repo_root):
@@ -465,9 +481,34 @@ def test_older_reports_without_the_fields_are_still_complete(repo_root, no_overr
     assert prov.problems(block) == []
 
 
-def test_the_baseline_ran_one_at_a_time(repo_root):
+def test_every_committed_report_records_its_worker_count(repo_root):
+    """Recorded, not necessarily 1.
+
+    This used to assert ``== 1``, true while `scripts/run_baseline_matrix.ps1`
+    was the only way to produce the matrix. `tools/run_matrix_parallel.py` is
+    not serial, and a baseline made with it holds runs at several worker counts.
+    What matters is that the count is recorded: a run is about 1.4x slower under
+    8-way load, and without it a parallel runtime cannot be told from a serial
+    one.
+    """
     for report in committed_reports(repo_root):
-        assert report["provenance"]["parallel_workers"] == 1, report["part"]
+        workers = report["provenance"].get("parallel_workers")
+        assert isinstance(workers, int) and workers >= 1, report["part"]
+
+
+def test_a_mixed_concurrency_baseline_says_so_in_its_summary(repo_root):
+    """The metrics are unaffected (deterministic on one machine, which is why
+    ``parallel_workers`` is not a comparability field), but the runtime column
+    is not comparable across worker counts, so the summary must say so."""
+    reports = committed_reports(repo_root)
+    counts = {r["provenance"]["parallel_workers"] for r in reports}
+    summary = (repo_root / "reports" / "baseline_overhang.md").read_text(encoding="utf-8")
+    if len(counts) > 1:
+        assert "compare times only between runs made the same way" in summary, (
+            f"the baseline mixes worker counts {sorted(counts)} and the summary does not say so"
+        )
+    else:
+        assert "Not all of these runs had the machine to itself" not in summary
 
 
 def _timed(block, part, slope):
