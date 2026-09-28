@@ -56,11 +56,203 @@ def test_a_job_with_no_estimate_is_scheduled_before_the_known_ones():
     assert first_unknown < last_known or last_known == -1
 
 
-def test_resume_drops_what_is_already_current():
+def test_resume_drops_what_is_already_current(monkeypatch):
+    """Pretending to be the machine that wrote the committed reports.
+
+    This used to read the reports and assume they counted as done, which quietly
+    depended on whose machine ran the test: the committed 48 were measured on the
+    operator's laptop, so the assertion held there and nowhere else. Now that
+    resume compares machines, the test has to say which machine it is.
+    """
+    reports = orep.load_reports(quiet=True)
+    assert reports, "the committed baseline reports are missing"
+    theirs = rmp.report_machine_key(reports[0])
+    assert theirs is not None, "the committed reports should carry provenance"
+    monkeypatch.setattr(rmp, "this_machine_key", lambda: theirs)
+
     everything = rmp.build_jobs(["xs"])
     resumed = rmp.build_jobs(["xs"], resume=True)
     assert len(everything) == 24
     assert len(resumed) < len(everything)
+
+
+def test_resume_keeps_everything_when_another_machine_wrote_the_reports(monkeypatch):
+    """The lab machine's case: the committed reports are the laptop's, so all 24
+    combinations still need running here."""
+    monkeypatch.setattr(rmp, "this_machine_key",
+                        lambda: ("somewhere-else", "stock mix", "1.7.4", "reference"))
+    assert len(rmp.build_jobs(["xs"], resume=True)) == 24
+
+
+# --------------------------------------------------------------------------
+# Resume must know which machine wrote a report
+# --------------------------------------------------------------------------
+
+
+def _provenance(machine, arch="stock mix", taichi="1.7.4", profile="reference"):
+    """A provenance block complete enough for `prov.is_known` to accept it."""
+    return {
+        "source": "pipeline",
+        "machine": machine,
+        "os": "Windows-10",
+        "python": "3.10.21",
+        "taichi": taichi,
+        "ti_arch_setting": arch,
+        "stage_arches": {"order_atoms": "x64"},
+        "machine_profile": profile,
+        "git_commit": "abc123",
+        "code_modified": False,
+        "recorded_utc": "2026-09-27T00:00:00Z",
+        "metrics_version": orep.METRICS_VERSION,
+        "scored": {},
+        "parallel_workers": 8,
+        "taichi_cpu_threads": None,
+    }
+
+
+def _report(part, slope, provenance):
+    return {
+        "part": part,
+        "max_slope_deg": slope,
+        "metrics_version": orep.METRICS_VERSION,
+        "provenance": provenance,
+        "runtime": {"total_s": 100.0, "stages": {}},
+    }
+
+
+def test_resume_skips_a_run_this_machine_already_did(monkeypatch):
+    monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix",
+                                                          "1.7.4", "reference"))
+    monkeypatch.setattr(orep, "load_reports",
+                        lambda quiet=False: [_report("ramp45_xs", 7.0,
+                                                     _provenance("labpc"))])
+    jobs = rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,), resume=True)
+    assert jobs == []
+
+
+def test_resume_re_runs_a_report_from_another_machine(monkeypatch):
+    """The failure this fixes.
+
+    Half the lab machine's 48-run matrix failed, leaving the laptop's committed
+    reports in place. They were current, so `--resume` counted them done and
+    would have run nothing — the 24 that needed re-running were invisible to it.
+    """
+    monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix",
+                                                          "1.7.4", "reference"))
+    monkeypatch.setattr(orep, "load_reports",
+                        lambda quiet=False: [_report("ramp45_xs", 7.0,
+                                                     _provenance("AbdoYasser"))])
+    jobs = rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,), resume=True)
+    assert [(j["part"], j["slope"]) for j in jobs] == [("ramp45_xs", 7.0)]
+
+
+def test_a_renamed_machine_is_still_the_same_machine(monkeypatch):
+    """Case only: `platform.node()` casing varies, the machine does not."""
+    monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix",
+                                                          "1.7.4", "reference"))
+    monkeypatch.setattr(orep, "load_reports",
+                        lambda quiet=False: [_report("ramp45_xs", 7.0,
+                                                     _provenance("LabPC"))])
+    assert rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,),
+                          resume=True) == []
+
+
+def test_resume_re_runs_when_the_backend_was_forced(monkeypatch):
+    """Correction 3.9: a forced backend is a different computation."""
+    monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix",
+                                                          "1.7.4", "reference"))
+    monkeypatch.setattr(orep, "load_reports",
+                        lambda quiet=False: [_report("ramp45_xs", 7.0,
+                                                     _provenance("labpc",
+                                                                 arch="cpu"))])
+    assert len(rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,),
+                              resume=True)) == 1
+
+
+def test_resume_re_runs_a_report_with_no_provenance(monkeypatch):
+    """Unknown is not "mine" — the 48 reports predating P1.7 must not be assumed."""
+    monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix",
+                                                          "1.7.4", "reference"))
+    monkeypatch.setattr(orep, "load_reports",
+                        lambda quiet=False: [_report("ramp45_xs", 7.0, None)])
+    assert len(rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,),
+                              resume=True)) == 1
+
+
+def test_resume_re_runs_a_skip_pipeline_report(monkeypatch):
+    """--skip-pipeline records no origin for the toolpath, so it is not evidence
+    that this machine produced it."""
+    monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix",
+                                                          "1.7.4", "reference"))
+    block = dict(_provenance("labpc"), source="skip-pipeline")
+    monkeypatch.setattr(orep, "load_reports",
+                        lambda quiet=False: [_report("ramp45_xs", 7.0, block)])
+    assert len(rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,),
+                              resume=True)) == 1
+
+
+def test_the_machine_key_matches_how_provenance_builds_it(monkeypatch):
+    """The two must not drift: resume compares a key it builds itself against one
+    `atom.provenance.collect` built."""
+    monkeypatch.delenv("ATOM_TI_ARCH", raising=False)
+    monkeypatch.delenv("ATOM_MACHINE", raising=False)
+    key = rmp.this_machine_key()
+    assert key[1] == rmp.prov.STOCK_MIX
+    assert key[3] == "reference"
+
+    monkeypatch.setenv("ATOM_TI_ARCH", "CPU")
+    monkeypatch.setenv("ATOM_MACHINE", "ours")
+    key = rmp.this_machine_key()
+    assert key[1] == "cpu", "the setting is lower-cased, as collect() does"
+    assert key[3] == "ours"
+
+
+# --------------------------------------------------------------------------
+# Worker count against RAM
+# --------------------------------------------------------------------------
+
+
+def test_the_worker_limit_reproduces_the_observed_failure():
+    """Calibration, not a model: 8 workers worked on 64 GiB and 16 did not."""
+    assert rmp.workers_ram_allows(64.0) == 8
+    assert rmp.workers_ram_allows(64.0) < 16
+
+
+def test_the_worker_limit_scales_with_ram():
+    assert rmp.workers_ram_allows(128.0) == 16
+    assert rmp.workers_ram_allows(16.0) == 2
+
+
+def test_at_least_one_worker_is_always_allowed():
+    assert rmp.workers_ram_allows(1.0) == 1
+
+
+def test_unknown_ram_gives_no_limit(monkeypatch):
+    """A warning must never stop a run just because RAM could not be read."""
+    monkeypatch.setattr(rmp, "total_ram_gib", lambda: None)
+    assert rmp.workers_ram_allows() is None
+
+
+def test_total_ram_is_readable_here():
+    ram = rmp.total_ram_gib()
+    assert ram is None or ram > 0.5
+
+
+def test_the_dry_run_warns_when_workers_exceed_ram(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(rmp, "total_ram_gib", lambda: 64.0)
+    rmp.main(["--sizes", "xs", "--workers", "16", "--dry-run",
+              "--root", str(tmp_path / "w")])
+    out = capsys.readouterr().out
+    assert "WARNING" in out
+    assert "--workers 8" in out
+    assert "1073741824" in out, "the warning should quote the error it prevents"
+
+
+def test_the_dry_run_does_not_warn_within_the_limit(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(rmp, "total_ram_gib", lambda: 64.0)
+    rmp.main(["--sizes", "xs", "--workers", "8", "--dry-run",
+              "--root", str(tmp_path / "w")])
+    assert "WARNING" not in capsys.readouterr().out
 
 
 def test_projection_is_bounded_below_by_the_longest_job():
@@ -613,7 +805,13 @@ def test_dry_run_states_the_projection_as_a_lower_bound(tmp_path, capsys):
     )
 
 
-def test_nothing_to_do_is_reported_rather_than_run(tmp_path, capsys):
+def test_nothing_to_do_is_reported_rather_than_run(tmp_path, capsys, monkeypatch):
+    """As the machine that wrote the committed reports — see the note above."""
+    reports = orep.load_reports(quiet=True)
+    assert reports, "the committed baseline reports are missing"
+    monkeypatch.setattr(rmp, "this_machine_key",
+                        lambda: rmp.report_machine_key(reports[0]))
+
     code = rmp.main(["--sizes", "xs", "--resume", "--dry-run",
                      "--root", str(tmp_path / "w")])
     assert code == 0

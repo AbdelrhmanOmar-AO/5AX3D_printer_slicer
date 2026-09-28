@@ -57,6 +57,7 @@ import argparse
 import csv
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -151,6 +152,48 @@ DATA_OUTPUTS = (
 # --------------------------------------------------------------------------
 
 
+#: The comparability fields (`atom.provenance.COMPARABILITY_FIELDS`) that can be
+#: known *before* a run. `stage_arches` cannot: which backend each of the 14
+#: stages actually started on is only recorded once they have run. So resume
+#: compares on the rest, which is enough to tell one machine from another.
+RESUME_MATCH_FIELDS = ("machine", "ti_arch_setting", "taichi", "machine_profile")
+
+
+def this_machine_key():
+    """What a run started here, now, would record for `RESUME_MATCH_FIELDS`.
+
+    Built the same way `atom.provenance.collect` builds those fields, so the two
+    cannot drift apart silently.
+    """
+    machine = platform.node() or None
+    return (
+        machine.lower() if isinstance(machine, str) else None,
+        os.environ.get("ATOM_TI_ARCH", "").strip().lower() or prov.STOCK_MIX,
+        prov.taichi_version(),
+        os.environ.get("ATOM_MACHINE", "").strip() or "reference",
+    )
+
+
+def report_machine_key(report):
+    """The same key, read out of a report, or None when it cannot be compared.
+
+    None for a report with no provenance, an incomplete block, or one written by
+    `--skip-pipeline`, where the toolpath's origin is unknown. None never equals
+    `this_machine_key()`, so such a report counts as **not from here** and its
+    combination is re-run rather than skipped.
+    """
+    block = (report or {}).get("provenance")
+    if not prov.is_known(block):
+        return None
+    machine = block.get("machine")
+    return (
+        machine.lower() if isinstance(machine, str) else None,
+        block.get("ti_arch_setting"),
+        block.get("taichi"),
+        block.get("machine_profile"),
+    )
+
+
 def build_jobs(sizes, parts=orep.MATRIX_PARTS, slopes=orep.MATRIX_SLOPES,
                resume=False):
     """Every (part, slope) to run, in longest-first order.
@@ -173,10 +216,12 @@ def build_jobs(sizes, parts=orep.MATRIX_PARTS, slopes=orep.MATRIX_SLOPES,
 
     current = set()
     if resume:
+        mine = this_machine_key()
         current = {
             (r["part"], r["max_slope_deg"])
             for r in orep.load_reports(quiet=True)
             if r.get("metrics_version") == orep.METRICS_VERSION
+            and report_machine_key(r) == mine
         }
 
     jobs = []
@@ -287,6 +332,79 @@ def tree_megabytes():
         if source.is_file():
             total += source.stat().st_size
     return total / 1e6
+
+
+#: RAM per worker, **calibrated from two observations rather than modelled.**
+#:
+#: On the 64 GiB lab machine, 16 workers failed 24 of 48 runs with
+#:
+#:     [host_memory_pool.cpp] Virtual memory allocation (1073741824 B) failed
+#:
+#: while 8 workers completed 24 of 24. 8 GiB per worker reproduces that: 64 / 8
+#: is exactly the count that worked.
+#:
+#: **A memory model gave the wrong answer here, so there is not one.** Counting
+#: Taichi's reservations alone — 1 GiB per process, and a worker runs two at once
+#: (`atomize.py` plus its current stage) — suggests 2 GiB per worker and would
+#: have permitted 26. The gap is everything that is not Taichi's reservation:
+#: Blender during stage 1, the SDF and toolpath arrays a large part actually
+#: needs, two Python interpreters, and on Windows a commit limit set by RAM plus
+#: whatever the pagefile allows. None of those are knowable here.
+#:
+#: So this is a floor from one machine, not a law. A machine with a generous
+#: pagefile may take more; `xs`-only runs certainly can. It exists to turn a
+#: 24-run failure into a warning, and `--workers` still overrides it.
+#:
+#: Taichi 1.7.4 offers no setting for that pool — `device_memory_GB` is the GPU
+#: side — so worker count is the only lever. `docs/plan_corrections.md` 4.19.
+GIB_PER_WORKER = 8.0
+
+
+def total_ram_gib():
+    """Physical RAM in GiB, or None where it cannot be read.
+
+    No psutil dependency: this is a warning, and a missing figure must not stop
+    a run.
+    """
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class Status(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = Status()
+            status.dwLength = ctypes.sizeof(Status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return status.ullTotalPhys / 1024**3
+        else:
+            pages = os.sysconf("SC_PHYS_PAGES")
+            size = os.sysconf("SC_PAGE_SIZE")
+            return pages * size / 1024**3
+    except Exception:
+        pass
+    return None
+
+
+def workers_ram_allows(ram_gib=None):
+    """Workers this machine's RAM is known to support, or None if RAM is unknown.
+
+    `GIB_PER_WORKER` explains why this is a calibration and not a calculation.
+    """
+    ram = total_ram_gib() if ram_gib is None else ram_gib
+    if not ram:
+        return None
+    return max(1, int(ram // GIB_PER_WORKER))
 
 
 def create_worker(root, index, overwrite=False):
@@ -614,6 +732,25 @@ def main(argv=None):
                   "are added)")
     else:
         print("No previous runtimes, so no estimate. The first run will supply them.")
+    safe = workers_ram_allows()
+    ram = total_ram_gib()
+    if safe is not None and workers_wanted > safe:
+        print()
+        print(f"WARNING: {workers_wanted} workers may exceed what this machine's "
+              f"RAM can commit.")
+        print(f"   RAM is {ram:.0f} GiB, and {GIB_PER_WORKER:g} GiB per worker "
+              f"allows about {safe}.")
+        print("   16 workers on a 64 GiB machine failed 24 of 48 runs with "
+              "'Virtual memory allocation (1073741824 B) failed'; 8 completed "
+              "24 of 24 (plan_corrections 4.19).")
+        print(f"   Consider --workers {safe}. This is calibrated from that one "
+              "machine, not a memory model, so it may be pessimistic for "
+              "xs-only runs.")
+        print()
+    elif ram is not None:
+        print(f"RAM: {ram:.0f} GiB, within the {safe} workers calibrated at "
+              f"{GIB_PER_WORKER:g} GiB each")
+
     print(f"Worker trees: {args.root}")
     print(f"Disk: {workers_wanted} x {tree_megabytes():.0f} MB of worker copies, "
           "plus each worker's stage outputs (`data/sdf`, `data/toolpath` and the "
