@@ -195,7 +195,7 @@ verified on both machines** (below).
 | P4.4 Safe travel | **Not needed**: the lab baseline shows no travel problem beyond hairline grazes (P4-8). |
 | Viewer wiring | **Done, checked on the laptop** 2026-09-28: colour mode "Collisions (P4)", red bed in the machine view, collision rows in the card. |
 | P4-4 fix (platform frame) | **Done**, vendored edit to `kinematics3z.get_plaftorm_size`; golden test passed on the laptop after it. |
-| P4-7 fix (extrusion limit) | **Done** 2026-09-28, P1's file with the operator's decision: the validator's extrusion limit is now per mm of travel (0.5 mm of filament per mm, `--max-e-per-mm`); retracts and primes keep the 5 mm cap. **Needs** the laptop's `pytest --run-pipeline tests/test_golden.py` once (the golden G-code must still validate). |
+| P4-7 fix (extrusion limit) | **Done** 2026-09-28, P1's file with the operator's decision: the validator's extrusion limit is now per mm of travel (0.5 mm of filament per mm, `--max-e-per-mm`); retracts and primes keep the 5 mm cap. In `main` via #16; golden test passed on the laptop after it. |
 
 Tool: `python tools/check_motion_safety.py <toolpath .npz, directory or "pattern">`
 runs both checks (`README.md`, "Check a toolpath for collisions").
@@ -206,6 +206,7 @@ runs both checks (`README.md`, "Check a toolpath for collisions").
 |---|---|---|
 | Laptop | `python -m pytest` | **836 passed, 8 skipped** |
 | Laptop | `pytest --run-pipeline tests/test_golden.py` after the P4-4 vendored edit | **5 passed, 1 skipped** (the forced-backend test, as expected) in 466 s: golden G-code unchanged |
+| Laptop | `pytest --run-pipeline tests/test_golden.py` after the P4-7 per-mm extrusion limit (#16) | **5 passed, 1 skipped** (the forced-backend test, as expected) in 464 s: the golden G-code still validates clean |
 | Laptop | Viewer, "Collisions (P4)" and machine view on `ramp60_s_ms30` | Looks right (operator) |
 | Lab machine | Both checks on the 48 baseline toolpaths, about 15 min | **43 of 48 clear**; the other 5 below |
 
