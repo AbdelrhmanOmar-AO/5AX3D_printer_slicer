@@ -405,8 +405,9 @@ It checks:
 - the bed tilt implied by the three screws stays within the tilt limit;
 - no value is `nan` or infinite;
 - every feed rate (F) is above zero, and below `--max-feed` if you give one;
-- no single move pushes out more than 5 mm of filament (`--max-e` changes
-  that), and retracts and primes balance;
+- no printing move pushes out more than 0.5 mm of filament per mm of travel
+  (`--max-e-per-mm` changes that), no retract or prime is more than 5 mm
+  (`--max-e`), and retracts and primes balance;
 - the header and footer are there, with the 3Z enable and disable macros
   around the moves.
 

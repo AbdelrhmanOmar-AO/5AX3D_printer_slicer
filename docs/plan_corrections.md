@@ -1744,6 +1744,29 @@ raise the default, scale it with the move's length (a limit per mm of travel
 rather than per move), or have `add_platform` split long lines. Not changed
 here.
 
+**Resolved 2026-09-28, the operator's call: a limit per mm of travel.** In
+relative mode an extruding move (one with an axis word and E > 0) may push
+out at most `max_e_per_mm` mm of filament per mm of machine travel,
+sqrt(dX^2 + dY^2 + dZ^2 + dU^2 + dV^2) (`gcode_check.DEFAULT_MAX_E_PER_MM`
+= 0.5, `--max-e-per-mm`). Measured before choosing:
+
+| E per mm of travel | Golden cube | 30-degree G-code with a platform (`ramp60_xs`, max tilt 29.4) |
+|---|---|---|
+| Tip distance (what `calculate_extrusion` uses; needs forward kinematics) | 0.1684 | median 0.1684, max 0.1684 |
+| 5-axis machine distance (read from the words alone; chosen) | 0.1684 | median 0.1376, p99.9 0.1770, max 0.1779 |
+| XY plus mean screw distance | | median 0.1548, max 1.1304 (not usable) |
+
+The machine distance keeps the validator numpy only and needs no kinematics.
+It differs from the tip distance only when the bed tilts during a move, and
+by at most 6 percent at the 30-degree limit. 0.5 is three times the nominal
+0.9 x 0.45 mm bead on 1.75 mm filament (0.168): it leaves room for wider
+beads (0.5 mm per mm is a 1.2 mm^2 bead cross-section) and still catches a
+blob, which the old limit let through on any move short enough. A move whose
+axis words go nowhere is zero travel, so any E on it is rejected. An E with
+no axis word (a retract or a prime) has no travel and keeps the absolute
+limit, `max_e_mm` = 5 mm (`--max-e`). The same `ramp60_xs` G-code now
+validates clean; the golden cube and every fixture still pass.
+
 #### P4-8 The lab baseline under both checks: 43 of 48 clear, the rest lift or hairline grazes (result)
 
 Run 2026-09-28 on the lab machine (`cad-p07-2065-9`), `tools/check_motion_safety.py`
