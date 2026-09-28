@@ -8,7 +8,7 @@
   "mesh": {
     "volume_mm3": 29094.779062271118,
     "face_count": 20,
-    "sampled_face_count": 69632,
+    "sampled_face_count": 50176,
     "extents_mm": [
       50.0,
       22.5,
@@ -16,31 +16,31 @@
     ]
   },
   "toolpath": {
-    "point_count": 147848,
-    "deposition_count": 101672
+    "point_count": 145265,
+    "deposition_count": 101655
   },
   "runtime": {
-    "total_s": 2568.0449412000016,
+    "total_s": 3806.4416493999306,
     "stages": {
-      "Direction computation": 8.6,
-      "Implicit layer computation": 10.0,
-      "Tangent computation": 15.2,
-      "Atoms alignment": 28.7,
-      "Extracting explicit atoms": 1.4,
-      "Toolpath planner": 2381.6
+      "Direction computation": 53.7,
+      "Implicit layer computation": 60.4,
+      "Tangent computation": 51.3,
+      "Atoms alignment": 171.9,
+      "Extracting explicit atoms": 3.5,
+      "Toolpath planner": 3169.2
     }
   },
   "metrics": {
     "max_tool_tilt_deg": 0.6898379537527943,
-    "unsupported_fraction_overall": 0.006343929498780392,
-    "unsupported_fraction_near_overhangs": 0.04593548387096774,
-    "deposition_points_near_overhangs": 3875,
+    "unsupported_fraction_overall": 0.006285967242142541,
+    "unsupported_fraction_near_overhangs": 0.042853477033615604,
+    "deposition_points_near_overhangs": 3897,
     "surfaces": [
       {
         "geometric_angle_deg": 50.0,
         "area_mm2": 440.5749598335117,
-        "face_count": 8192,
-        "sample_count": 33189,
+        "face_count": 4096,
+        "sample_count": 17117,
         "max_effective_deg": 50.000000048995716,
         "mean_effective_deg": 50.00000004899572,
         "max_tilt_used_deg": 0.0
@@ -49,6 +49,7 @@
   },
   "verdict": {
     "printable": false,
+    "assessable": true,
     "worst_effective_deg": 50.000000048995716,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
@@ -57,9 +58,9 @@
     }
   },
   "provenance": {
-    "source": "backfilled",
-    "machine": "AbdoYasser",
-    "os": "Windows-10-10.0.26200-SP0",
+    "source": "pipeline",
+    "machine": "cad-p07-2065-9",
+    "os": "Windows-10-10.0.26100-SP0",
     "python": "3.10.21",
     "taichi": "1.7.4",
     "ti_arch_setting": "stock mix",
@@ -80,19 +81,18 @@
       "toolpath_to_gcode": "cuda"
     },
     "machine_profile": "reference",
-    "git_commit": null,
-    "code_modified": null,
-    "recorded_utc": null,
+    "git_commit": "fadcab359fb41539a80f43c4301fa7957daf8665",
+    "code_modified": false,
+    "recorded_utc": "2026-09-28T07:26:32+00:00",
     "metrics_version": 2,
     "scored": {
-      "machine": "AbdoYasser",
-      "git_commit": null,
-      "code_modified": null,
-      "utc": null,
+      "machine": "cad-p07-2065-9",
+      "git_commit": "fadcab359fb41539a80f43c4301fa7957daf8665",
+      "code_modified": false,
+      "utc": "2026-09-28T07:26:32+00:00",
       "metrics_version": 2
     },
-    "parallel_workers": 1,
-    "taichi_cpu_threads": null,
-    "_note": "Backfilled 2026-09-23 (build plan P1.7) from docs/handoff.md and the operator. stage_arches is inferred from each stage's default backend, not recorded at run time; the first run after P1.7 on the same laptop recorded identical values. The commit and finishing time were not recorded and are left as null."
+    "parallel_workers": 8,
+    "taichi_cpu_threads": null
   }
 }

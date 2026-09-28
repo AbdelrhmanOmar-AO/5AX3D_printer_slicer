@@ -8,7 +8,7 @@
   "mesh": {
     "volume_mm3": 17693.43151370542,
     "face_count": 6828,
-    "sampled_face_count": 128256,
+    "sampled_face_count": 49800,
     "extents_mm": [
       50.0,
       22.5,
@@ -16,29 +16,30 @@
     ]
   },
   "toolpath": {
-    "point_count": 95936,
-    "deposition_count": 64701
+    "point_count": 96216,
+    "deposition_count": 64694
   },
   "runtime": {
-    "total_s": 2464.2573867000006,
+    "total_s": 2888.3233241001144,
     "stages": {
-      "Direction computation": 11.5,
-      "Implicit layer computation": 13.5,
-      "Tangent computation": 19.8,
-      "Atoms alignment": 37.8,
-      "Extracting explicit atoms": 1.8,
-      "Toolpath planner": 2266.6
+      "Direction computation": 52.6,
+      "Implicit layer computation": 60.1,
+      "Tangent computation": 51.2,
+      "Atoms alignment": 169.0,
+      "Extracting explicit atoms": 3.3,
+      "Toolpath planner": 2286.8
     }
   },
   "metrics": {
     "max_tool_tilt_deg": 8.651560711260542,
-    "unsupported_fraction_overall": 0.0020246982272298726,
+    "unsupported_fraction_overall": 0.0022258632948959716,
     "unsupported_fraction_near_overhangs": NaN,
     "deposition_points_near_overhangs": 0,
     "surfaces": []
   },
   "verdict": {
     "printable": false,
+    "assessable": false,
     "worst_effective_deg": NaN,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
@@ -47,9 +48,9 @@
     }
   },
   "provenance": {
-    "source": "backfilled",
-    "machine": "AbdoYasser",
-    "os": "Windows-10-10.0.26200-SP0",
+    "source": "pipeline",
+    "machine": "cad-p07-2065-9",
+    "os": "Windows-10-10.0.26100-SP0",
     "python": "3.10.21",
     "taichi": "1.7.4",
     "ti_arch_setting": "stock mix",
@@ -70,19 +71,18 @@
       "toolpath_to_gcode": "cuda"
     },
     "machine_profile": "reference",
-    "git_commit": null,
-    "code_modified": null,
-    "recorded_utc": null,
+    "git_commit": "fadcab359fb41539a80f43c4301fa7957daf8665",
+    "code_modified": false,
+    "recorded_utc": "2026-09-28T08:26:57+00:00",
     "metrics_version": 2,
     "scored": {
-      "machine": "AbdoYasser",
-      "git_commit": null,
-      "code_modified": null,
-      "utc": null,
+      "machine": "cad-p07-2065-9",
+      "git_commit": "fadcab359fb41539a80f43c4301fa7957daf8665",
+      "code_modified": false,
+      "utc": "2026-09-28T08:26:57+00:00",
       "metrics_version": 2
     },
-    "parallel_workers": 1,
-    "taichi_cpu_threads": null,
-    "_note": "Backfilled 2026-09-23 (build plan P1.7) from docs/handoff.md and the operator. stage_arches is inferred from each stage's default backend, not recorded at run time; the first run after P1.7 on the same laptop recorded identical values. The commit and finishing time were not recorded and are left as null."
+    "parallel_workers": 8,
+    "taichi_cpu_threads": null
   }
 }
