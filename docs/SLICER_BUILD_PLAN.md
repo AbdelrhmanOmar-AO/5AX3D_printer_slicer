@@ -1,6 +1,8 @@
 # 5-Axis Slicer — Detailed Build Plan (for Claude Code)
 
-> **Version:** v3.3 · 2026-09-23 · **P0 closed; P5.4 built early; next phase is P1 + P2.** The 48-run baseline finished at metrics v2 and settled both questions v3.2 left open: stock Atomizer's support-free limit is **45°**, and its tilt points almost exactly away from overhangs (`θ_eff = θ_geo + tilt_used`, r = 0.992). The viewer (P5.4a/b + a Qt window) was built while the matrix ran. New corrections folded in: the kinematics realise a requested direction only to ~0.14°, and the golden hash is valid only on the backend mix that captured it. Source: `docs/plan_corrections.md`, `docs/handoff.md` and `reports/baseline_overhang.md` at commit `a003735d`. Changes in Appendix G.
+> **Version:** v3.4 · 2026-09-28 · **The lab machine is the reference for overhang results.** The operator adopted the lab machine's full re-run of the 48-run baseline (`cad-p07-2065-9`, pull request #12) as the committed baseline: every comparison against it, P2.5 included, now runs there with `tools/run_matrix_parallel.py`. The golden test stays on the laptop. The two machines agree on every P0.8 conclusion (0 verdict changes in 48), and the laptop's serial set is kept in `reports/baseline_overhang_laptop/` for its timings. P1 is done except P1.5 (gate E1). Changes in Appendix H.
+>
+> *Previous:* v3.3 · 2026-09-23 · **P0 closed; P5.4 built early; next phase is P1 + P2.** The 48-run baseline finished at metrics v2 and settled both questions v3.2 left open: stock Atomizer's support-free limit is **45°**, and its tilt points almost exactly away from overhangs (`θ_eff = θ_geo + tilt_used`, r = 0.992). The viewer (P5.4a/b + a Qt window) was built while the matrix ran. New corrections folded in: the kinematics realise a requested direction only to ~0.14°, and the golden hash is valid only on the backend mix that captured it. Source: `docs/plan_corrections.md`, `docs/handoff.md` and `reports/baseline_overhang.md` at commit `a003735d`. Changes in Appendix G.
 > **Audience:** Claude Code, working in the team's fork of Atomizer on GitHub. A human teammate (the "operator") reviews each task's commit and runs anything that needs the GPU laptop or the printer.
 > **Companion doc:** "5-Axis Slicer: Revised Build Plan" (Claude Doc) holds the high-level view: phase outcomes, inputs, dependencies and testing strategy. This file holds the task-level instructions.
 
@@ -24,7 +26,7 @@ v3 makes the field **overhang-aware** (tilt toward overhangs, ramped in early en
 7. **Record every contradiction or deliberate deviation in `docs/plan_corrections.md`**, the living corrections log. Mark items that need a plan change as **PLAN EDIT**. The operator folds those into the next plan version.
 8. Read §0.4 (standing hazards) before writing any Taichi kernel, G-code parser, machine constant or "is it committed?" check. Every item there was hit for real in P0.
 9. **Known-answer check before any long run and before any number goes in a table.** Run `python tools/overhang_report.py data/param/ramp45_xs.json --max-slope 7` (~7 min). It must report about **0.24 % unsupported** and **printable: True**: a 45° overhang is one any 3-axis printer manages. If it moves, something regressed; stop and find out why before the long run. Also chase any figure that **does not move** when the thing it depends on changed. Both habits caught real metric flaws in P0.8 (plan_corrections 3.7, 4.6).
-10. **Record the backend and machine beside every reported number**, and never pool runs from different backends or machines. Forcing the stages onto one backend changes the toolpath structurally, not just its last digits (plan_corrections 3.9): +2.4 % G1 moves, three fewer deposition runs on the golden cube. A stock run measured on one machine and an overhang-aware run on another would credit the difference to the contribution.
+10. **Record the backend and machine beside every reported number**, and never pool runs from different backends or machines. Forcing the stages onto one backend changes the toolpath structurally, not just its last digits (plan_corrections 3.9): +2.4 % G1 moves, three fewer deposition runs on the golden cube. A stock run measured on one machine and an overhang-aware run on another would credit the difference to the contribution. **The reference machine for overhang results is the lab machine `cad-p07-2065-9`** (since v3.4, plan_corrections P1-16): the committed baseline was measured there, so every run compared with it is too. The golden test is the exception and stays on the laptop, whose backend mix captured its hash.
 11. **Version any metric whose meaning changes**, separately from the file layout (`metrics_version`, plan_corrections 4.7), so a resumed or partially re-run matrix can tell current results from stale ones.
 
 ### 0.1 Branch and commit protocol (as adopted in P0)
@@ -60,14 +62,14 @@ P?.? — <title>
 |---|---|---|---|
 | `unit` (default) | Anywhere, CPU only, each test < 2 s | Claude Code, CI | Pure Python/numpy logic, small Taichi kernels on `ti.cpu` |
 | `pipeline` | Operator's laptop (RTX 3050, CUDA) | Operator, on request in the task report | Runs real Atomizer stages on small meshes (calibration cube, box) |
-| `benchmark` | Operator's laptop | Operator, at phase exits | Full runs on T-shape / twin domes (may take long) |
+| `benchmark` | **Lab machine** (`cad-p07-2065-9`, 2 × Xeon Gold 6254, RTX A6000) via `tools/run_matrix_parallel.py` | Operator, at phase exits | The overhang matrix and anything compared with the committed baseline (§0 rule 10) |
 | `hw` | The printer | Operator + team | Manual checklists in §P7/§P8, not pytest |
 
 - `pipeline` and `benchmark` tests are **skipped unless** `pytest --run-pipeline` / `--run-benchmark` is passed (implemented in P0.3).
 - Claude Code must never mark a phase complete based only on `unit` tests when the phase's exit criteria list a `pipeline` or `benchmark` test: it asks for a laptop run and waits for the result.
 - The operator's laptop is Windows. Give laptop commands for **PowerShell**, run inside the conda env `atomizer` (e.g. `conda run --name atomizer --no-capture-output python ...`).
 
-**Compute budget (measured in P0.8, `docs/handoff.md` §7b).** Pipeline runs are **CPU-bound**: `order_atoms` runs on `ti.cpu`, takes **86 %** of stage time on the calibration cube, and was not faster on CUDA. Its cost grows as **points^1.5**, not linearly (mean exponent 1.50, range 1.39–1.61 over 24 part/slope pairs), so estimates that assumed linear scaling were about 2× too low. The first baseline (48 runs: 8 parts × 3 slopes × sizes `xs` + `s`) took **19.9 h**. Plan laptop work in these tiers:
+**Compute budget (measured in P0.8, `docs/handoff.md` §7b).** Pipeline runs are **CPU-bound**: `order_atoms` runs on `ti.cpu`, takes **86 %** of stage time on the calibration cube, and was not faster on CUDA. Its cost grows as **points^1.5**, not linearly (mean exponent 1.50, range 1.39–1.61 over 24 part/slope pairs), so estimates that assumed linear scaling were about 2× too low. The first baseline (48 runs: 8 parts × 3 slopes × sizes `xs` + `s`) took **19.9 h** serially on the laptop. The matrix tiers now run on the **lab machine**, eight at a time (v3.4); the laptop figures are kept because they are the only serial timings. Plan work in these tiers:
 
 | Tier | What | Time | Use it for |
 |---|---|---|---|
@@ -75,13 +77,15 @@ P?.? — <title>
 | Re-score | `tools/overhang_report.py --reanalyse` on archived toolpaths (`reports/toolpaths/`, gitignored, ~220 MB per matrix) | seconds | **any change to a metric**: never re-run the pipeline for that |
 | Known-answer | `ramp45_xs` at `max_slope 7` (§0 rule 9) | ~7 min | before every long run |
 | Field-only | pipeline up to `extract_explicit_atoms`, skipping `order_atoms` (P2.0) | a fraction of a full run | iterating on the orientation field (P2) |
-| Golden | `pytest --run-pipeline tests/test_golden.py` | ~7.5 min | after every vendored edit |
-| Matrix `xs` | 24 runs at 30 mm, 6–10 min per run | **~2.8 h (measured)** | quick full comparisons |
-| Matrix `s` | 24 runs at 50 mm, 30–88 min per run | **~17 h (measured)** | gate decisions (D0, D2) |
-| Matrix `m` | 24 runs at 75 mm, ~4.4 h per run | ~105 h (4 days) | avoid; only if a gate truly needs it |
+| Golden | `pytest --run-pipeline tests/test_golden.py`, **laptop only** | ~7.5–11 min | after every vendored edit |
+| Matrix `xs`, lab, 8 workers | 24 runs at 30 mm | **0:50:31 (measured, 2026-09-24)** | quick full comparisons |
+| Matrix `xs` + `s`, lab, 8 workers | the full 48 | **~3.5–4 h (estimate)** from the two lab runs: `xs` above, and 24 mostly-`s` runs in 2:58:44 (6.31×, 79 % efficiency) | gate decisions (D0, D2); **16 workers fail** (Taichi's host memory pool, correction 4.19) |
+| Matrix `xs`, laptop, serial | 24 runs at 30 mm, 6–10 min per run | ~2.8 h (measured) | timing only |
+| Matrix `s`, laptop, serial | 24 runs at 50 mm, 30–88 min per run | ~17 h (measured) | timing only |
+| Matrix `m` | 24 runs at 75 mm, ~4.4 h per run (laptop, serial) | ~105 h (4 days) serially; not measured on the lab machine | avoid; only if a gate truly needs it |
 | Size `l` | 100 mm, ~16 h per run | ~384 h per matrix: **out of reach** | single showcase parts and printed benchmarks only |
 
-Both matrix figures are measured (`reports/baseline_overhang.md`, runtime table). A matrix is resumable: `-Resume` skips only results at the current `metrics_version`, and each run appends to `reports/matrix_progress.csv`. Changing a metric costs `--reanalyse` (seconds), not a re-run. **Runs on another machine (e.g. university CPU machines) are a different computation** and belong in their own group (§0 rule 10). Always state the tier and expected time when asking for a laptop run.
+The laptop figures are measured (`reports/baseline_overhang_laptop/summary.md`, runtime table); the lab ones are in `docs/handoff.md` §3 and pull request #12. **Do not take timings from the lab set's runtime column**: it mixes 16, 8 and 1 workers, and a run is about 1.4× slower under 8-way load. A matrix is resumable: `run_matrix_parallel.py --resume` skips only results at the current `metrics_version` **measured on this machine** (correction 4.20), and each run appends to `reports/matrix_progress.csv`. Changing a metric costs `--reanalyse` (seconds), not a re-run. **Runs on another machine are a different computation** and belong in their own group (§0 rule 10); lab results enter the repository only as a complete single-machine set, on a branch, through a pull request. Always state the tier, the machine and the expected time when asking for a run.
 
 ### 0.3 Definition of Done (every task)
 
@@ -167,7 +171,7 @@ Checked against `xavierchermain/atomizer` `main` on 2026-09-19 and corrected aga
 | **HW** | External | Printer assembled and wired | Mech + Elec | P7, P8 |
 | **D0** | Team decision | **Tilt budget and benchmark geometry.** Inputs: P0.8 (**complete**: support-free limit 45°, `θ_eff = θ_geo + tilt_used`), P2.1's analytic bound (45° + usable tilt), and M2. Decide: the overhang angles the benchmarks target (e.g. give the T-shape crossbar an angled underside if usable tilt < 45°), and whether to ask mechanical for more tilt. Taken end of week ~2, re-checked after P2.5 and when M2 arrives. | Team | P2.5 targets, P5.3, P8 |
 | **D1** | Team decision | `max_overhang_deg` (placeholder 45°) and priority when a cell is both a top surface and near an overhang | Team | P2.2 tuning |
-| **D2** | Team decision | **Plan B trigger.** If by end of week ~5 the overhang-aware field does not pass P2.5 on `ramp60_s`/`ramp70_s` (within the tilt budget), choose (note: each full `s` matrix costs ~17 h, so book the D2 run at least two days before the decision): keep iterating, fall back to the v2.1 pose design (Appendix D), or accept stock Atomizer + reduced scope | Team | P3–P5 scope |
+| **D2** | Team decision | **Plan B trigger.** If by end of week ~5 the overhang-aware field does not pass P2.5 on `ramp60_s`/`ramp70_s` (within the tilt budget), choose (note: a full matrix costs ~3.5–4 h on the lab machine at 8 workers, ~17 h for `s` alone serially on the laptop; book the D2 run at least a day before the decision): keep iterating, fall back to the v2.1 pose design (Appendix D), or accept stock Atomizer + reduced scope | Team | P3–P5 scope |
 | **D3** | Team decision (tuned on HW) | Max tilt rate (deg per mm of travel, deg/s) and tilt acceleration, balancing adhesion/part swing against speed | Team | P7.4 tuning (code uses parameters with defaults) |
 
 Rule: for D-gates, code takes the value as a **parameter** with a placeholder default, and the default is marked `# GATE D?: placeholder, team decision pending` in code and `"_gate": "D?"` in JSON examples.
@@ -198,7 +202,7 @@ Gated side track                  P6 (our machine + firmware, whenever M1/M2/M3/
 | P7 Hardware bring-up | Dry runs, calibration, first continuous-tilt prints | P5, P6, HW | — | 2 wk |
 | P8 Validation benchmarks | Thesis results: overhang-aware vs stock Atomizer vs planar, on ramps, T-shape, twin domes (+ infill) | P7 | — | 1 wk |
 
-**Critical path:** P0 → P2 → P5 → P7 → P8 ≈ 9 weeks from P0 start; P0 is closed (2026-09-23) and P5.4 is already built, so the next work is P1 + P4 in parallel, with P2 starting once D0 is recorded. **Compute is now a scheduling constraint:** every full matrix at size `s` costs ~17 h (a full day) of laptop time, so P2 iterates in the field-only tier (P2.0) and only gate decisions use full matrices. P3 and P4 run beside P2: P3 starts with stock Atomizer at `max_slope = 30` (already steep fields) and switches to P2 fields as they land.
+**Critical path:** P0 → P2 → P5 → P7 → P8 ≈ 9 weeks from P0 start; P0 is closed (2026-09-23) and P5.4 is already built, so the next work is P1 + P4 in parallel, with P2 starting once D0 is recorded. **Compute is still a scheduling constraint, but a smaller one:** a full matrix costs ~3.5–4 h on the lab machine at 8 workers (v3.4), against ~17 h for size `s` alone on the laptop, so P2 still iterates in the field-only tier (P2.0) and uses full matrices only for gate decisions. P3 and P4 run beside P2: P3 starts with stock Atomizer at `max_slope = 30` (already steep fields) and switches to P2 fields as they land.
 **Main risk:** P2 is research. It edits Atomizer's orientation-field internals and has no reference implementation. Gate D2 (week ~5) decides whether to continue, fall back to poses (Plan B), or cut scope.
 **Real bottleneck:** one operator reviews every commit and does every laptop run. Run **at most two Claude Code sessions at a time**. Lane B needs the most laptop runs; pair it with Lane C (mostly CPU/synthetic).
 
@@ -246,6 +250,8 @@ This sets up P2 precisely: the mechanism is **sign-wrong**, not subtly wrong, an
 **P0.9a (verify the tilt direction) — closed.** The r = 0.992 fit over 18 runs, plus the viewer's machine view, confirm the direction; no sign or azimuth mix-up survives that relation. **P0.9b (no-overhang verdict) — closed:** reports carry `verdict.assessable`, the summary prints "– no overhang", and unassessable parts no longer count against the conclusion.
 
 **Runtime, measured:** `order_atoms` dominates as expected; per-run times are in the report's runtime table (size `xs` 6–10 min, size `s` 30–88 min). The points^1.5 scaling from v3.2 stands.
+
+**Re-measured on the lab machine (v3.4, pull request #12).** The table above is the laptop's, now kept in `reports/baseline_overhang_laptop/`. The committed baseline in `reports/baseline_overhang/` is a full re-run on the lab machine (`cad-p07-2065-9`), and it agrees: **0 verdict changes in 48**, worst effective overhang within 0.008°, tilt used within 0.21°. Only the unsupported fraction near overhangs moves, by +0.5 to +1.3 points on 7 cells and under half a point on 25 more; the closest cell to the 1 % threshold keeps 0.76 points of margin. Both results therefore hold on two machines, CPUs and GPUs. P2.5 compares against the lab set.
 
 ### Next action
 
@@ -362,8 +368,8 @@ This sets up P2 precisely: the mechanism is **sign-wrong**, not subtly wrong, an
 - **Tests:** `unit`: ramp length maths, capped case. `pipeline`: on `ramp60_xs`, the tilt measured from the toolpath at the first overhang layer is ≥ `t − 2°`.
 
 ### P2.5 Evaluation against the P0.8 baseline ★ feeds D2
-- **Steps:** iterate in the field-only tier (P2.0) on `xs` parts. Run the known-answer check (§0 rule 9) before each full run. For the D2 decision, re-run the **full** P0.8 matrix at the same size as the baseline (default `s`, ~17 h) with `overhang_aware` on, `max_slope` = machine limit, via `scripts/run_baseline_matrix.ps1` (add an `-OverhangAware` switch). Add columns to `reports/baseline_overhang.md` so stock and overhang-aware sit side by side. Also report top-surface quality: fraction of ceiling cells whose final direction is within 2° of their target (stock vs new), and the max tilt rate along the toolpath.
-- **Same machine, same backend:** the comparison run must be measured on the machine and backend that produced the baseline (§0 rule 10), and its reports must carry provenance (P1.7).
+- **Steps:** iterate in the field-only tier (P2.0) on `xs` parts. Run the known-answer check (§0 rule 9) before each full run. For the D2 decision, re-run the **full** P0.8 matrix (`xs` + `s`, as the baseline) with `overhang_aware` on, `max_slope` = machine limit, **on the lab machine `cad-p07-2065-9` with the stock backend mix, via `tools/run_matrix_parallel.py` at 8 workers** (~3.5–4 h; add an `--overhang-aware` option). Not `scripts/run_baseline_matrix.ps1`: that is the laptop's serial runner, and the baseline is no longer the laptop's (v3.4). Add columns to `reports/baseline_overhang.md` so stock and overhang-aware sit side by side. Also report top-surface quality: fraction of ceiling cells whose final direction is within 2° of their target (stock vs new), and the max tilt rate along the toolpath.
+- **Same machine, same backend:** the comparison run must be measured on the machine and backend that produced the baseline (§0 rule 10), which since v3.4 is the lab machine, and its reports must carry provenance (P1.7); `--summarize` must show stock and overhang-aware in one provenance group. The unsupported fraction is the one metric that moved between machines (by up to 1.3 points), so a cross-machine change in it that small would be meaningless.
 - **Target set by the baseline:** stock passes `ramp45` only, and fails `ramp50` at every budget. The first milestone is `ramp50` and `ramp60` passing at a 30° budget; at 30° stock turns them into 67° and 90°.
 - **Success criteria (placeholders, D0/D1):**
   - every ramp with `θ_geo ≤ max_overhang + usable tilt − 2°`: max `θ_eff` ≤ `max_overhang_deg` and < 1% unsupported deposition near the overhang;
@@ -620,3 +626,16 @@ Source: `docs/plan_corrections.md`, `docs/handoff.md` and `reports/baseline_over
 | `reports/baseline_overhang.md` | Measured per-run times: `xs` 6–10 min, `s` 30–88 min; matrices ~2.8 h and ~17 h | §0.2 compute table |
 | Sequencing | P0 closed; P1 + P4 next in parallel; P2 after D0; D0 ready to take | P0 "Next action", §4 critical path |
 
+## Appendix H — v3.4 changes (2026-09-28): the lab machine is the reference
+
+Source: pull request #12 (the lab machine's 48 runs), `docs/plan_corrections.md` 7a P1-16 (the decision and its consequences), `docs/handoff.md` header and §3.
+
+| Item | Change | Where in the plan |
+|---|---|---|
+| Operator's decision, P1-16 | Overhang results are measured on the lab machine `cad-p07-2065-9`; the golden test stays on the laptop | Version line, §0 rule 10, §0.2 test tiers |
+| Pull request #12 | The committed baseline is the lab machine's full re-run: 0 verdict changes, ≤ 0.008° effective overhang, ≤ 0.21° tilt; the unsupported fraction near overhangs moves by up to +1.3 points | P0.8 results note, P2.5 same-machine rule |
+| Laptop set archived | `reports/baseline_overhang_laptop/` keeps the 48 serial runs and their summary, for the points^1.5 timing and the robustness comparison; no tool reads it | §0.2, P0.8 results note |
+| Lab timings (handoff §3, #12) | `xs` at 8 workers 0:50:31; 24 mostly-`s` runs 2:58:44; full 48 ≈ 3.5–4 h (estimate); 16 workers exhaust the host memory pool (4.19) | §0.2 compute table, D2 note, §4 critical path |
+| Correction 4.20 | `--resume` counts a report as done only if it was measured on this machine | §0.2 |
+| P2.5 runner | `tools/run_matrix_parallel.py` on the lab machine (add `--overhang-aware`), not `scripts/run_baseline_matrix.ps1` | P2.5 steps |
+| P1 status | P1.1–P1.4, P1.6, P1.7 in `main`; P1.5 waits on gate E1 | Version line |

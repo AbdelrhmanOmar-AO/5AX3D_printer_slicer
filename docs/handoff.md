@@ -5,12 +5,25 @@ with no prior conversation.
 
 **Keep this file updated as the work progresses.**
 
-Last updated: 2026-09-24. **630 unit tests pass, 14 skipped.**
+Last updated: 2026-09-28.
+
+> **Reference machines (decided by the operator, 2026-09-28):**
+>
+> * **Overhang results** (the 48-run baseline and every comparison against it,
+>   P2.5 included) are measured on the **lab machine, `cad-p07-2065-9`**, with
+>   `tools/run_matrix_parallel.py`. Pull request #12 replaces the laptop-measured
+>   baseline with a full set measured there.
+> * **The golden test** stays on the **laptop**. Its SHA-256 was captured on the
+>   laptop's backend mix and holds only there (correction 3.9).
+> * The laptop's serial baseline is kept in `reports/baseline_overhang_laptop/`,
+>   for its runtimes (the points^1.5 result) and the laptop-vs-lab comparison.
+>
+> Section 3 has the workflow; `plan_corrections.md` 7a P1-16 the reasoning.
 
 * **P0 complete** (48 matrix runs at metrics v2) and **P5.4** (viewer, bed
   motion, Qt window) built — both in `main`.
-* **P1**: P1.1, P1.2, P1.4 and P1.7 are in `main`. P1.3 pushed for its laptop
-  check.
+* **P1**: P1.1, P1.2, P1.3, P1.4, P1.6 and P1.7 are in `main`. Only P1.5 is
+  left, blocked on gate E1.
 * **P4**: P4.1, P4.2 and P4.3 are built on `claude/phase-p4-build-fzqw55` and
   **not yet in `main`**.
 * **This session** (P0.8 follow-on: the parallel matrix runner and the lab
@@ -116,7 +129,7 @@ edits. P4 is mostly synthetic and CPU-only.
 Branch `claude/vibrant-rubin-waln7y`. After each merge it restarts from `main`;
 most recently restarted from `main` after pull requests #8 (P1.3) and #9 (the
 P0.8 follow-on branch) were merged. The operator chose the order P1.4, P1.7,
-P1.1, P1.2, P1.3, then the provenance follow-up below. Proposed next: P1.6.
+P1.1, P1.2, P1.3, the provenance follow-up (pull request #10), then P1.6.
 P1.5 stays open until gate E1 is answered.
 
 The P1.4 golden run took **784 s**, against 457 s when the baseline was
@@ -130,7 +143,10 @@ before P1.6, which measures `order_atoms` timings.
 | P1.4 G-code validator | **Done** (`58d2fe7`), verified on the laptop 2026-09-23: `pytest --run-pipeline tests/test_golden.py` gave **5 passed, 1 skipped** in 784 s. Golden SHA unchanged, and the real golden G-code validates with zero violations. (The P1.4 commit message expected 4 passed; that miscounted the file's unit tests.) **Merged into `main`** (pull request #4, `fab657f`), so the P4 session can bring it in |
 | P1.2 Templated header/footer + temperatures | **Built.** `atom.gcode_templates`; `kinematics3z.HEADER`/`FOOTER` now come from it, byte-identical to upstream (checked against the evaluated `e7b71ea` f-strings, and by converting the golden toolpath before and after: identical file). Optional `bed_temp`/`nozzle_temp` JSON keys and `--bed-temp`/`--nozzle-temp` options. Klipper raises GATE E1. **Verified on the laptop 2026-09-23:** `pytest --run-pipeline tests/test_golden.py` gave 5 passed, 1 skipped in 522 s, so the golden SHA is unchanged after editing the vendored `kinematics3z.py`, `atomize.py` and `toolpath_to_gcode.py`. In `main` (pull request #7) |
 | P1.3 Infill parameters | **Built.** `atom.infill_options`; optional `infill_period` / `shell_thickness` JSON keys (deposition widths) and `--infill-period` / `--shell-thickness` on `tools/sdf_to_isdf.py`; defaults are upstream's 8 and 2. **Golden verified on the laptop 2026-09-27:** 5 passed, 1 skipped in 674 s. `tests/test_infill_pipeline.py` failed on its first laptop run, from a wrong assertion in the test, not the feature (P1-13), after the pipeline itself had run to completion. The G-code that run left was then checked by hand: total extrusion **2894.792 mm against the golden's 3231.197 (-10.4 %)**, and `validate_gcode.py` reports no violations (43 870 lines, largest tilt 5.544 deg). Those are exactly the fixed test's assertions, so the parameter is shown to reach the stage. A formal re-run of the fixed test is optional. In `main` (pull request #8) |
-| P1.7 follow-up: parallel runs | **Built.** A report from `tools/run_matrix_parallel.py` now records the parent repository's commit (worker copies have no `.git`), the worker-pool size (`parallel_workers`) and the Taichi thread cap. The summary's runtime table gains a Run column ("alone" / "8 workers") and a note when runs shared the machine. The runner prints the mixed-provenance warning on screen, not only in the file. The 48 baseline reports now state `parallel_workers: 1`. CPU only; no laptop run needed (`plan_corrections.md` 7a, P1-14). Not yet in `main` |
+| P1.6 `order_atoms` profiler switch | **Done**, verified on the laptop 2026-09-27. `atom.ti_profiler`; `ATOM_TI_PROFILER` switches the kernel profiler on, **off by default** (upstream always ran it). Golden: 5 passed, 1 skipped in 518 s, so the output is unchanged. `order_atoms` alone on the golden files, run off / on / off: **335.5 / 338.8 / 334.9 s**, so the profiler cost **3.6 s, 1.1 %**. Too small to move any matrix estimate, so plan §0.2 and section 7 are unchanged. In `main` (pull request #11) |
+| Reference machine moved to the lab PC (operator's decision) | Documents updated: this file (header, sections 3, 5, 7b), `plan_corrections.md` 7a P1-16, and `SLICER_BUILD_PLAN.md` v3.4 (Appendix H). The laptop set is kept in `reports/baseline_overhang_laptop/` with a README, and `tools/backfill_provenance.py` now points there. Not yet in `main` |
+| Baseline tests generalised for PR #12 | `tests/test_provenance.py` pinned the laptop's host name and `parallel_workers == 1` for the committed baseline. PR #12 re-measures all 48 on the lab machine at 16/8/1 workers, so three tests failed on facts that legitimately changed. They now require one machine (whichever), a recorded worker count, and a summary that says so when worker counts are mixed; the per-stage backends stay pinned. Suggested by the P0.8 session on PR #12. Passes on both the laptop set and #12's lab set. Not yet in `main` |
+| P1.7 follow-up: parallel runs | **Built.** A report from `tools/run_matrix_parallel.py` now records the parent repository's commit (worker copies have no `.git`), the worker-pool size (`parallel_workers`) and the Taichi thread cap. The summary's runtime table gains a Run column ("alone" / "8 workers") and a note when runs shared the machine. The runner prints the mixed-provenance warning on screen, not only in the file. The 48 baseline reports now state `parallel_workers: 1`. CPU only; no laptop run needed (`plan_corrections.md` 7a, P1-14). In `main` (pull request #10) |
 | P1.1 Kinematics test suite | **Built.** `tests/test_kinematics3z.py` (24 tests) plus `tests/kinematics_f64_roundtrip.py`. No laptop run needed (CPU only). Two findings: the direction round trip is 4.5e-4 rad in 32-bit floats but exact in 64-bit (P1-8, both now tested), and a positive `offset` is a first estimate of the lift (P1-9, `docs/conventions.md` corrected). In `main` (pull request #6) |
 | P1.7 Provenance on reports | **Done**, verified on the laptop 2026-09-23. Every overhang report records its machine, backend (each stage's actual one), Taichi version, profile and commit (`atom.provenance`). All 48 baseline reports are backfilled (`tools/backfill_provenance.py`). `--summarize` states the origin above the table and warns on a mixed table. In `main` (pull request #5) |
 
@@ -249,6 +265,13 @@ on any specific fact.**
 ---
 
 ## 3. The operator's machine
+
+**Since 2026-09-28 the overhang baseline is the lab machine's, not this
+laptop's** (header, and "The workflow" below). The laptop remains the machine
+for the golden test and the pipeline-tier tests, and the source of the
+project's only **serial** runtimes, now kept in
+`reports/baseline_overhang_laptop/`. What follows was written while the laptop
+was the only reference:
 
 **Every measured runtime in this document was taken on this laptop.** Per
 correction 3.9 that is not a detail: a run on another machine is a different
@@ -670,23 +693,31 @@ stubbed out, which is the only way to test it, so the queue, the isolation, the
 collection and the failure paths are pinned — but no full matrix has been run
 through it.
 
-**Do not commit anything under `reports/` from the lab machine**, even though
-P1.7 now records the machine in every report. A run there still *overwrites* the
-committed cell for its part and slope — provenance means the mixture is
-detectable, not that it is harmless, and `--summarize` will warn rather than
-prevent it. A lab-measured cell inside a laptop-measured baseline is what 3.9
-warns against.
+#### The workflow, now that the lab machine is the reference (2026-09-28)
 
-The workflow that follows from that:
+The last bullet of the old workflow ("to move the baseline to the lab machine,
+re-run the whole matrix there and commit it as a single-machine set") is what
+pull request #12 did, and the operator adopted it. So:
 
-* the **laptop** is the machine that commits, and the one whose runs are
-  comparable to the committed baseline;
-* the **lab machine** is a compute box. Before `git pull` there, discard its
-  results with `git checkout -- reports/`, because otherwise the pull is
-  refused (which is the guard working);
-* to move the baseline to the lab machine, re-run the **whole** matrix there in
-  one go and commit that as a single-machine set. Its provenance block will then
-  say so, and `--summarize` will confirm all 48 are comparable.
+| Job | Machine | Why |
+|---|---|---|
+| Overhang matrix, stock or overhang-aware (P0.8, **P2.5**) | **Lab machine** | It holds the committed baseline; a comparison is only valid on the machine that measured it (3.9, plan §0 rule 10) |
+| Field-only P2 iterations (P2.0) | Lab machine | Their numbers are compared with the baseline too |
+| Golden test, `--run-pipeline` tests | **Laptop** | The golden SHA-256 was captured on the laptop's backend mix and holds only there |
+| Known-answer check (`ramp45_xs` at 7 degrees) | Either | Identical on both (0.24 %, printable) |
+| Timing studies | Laptop, one run at a time | The lab set mixes 16, 8 and 1 workers; a run is ~1.4x slower at 8 |
+
+**Getting lab results into the repository.** Only as a **complete,
+single-machine set**, the way #12 did it: on a new branch, as a pull request,
+with `--summarize` showing one provenance group. Never a few cells on top of
+another machine's set: provenance makes that mixture detectable, not harmless.
+Between such runs, keep the lab machine's `reports/` clean before `git pull`
+(`git checkout -- reports/`); a refused pull is that guard working.
+
+**Timing.** Never quote a runtime from the lab set as the machine's speed
+without its worker count (`provenance.parallel_workers`, shown in the summary's
+Run column). The serial timings, and the points^1.5 scaling result, come from
+`reports/baseline_overhang_laptop/`.
 
 Setup pain already solved, all documented in `README.md`:
 
@@ -743,9 +774,9 @@ the project's actual contribution, follows once gate D0 is taken.
 | P5.4b Bed-motion animation | **Built and checked on the laptop** (Play and smooth playback confirmed by the operator). Side-by-side view deferred until P2 |
 | P5.4 UI | **Qt window built** (`tools/viewer_qt.py`): side panel, timeline, toggle switches, dropdown. Needs `conda install -c conda-forge pyside6 pyvistaqt` once; falls back to the classic window without it. Laptop check pending |
 | P1.1 / P1.2 / P1.4 / P1.7 | **Done and in `main`.** Section 0a has each one's laptop check |
-| P1.3 | Pushed for its laptop check (section 0a) |
+| P1.3 | **Done and in `main`** (pull request #8) |
 | P1.5 firmware templates | Blocked on gate E1 |
-| P1.6 `order_atoms` without `kernel_profiler` | Proposed, not started. Needs an undisturbed laptop |
+| P1.6 `order_atoms` without `kernel_profiler` | **Done** (section 0a): golden unchanged; the profiler cost only **1.1 %** of `order_atoms` |
 | P4.1 / P4.2 / P4.3 | **Built on `claude/phase-p4-build-fzqw55`, not in `main`** (section 0b) |
 | Parallel matrix runner | **Built and measured** on this session's branch, not in `main` (section 0c). 24 runs at 8 workers took **50:31, 0 failed**, a 5.19x speedup at 65 % efficiency. The full 48 should take **3 to 3.5 h at 16 workers** against 21.8 h serially |
 | P2 | No session. Waits on gate D0; P2.0 and P2.1 do not |
@@ -811,7 +842,8 @@ When P2 starts, begin with **P2.0** (field-only evaluation, so each field change
 does not cost a full run) and **P2.1** (document the orientation-field pipeline
 and the analytic tilt bound; it feeds D0), then **P2.2** (the overhang
 constraint itself) once D0 is recorded. P2.5 re-runs this same matrix with the
-flag on and compares, so keep the reports committed. P2.5 also needs P1.7
+flag on and compares, **on the lab machine**, the one that measured the
+committed baseline (header), so keep the reports committed. P2.5 also needs P1.7
 (provenance on every report) and P2.3 uses P4.1 (the clearance model).
 
 Two things to re-run after any change to the metrics or to a vendored file:
@@ -956,9 +988,12 @@ atomics have no deterministic ordering, so `find_best_next` could break ties
 differently and produce a different toolpath. The golden test would have caught
 it.
 
-**Still untested, and cheaper:** `tools/order_atoms.py` passes
-`kernel_profiler=True`, which is not free. Removing it might speed up the CPU
-path with no determinism risk at all.
+**Tested since (P1.6, 2026-09-27): the profiler was nearly free.**
+`tools/order_atoms.py` used to pass `kernel_profiler=True`; it is now off by
+default (`ATOM_TI_PROFILER`). On the golden cube's own files the stage took
+335.5 and 334.9 s without it against 338.8 s with it: **1.1 %**. Output
+unchanged. So the ordering stage's cost is the algorithm, not the
+instrumentation, and none of the matrix estimates move.
 
 Practical consequence: long runs are CPU-bound. A machine with faster or more
 CPU cores helps; a better GPU does not. Sustained load is within a laptop's
@@ -968,9 +1003,17 @@ sleeping (`powercfg /change standby-timeout-ac 0`).
 
 ## 7b. The P0.8 baseline result (final, 2026-09-23)
 
-48 runs, 8 parts x 3 slopes x 2 sizes, all at metrics v2.
-`reports/baseline_overhang.md`, the per-run JSON and
-`reports/matrix_progress.csv` are committed.
+48 runs, 8 parts x 3 slopes x 2 sizes, all at metrics v2, first measured on
+the laptop. Those reports are now in `reports/baseline_overhang_laptop/`.
+
+**Re-measured in full on the lab machine (pull request #12, 2026-09-28), with
+the same conclusions:** 0 verdict changes in 48, worst effective overhang moved
+by at most 0.008 degrees, tilt used by at most 0.21 degrees. Only the
+unsupported fraction near overhangs moved: +0.5 to +1.3 percentage points on 7
+cells (all upward), under half a point either way on 25 more. The closest cell
+to the 1 % threshold keeps 0.76 points of margin. Both results
+below therefore hold on two machines, CPUs and GPUs. The lab set is the
+committed reference in `reports/baseline_overhang/`.
 
 ### Result 1: stock Atomizer's overhang limit is 45 degrees
 
@@ -1024,6 +1067,9 @@ the tilt points, not how much of it there is.
 
 `order_atoms` grows as **points^1.5** (mean exponent 1.50 over 24 part/slope
 pairs, range 1.39–1.61). Not published for Atomizer as far as we can tell.
+Measured from the laptop's **serial** runs, kept in
+`reports/baseline_overhang_laptop/`; the lab set's runtimes mix worker counts
+and cannot reproduce it.
 
 | Size | Volume vs `s` | Per run | 24-run matrix |
 |---|---|---|---|
