@@ -620,7 +620,48 @@ alone with 15 workers waiting.**
 Any job fills the cache equally well, so it now takes the shortest. A test pins
 it, because the symptom is only slowness and slowness is easy to explain away.
 
-**Still unmeasured:** efficiency above 8 workers, and anything on the laptop. The honest first step on the lab machine is
+#### The full 48 ran on the lab machine, 2026-09-28
+
+**48 of 48, one machine, 0 failed.** In two parts, because the first attempt at
+16 workers lost 24 runs to 4.19:
+
+| | Runs | Wall-clock | Speedup at 8 workers |
+|---|---|---|---|
+| 2026-09-24, `xs`, 8 workers | 24 | 0:50:31 | 5.19x — **65 %** |
+| 2026-09-27, 16 workers | 24 of 48 | 1:28:00 | **24 failed** (4.19) |
+| 2026-09-28, the rest, 8 workers | 24 | 2:58:44 | 6.31x — **79 %** |
+
+**Parallel efficiency depends on job length**, which one measurement could not
+have shown. 65 % on the short `xs` jobs (5-10 min), **79 %** on the mostly-`s`
+resume (40-75 min): longer jobs amortise process startup, Taichi initialisation
+and the cache copy, and keep the pool saturated instead of draining it at the
+tail. The runner now reports a **range** rather than interpolating, because
+picking a figure between two measurements by job mix would be a model, and this
+session has twice watched a model of this machine lose to a measurement of it.
+
+A full 48 in one go at 8 workers should be **3:30 to 4:10**.
+
+#### The baseline is now the lab machine's, and provenance says so
+
+Verified on `ramp90_s_ms30.json`:
+
+```
+machine           cad-p07-2065-9
+git_commit        fadcab359fb41539a80f43c4301fa7957daf8665
+code_modified     false
+parallel_workers  8
+ti_arch_setting   stock mix        (all 14 stage_arches recorded)
+```
+
+All three things that could have made it worthless are right: the **commit is
+recorded** (P1's follow-up passes it into the worker copies, which have no
+`.git` — it would otherwise have been `null` on all 48); **`parallel_workers: 8`**
+so nobody reads these runtimes as serial; and the **mixed-provenance warning is
+gone**, so all 48 are one comparable group.
+
+**Still unmeasured:** efficiency above 8 workers — and on the 64 GiB machine it
+cannot be measured, because 16 workers exhausts committed memory first (4.19).
+Nothing at all has been measured on the laptop, where the limit will be thermal. The honest first step on the lab machine is
 `--sizes xs --workers 8`, whose serial estimate is 2:48:31, so a real figure
 arrives in well under an hour.
 
