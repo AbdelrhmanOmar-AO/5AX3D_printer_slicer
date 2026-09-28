@@ -427,6 +427,62 @@ def solve_machine_state(view) -> MachineState:
     return MachineState(machine, valid, rotation, translation, np.asarray(offset, float), solved)
 
 
+def _machine_toolpath(view, profile):
+    """The view as a `contracts.MachineToolpath` in the bed frame.
+
+    G-code carries the screw values the printer will get, so they are used
+    as written; a toolpath is solved re-centred on the bed, as
+    `toolpath_to_gcode` does.
+    """
+    from types import SimpleNamespace
+
+    from atom import contracts
+
+    spherical = np.column_stack([
+        np.arccos(np.clip(view.direction[:, 2], -1.0, 1.0)),
+        np.arctan2(view.direction[:, 1], view.direction[:, 0]),
+    ])
+    travel_type = np.where(view.deposit, tv.TRAVEL_TYPE_DEPOSITION, 1)
+    width = np.ones(view.count) if view.width is None else view.width
+    height = np.ones(view.count) if view.height is None else view.height
+    if view.machine is None:
+        toolpath = SimpleNamespace(point=view.point.astype(np.float32), travel_type=travel_type,
+                                   tool_orientation=spherical.astype(np.float32),
+                                   width=width, height=height, point_count=view.count)
+        return contracts.from_toolpath(toolpath, profile, center_on_bed=True)
+
+    offset = np.zeros(3) if view.bed_offset is None else np.asarray(view.bed_offset)
+    machine = np.asarray(view.machine, dtype=np.float64)
+    return contracts.MachineToolpath(
+        point=view.point + offset, travel_type=travel_type, tool_orientation=spherical,
+        width=width, height=height, point_count=view.count, platform_height=0.0,
+        machine=machine, tilt_deg=view.tilt_deg, valid=np.isfinite(machine).all(axis=1),
+        lift_mm=np.zeros(view.count), profile_name=profile.name,
+    )
+
+
+def compute_collisions(view):
+    """Run the P4 collision checks on ``view`` once, and cache the marks.
+
+    Exactly what `tools/check_motion_safety.py` runs: the nozzle against
+    earlier material at every point (P4.3) and every machine state between
+    the points (P4.2), against the active machine's clearance model.
+    """
+    if "collisions" not in view._cache:
+        from atom import machine_profile
+        from atom import nozzle_material_check as nm
+        from atom import tilt_motion_check as tmc
+
+        _ensure_taichi()
+        profile = machine_profile.load_profile()
+        print("Running the P4 collision checks (nozzle vs material, swept)...")
+        nozzle = nm.check(view.point, view.direction, view.deposit,
+                          nm.NozzleCheckSettings.for_profile(profile))
+        swept = tmc.check(_machine_toolpath(view, profile), profile)
+        view._cache["collisions"] = tv.collision_marks(view.count, nozzle, swept)
+    return view._cache["collisions"]
+
+
 class Viewer:
     """The pyvista window. All state changes go through `refresh`."""
 
@@ -482,6 +538,8 @@ class Viewer:
         if self.mode == "unsupported" and "unsupported" not in self.view._cache:
             print("Computing unsupported points (P0.8 metric); large parts take a while...")
         shell = self.shell() if self.mode == "shell" else None
+        if self.mode == "collision":
+            compute_collisions(self.view)
         return tv.point_scalars(self.view, self.mode, shell=shell)
 
     def machine_state(self):
@@ -495,7 +553,14 @@ class Viewer:
             if unreachable:
                 self.notes.append(f"{unreachable:,} points are unreachable (IK): "
                                   "the bed turns red there.")
+            # The machine view shows what the P4 checks report, too.
+            compute_collisions(self.view)
         return self._machine
+
+    def _collision_here(self):
+        """True when the P4 checks flagged the current point or the move to it."""
+        marks = self.view._cache.get("collisions")
+        return bool(marks is not None and marks.flagged[self.end])
 
     # -- building the scene -------------------------------------------------
 
@@ -819,8 +884,18 @@ class Viewer:
             poly.cell_data["value"] = self._scalars[indices]
         return poly, indices
 
-    def _dots_poly(self, deposit_indices):
-        flagged = deposit_indices[tv.unsupported_mask(self.view)[deposit_indices]]
+    def _dots_poly(self):
+        """Flagged points of the current mode as dots: unsupported deposition,
+        or anything the P4 collision checks found (travel included)."""
+        view = self.view
+        if self.mode == "collision":
+            indices = np.concatenate([
+                tv.visible_segments(view, self.end, z_max=self.z_max, deposit=kind)
+                for kind in (True, False)])
+            flagged = indices[view._cache["collisions"].flagged[indices]]
+        else:
+            indices = tv.visible_segments(view, self.end, z_max=self.z_max, deposit=True)
+            flagged = indices[tv.unsupported_mask(view)[indices]]
         vertices = np.column_stack([np.ones(len(flagged), dtype=np.int64), flagged]).ravel()
         return self.pv.PolyData(self._points(), verts=vertices)
 
@@ -862,9 +937,9 @@ class Viewer:
         self._actors["deposit"] = plotter.add_mesh(deposit_poly, **options)
 
         # A few red segments are easy to miss among thousands, so the
-        # unsupported points are also drawn as dots.
-        if self.mode == "unsupported":
-            self._polys["unsupported_dots"] = self._dots_poly(deposit)
+        # unsupported or colliding points are also drawn as dots.
+        if self.mode in ("unsupported", "collision"):
+            self._polys["unsupported_dots"] = self._dots_poly()
             self._actors["unsupported_dots"] = plotter.add_mesh(
                 self._polys["unsupported_dots"], color="#ff3b30", point_size=9,
                 render_points_as_spheres=True, name="unsupported_dots",
@@ -908,7 +983,7 @@ class Viewer:
         deposit_poly, deposit = self._segments_poly(True)
         self._polys["deposit"].copy_from(deposit_poly, deep=False)
         if "unsupported_dots" in self._polys:
-            self._polys["unsupported_dots"].copy_from(self._dots_poly(deposit), deep=False)
+            self._polys["unsupported_dots"].copy_from(self._dots_poly(), deep=False)
         if "travel" in self._polys:
             self._polys["travel"].copy_from(self._segments_poly(False)[0], deep=False)
 
@@ -919,7 +994,8 @@ class Viewer:
                 for name in self._ON_BED:
                     if name in self._actors:
                         self._actors[name].user_matrix = matrix
-                clash = (not self.machine_state().valid[self.end]) or self._bed_clearance(pose) < 0
+                clash = ((not self.machine_state().valid[self.end])
+                         or self._bed_clearance(pose) < 0 or self._collision_here())
                 self._actors["bed"].prop.color = "#c0392b" if clash else "#5b6676"
                 self._actors["bed_outline"].prop.color = "#ff6b5e" if clash else "#aab4c3"
 
@@ -1040,9 +1116,13 @@ class Viewer:
         if self.mode == "unsupported" and view.count:
             share = float(np.mean(tv.unsupported_mask(view)[view.deposit])) * 100.0
             header.append(f"Unsupported: {share:.2f} % of deposition points (P0.8 metric)")
+        marks = view._cache.get("collisions")
+        if marks is not None and (self.mode == "collision" or self.machine_view):
+            header.extend(marks.summary)
         header.extend(self.notes)
         if self.machine_view:
-            header.append("Grey plate: bed (red on a clash)   orange dots: ball joints")
+            header.append("Grey plate: bed (red on a clash, or where the P4 checks found one)"
+                          "   orange dots: ball joints")
             header.append(f"Orange frame: gantry level, {self._profile.nozzle_to_gantry} mm "
                           "above the nozzle tip")
             if self.machine_state().solved:

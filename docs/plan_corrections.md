@@ -1445,4 +1445,302 @@ measurement of a full 48 at 8.
 
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 
-None yet.
+#### P4-1 The clearance model takes world-frame points and the head position (deliberate deviation)
+
+P4.1 specifies `min_clearance(points_machine)` and `violations(points_machine)`
+without saying which frame "machine" means. `atom.clearance` fixes it: points
+are in the **world frame** of `atom.bed_motion` (fixed to the machine, +Z up,
+nozzle tip at `(X, Y, 0)`), and every method also takes the head position
+`head_xy`. The reference proxy moves entirely with the head, so it only needs
+points relative to the tip, but the real envelope (gate M3) will not: a frame
+member stays put while the head moves. With `head_xy` defaulting to `(0, 0)`,
+head-frame points work unchanged.
+
+Three additions to the plan's interface, all needed by P4.2's report:
+`body_distances` (signed distance to each named body: `nozzle`, `gantry`),
+`nearest_body` (which one is closest) and `describe` (the parameters, for a
+report's provenance). Two more came with P4.2, which scores thousands of
+machine states in one call: `head_xy` may be one row per point, and
+`body_distances(..., bodies=[...])` computes only the bodies asked for (the
+swept check never scores the hull against the nozzle, see P4-3). Distances are exact, not bounds: the cone's is computed
+in its meridian plane against a triangle, and a test checks it against a
+brute-force sampling of the surface.
+
+The box format for `config/machines/<name>.clearance.json` is defined but no
+such file exists (gate M3, filled in P6.2). Each box says which head axes it
+follows (`"moves_with": ["x", "y"]` for the hotend, `[]` for the frame,
+`["y"]` for a beam riding on Y). `load_clearance` falls back to the reference
+proxy when a machine has no file, as the P4 gate line prescribes, and a test
+asserts no file exists until M3 is answered.
+
+**Verified against the kinematics.** Putting the bed corners in the world
+frame with `atom.bed_motion` and measuring them against the reference
+model's gantry half-space reproduces the lift `kinematics3z.inverse` asks for
+to within 0.002 mm, over 24 states up to 29.9 degrees of tilt
+(`tests/test_clearance.py`). The two therefore share one world frame, which
+P4.2 relies on.
+
+#### P4-2 P4.3 checks every nozzle position, exactly, not only deposition points subsampled (deliberate deviation)
+
+P4.3 says "for each deposition point, test earlier deposited points
+(KD-tree, subsampled)". As built (`src/atom/nozzle_material_check.py`,
+`tools/check_motion_safety.py`; the plan names no files for P4.3):
+
+* **Every toolpath point is checked**, travel included. A travel that ends
+  inside material is as much a collision as a print move. Reports split the
+  two. The travel *between* points stays with P4.2.
+* **"Earlier" is defined by the moves.** `travel_type[i]` describes the move
+  *to* point `i`, so a printing move `j` makes both `p[j-1]` and `p[j]`
+  material. With the nozzle at `p[i]`, material from moves up to `i - 1`
+  counts; move `i`'s own bead ends under the nozzle.
+* **No subsampling by default.** Exact is fast enough: the whole golden cube
+  (46 773 points) takes about 2 s on the session container. The cone is covered
+  by a chain of spheres along its axis, so a KD-tree query returns only
+  material near the cone. `--subsample MM` remains as an option; it keeps the
+  earliest point per voxel, so everything it reports is a real collision.
+* The cone is `atom.clearance`'s nozzle (40 degrees, capped at
+  `nozzle_to_gantry`), so P4.1, P4.2 and P4.3 share one nozzle.
+* **A nozzle buried in material stops early.** The first version examined
+  every blocker of every position. On a stand-in where four copies of a part
+  stood 5.7 mm apart, nearly every position of copies 2–4 had thousands of
+  genuine blockers, and the check did not finish in ten minutes. Each nozzle is
+  now searched slab by slab from the tip, and one that has already hit
+  material *and* examined more than `exhaustive_limit` (4 096) candidates
+  stops there. Whether a position collides stays exact (a nozzle with no hit
+  searches every slab; a test forces this path everywhere and compares with
+  the exhaustive answer). Only its depth and blocker count then describe the
+  first material up the nozzle, and the report says so
+  (`first_slab_only`, `collisions_summarised_from_the_first_slab`). Cost:
+  about 9 ms per buried position. A file that collides almost everywhere
+  takes minutes, not hours, and one that is clear takes seconds.
+* **Measured speed** (session container, both P4.2 and P4.3): golden cube
+  about 6 s; a 38 000-point 30-degree `ramp60_xs` about 9 s; 150 000 points
+  (the size of an `s` part) about 42 s.
+
+**Checked against known answers.** The golden cube is clear. The zero means
+something: the top 3 000 points printed in reverse order (top down) collide at
+more than a third of positions, and 12 000 of them at 83 %. A brute-force
+comparison over 400 scattered points (330 colliding) matches the fast check
+exactly (positions, depths, blocker counts) at three block sizes.
+
+**The 50-degree cap is now a test.** The plan's introduction says the tilt is
+"capped at 50 degrees by the nozzle cone". With a 40-degree half-angle, a
+flat layer printed at more than 90 - 40 = 50 degrees of tilt puts its own
+earlier beads inside the nozzle; at 45 degrees it is clear
+(`tests/test_nozzle_material_check.py`).
+
+**Hazard for a wider nozzle (gate M3).** The covering spheres stay above the
+nozzle tip's plane only for half-angles below 45 degrees
+(`q <= 1 / tan^2(half_angle)` for a slab ratio `q`). If the real hotend
+turns out to need a cone of 45 degrees or wider, the check stays correct but
+slows to comparing most point pairs. A wide hotend should be modelled as a
+narrow cone plus boxes (P6.2) rather than as one wide cone.
+
+**Not yet run on large tilts.** P4.3's benchmark is "run on the P2.5
+outputs", which do not exist. The P0.8 archive on the laptop
+(`reports/toolpaths/`, stock toolpaths up to 30 degrees of tilt) is the
+nearest real input and is a laptop request (`docs/handoff.md` 0b).
+
+#### P4-3 P4.2 as built: hull for the gantry only, axis and tilt checks deferred to P1.4 (deliberate deviation)
+
+P4.2 says to "transform a proxy of the printed-so-far part (convex hull of
+deposited points, updated every N points for speed) and test it against the
+clearance model, axis ranges and tilt limits". As built
+(`src/atom/tilt_motion_check.py`), with the operator's decisions of
+2026-09-23:
+
+* **The convex hull is tested against the machine bodies only** (the gantry
+  half-space, for the reference proxy). Against a flat body the hull is
+  exact, not a proxy: a convex solid's highest point is a vertex. Between
+  rebuilds (every 500 material points) the raw points laid since are added,
+  so nothing printed is ever missing. A test checks this against brute force
+  under random orientations.
+* **The nozzle is tested against the real printed points**, through the same
+  code as P4.3 (`nozzle_material_check.cone_hits`). The hull fills hollows,
+  so it would put the nozzle "inside" material whenever it works between two
+  features or inside a cup.
+* **Axis ranges and the tilt limit between points were deferred to P1.4**,
+  so those rules exist once. **Done 2026-09-28, see P4-6**: every state is
+  now held to the validator's own rules, and `not_checked` is empty. Moves
+  touching a point the IK rejects (NaN `offset`) are still skipped and
+  counted.
+* **Two checks added** that the plan's list does not name: the bed corners
+  against every body at every state (the IK does this only at the points),
+  and the nozzle tip against the bed plane between points.
+* **Which states:** every reachable point, plus interior states of each move
+  that turns the tool by more than `check_tilt_step_deg` (0.5 degrees, the
+  plan's default) and of each travel longer than `travel_step_mm` (0.5 mm).
+  Interpolation is linear in the five axes, as the firmware moves. The
+  nozzle check at the points themselves is P4.3's; P4.2 does it between
+  them. `tools/check_motion_safety.py` runs both.
+* **Tolerance 0.01 mm.** The kinematics run in float32 (about 1e-3 mm of
+  rounding); a violation must be deeper than this.
+
+**Verified against hand calculations and the IK.** A 68 mm tower 80 mm from a
+nozzle working 30 mm up, tilted 30 degrees toward it, reaches
+`38 cos 30 + 80 sin 30 = 72.91` mm, 2.91 mm into the gantry; the check
+reports 2.909. A travel with no lift through a 5 mm block is caught at that
+move, at `(4 - 0.001) sin 40` deep, while P4.3 at the two clear endpoints
+sees nothing. Where the check finds a bed corner in the gantry at a point,
+the depth equals the lift `kinematics3z.inverse` asks for there. The golden
+cube has no violations over 49 063 states (2 290 between points); the part
+comes no closer than 68.9 mm to the gantry.
+
+**A fact about the reference machine worth knowing (from the IK, not new
+maths).** Its bed corners reach the gantry at large tilts when the nozzle is
+near the bed: 20 degrees toward a diagonal with the nozzle 5 mm up puts a
+corner 4 mm into it, and 30 degrees does so in every direction once the work
+sits 40 mm off the bed's centre. Along X or Y at 20 degrees it is clear. The
+IK asks for lift at such points and `add_platform` raises the part to give
+it, so a `_platform` toolpath is clear; a `_smoothed` one checked directly
+will show these as `bed` violations. Gate M2 (usable tilt by position) is
+where this matters.
+
+**Test tier.** The golden-cube swept test takes about 3.6 s on the session
+container (the P4.3 one about 2 s), above the unit tier's "~2 s". They are
+kept in the unit tier so CI guards them; the operator may prefer them in
+`pipeline`.
+
+#### P4-4 The platform is sized in one frame and the G-code written in another, so large tilts can abort the G-code (hazard, vendored code, fixed 2026-09-28)
+
+Found by running the P4 checks on a 30-degree stock toolpath. `toolpath_to_gcode`
+printed `Fatal Error: collision found!` and wrote no G-code for `ramp60_xs`
+at `max_slope 30`, although every point is reachable.
+
+The cause, measured:
+
+1. `add_platform` sizes the platform with `kinematics3z.get_plaftorm_size`,
+   which re-centres the **part's** bounding box on the bed and raises the
+   part until no point asks for lift.
+2. The platform it then adds starts at x = 0, y = 0, so the **part plus
+   platform** has a different bounding box: here x from 0 instead of 0.401.
+3. `toolpath_to_gcode` re-centres **that** box, 0.187 mm away in x from the
+   frame the platform was sized in. Re-centring changes screw heights
+   non-uniformly (hazard 7), so near the limit the bed corners come back:
+   solved in the sizing frame the largest lift is 0.000 mm; in the G-code
+   frame it is 0.036 mm, at points 7892–7895 (29.4 degrees of tilt).
+4. `kinematics3z.toolpath_from_cartesian_toolpath` treats **any** non-zero
+   lift as invalid (`collision != 0`), so 0.036 mm aborts the whole file.
+
+P4.2 reports the same three moves (7893–7895) as `bed` vs `gantry`, 0.015 to
+0.036 mm deep, and nothing else; P4.3 is clear. So this toolpath is safe to
+within a few hundredths of a millimetre, and the abort is a frame mismatch,
+not a collision.
+
+**Caveat:** this run was made in the session container with a stand-in for
+the Blender remesh and every stage on the CPU (development only; no number
+from it is reported anywhere). The mechanism is independent of both: it
+needs only a part whose bed corners are near the gantry at its largest tilt,
+which becomes common at a 30-degree budget and is exactly where P2 works.
+**Update (2026-09-28): the baseline did not hit it.** Since correction 4.16,
+`overhang_report.run_pipeline` fails a run whose stage left no fresh artifact,
+the G-code (stage 11) included, and `toolpath_to_gcode` aborts before opening
+its file. All 48 lab-machine baseline runs, the 16 at `max_slope 30` among
+them, were made with that check (commit `fadcab3`) and none failed. So P4-4 is
+latent: real, and a hazard for P2's larger tilts, but no committed number is
+affected.
+
+**Fixed (2026-09-28, the operator asked the P4 session to).** A vendored
+edit to `kinematics3z.get_plaftorm_size`, the first of the three options:
+size the platform in the frame the G-code will use. The platform's footprint
+(`ceil(max / width) * width` from the origin) is known before its height, so
+after solving the lift in the part's frame as before, the function checks
+whether `add_platform` will draw platform layers (it does only when the
+platform is at least two layers high, by the same expression). If it will,
+the lift is solved again with the part-plus-platform box re-centred, the way
+`toolpath_to_gcode` will re-centre it. Without drawn layers the frames are
+already the same and nothing changes, which includes the golden cube (no
+platform), so its G-code is unaffected; the golden test is still owed on the
+laptop, as for any vendored edit.
+
+Checked three ways: the stand-in `ramp60_xs` that aborted now gets a
+10.80 mm platform instead of 10.35, `toolpath_to_gcode` writes its G-code, and
+both P4 checks are clear on the result; two synthetic parts (25 degrees toward
+135, 28 degrees toward 225, 40 mm from the origin) left 5.1 and 7.2 mm of lift
+in the G-code's frame with the old sizing and none with the new
+(`tests/test_platform_sizing.py`); and the golden cube's platform size is
+unchanged. Neither `add_platform.py` nor `toolpath_to_gcode.py` was edited,
+and `toolpath_to_gcode` still aborts on any lift, so a real collision is
+still refused.
+
+A small, deliberate cost: parts that needed the second solve get a slightly
+taller platform (0.45 mm on the stand-in).
+
+#### P4-5 The viewer shows the P4 checks (P5.4's open item, as built)
+
+P5.4 left "the full clearance model arrives with P4.1, then wire it in". The
+operator asked for it after P4.2, so the viewer shows exactly what
+`tools/check_motion_safety.py` reports rather than a separate reading of the
+model:
+
+* a colour mode **Collisions (P4)**: a point is red when the nozzle there has
+  earlier material inside it (P4.3), or when the move to it clashes between
+  the points (P4.2). Flagged points are also drawn as dots, travel included,
+  since a single red segment is easy to miss;
+* the current-point card and the status line name each collision (kind,
+  depth, how far along the move);
+* in the machine view the bed turns red on a flagged move, as well as on the
+  two conditions it already showed (IK rejection, bed corner above the
+  gantry); the notes panel gives the totals and says what is not checked yet.
+
+The checks run once per file, when the collision mode or the machine view is
+first opened (a few seconds for the golden cube). G-code is checked with the
+screw values as written; a toolpath is solved re-centred on the bed, as for
+the machine view. Code: `toolpath_view.CollisionMarks` / `collision_marks`
+(numpy, tested without a display) and `visualize_5ax.compute_collisions`.
+The Qt window needed no change: its dropdown and card are built from the
+same lists. Checked here under a virtual display (Qt window included); the
+laptop check is still to do.
+
+#### P4-6 P4.2 applies the validator's own axis-range and tilt-limit rules (operator's decision)
+
+P1.4 put both rules inside `gcode_check.check_lines`, which reads G-code line
+by line, so they could not be called on the machine states *between* toolpath
+points. With the operator's permission (2026-09-28), the P4 session moved
+them, unchanged, into shared functions in `src/atom/gcode_check.py` (a P1
+file): `axis_limits`, `axis_range_detail`, `axis_range_problems(states,
+profile)` and `tilt_limit_problems(screws, profile)`. `check_lines` now calls
+them. Its output is **byte-identical**: the validator's reports on all 11
+G-code fixtures, under both profiles and with the tilt limit as a cone and as
+a box (44 reports), were compared before and after.
+
+`tilt_motion_check` applies the same functions to every state it visits, as
+kinds `axis_range` (body = the axis, depth in mm) and `tilt_limit` (depth in
+degrees as `excess_deg`, no `clearance_mm`), each with the validator's own
+message as `detail`. Reports no longer list anything under `not_checked`.
+
+**What these can and cannot find between points.** A move is linear in the
+five axes. The axis ranges are a box in those axes; the total tilt is a
+monotone function of a norm that is linear in the screw differences, so it
+peaks at an end; and a box tilt limit can only be broken once the total
+passes the cone. So a move between two points that pass cannot break either
+rule. What the check does find is **points** the IK accepts and the
+validator would reject: a screw below zero, which `inverse` answers with a
+lift rather than NaN. On the 30-degree `ramp60_xs` stand-in (P4-4), 676 moves
+of the `_smoothed` toolpath have one, and none of the `_platform` toolpath:
+the platform supplies exactly that lift. The tool's before-platform hint now
+covers these too.
+
+A hazard noted, not seen: the IK's tilt tolerance is 1e-4 degrees and the
+screws are float32, so a point requested at exactly the limit could read a
+little over it from its screws. Atomizer's `max_slope` stays at or below the
+limit and its toolpaths have peaked at 29.4 degrees at a 30-degree budget.
+
+#### P4-7 The validator's 5 mm single-move limit rejects the platform's own edges (finding, P1's decision)
+
+Found while checking the P4-4 fix. The first G-code this repository has
+written *with* a platform (the golden cube has none) fails `validate_gcode`
+with 46 `EXTRUSION` violations, all on platform lines: `add_platform` draws
+each platform layer's outline as four straight moves, and the long side of
+a 29.7 mm platform extrudes 5.0009 mm of filament at 0.9 x 0.45 mm, just over
+the 5 mm limit agreed on 2026-09-23 (`gcode_check.DEFAULT_MAX_E_MM`). Nothing
+else in the file breaks any rule.
+
+So every part at least about 30 mm long that needs a platform will fail the
+validator as it stands: all `s` parts would (about 8.4 mm per 50 mm line).
+The toolpath is fine; the limit was chosen from the golden cube, whose
+largest move was a 2 mm prime. Options, P1's file and the operator's call:
+raise the default, scale it with the move's length (a limit per mm of travel
+rather than per move), or have `add_platform` split long lines. Not changed
+here.
+

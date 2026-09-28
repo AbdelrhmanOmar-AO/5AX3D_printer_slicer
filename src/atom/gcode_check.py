@@ -195,6 +195,99 @@ def _fmt(value: float) -> str:
     return f"{value:.6g}"
 
 
+# --------------------------------------------------------------------------
+# The axis-range and tilt-limit rules, on arrays of machine states
+# --------------------------------------------------------------------------
+#
+# Shared by the validator below and by the swept check (P4.2,
+# `atom.tilt_motion_check`), which applies them to machine states *between*
+# toolpath points, where there is no G-code line to read. One definition of
+# each rule, so the two can never disagree (operator's decision, 2026-09-28).
+
+#: Machine axes in the order `contracts.MachineToolpath.machine` stores them.
+MACHINE_AXES = ("X", "Y", "Z", "U", "V")
+
+
+def axis_limits(profile) -> dict[str, tuple[float, float]]:
+    """``{axis: (low, high)}`` in mm: X within ``[0, max_x_axis]``, Y within
+    ``[0, max_y_axis]``, each screw within ``[0, max_z_axis]``. The same
+    limits ``kinematics3z.inverse`` enforces."""
+    return {
+        "X": (0.0, float(profile.max_x_axis)),
+        "Y": (0.0, float(profile.max_y_axis)),
+        "Z": (0.0, float(profile.max_z_axis)),
+        "U": (0.0, float(profile.max_z_axis)),
+        "V": (0.0, float(profile.max_z_axis)),
+    }
+
+
+def axis_range_detail(axis: str, value: float, low: float, high: float) -> str:
+    """The ``AXIS_RANGE`` message for one value."""
+    return f"{axis}{_fmt(value)} is outside [{_fmt(low)}, {_fmt(high)}]"
+
+
+def axis_range_problems(states, profile) -> list[tuple[int, str, str]]:
+    """Every value outside its axis range, for machine states ``(N, 5)``.
+
+    Columns X, Y, Z, U, V (`MACHINE_AXES`), mm. Returns ``(row, axis,
+    detail)`` in row order, then axis order. NaN is not reported here: it is
+    the ``NAN`` check's business in G-code, and an unreachable state
+    elsewhere.
+    """
+    states = np.asarray(states, dtype=float).reshape(-1, len(MACHINE_AXES))
+    limits = axis_limits(profile)
+    problems = []
+    low = np.array([limits[axis][0] for axis in MACHINE_AXES])
+    high = np.array([limits[axis][1] for axis in MACHINE_AXES])
+    outside = (states < low) | (states > high)
+    for row, column in zip(*np.nonzero(outside)):
+        axis = MACHINE_AXES[column]
+        problems.append((int(row), axis,
+                         axis_range_detail(axis, states[row, column], *limits[axis])))
+    return problems
+
+
+def tilt_limit_problems(screws, profile) -> tuple[list[tuple[int, str]], np.ndarray]:
+    """Every screw state whose bed tilt breaks the profile's limit.
+
+    ``screws`` is ``(N, 3)``: Z, U, V in mm. The tilt is `atom.screw_tilt`'s
+    exact total; the limit is ``max_tilt_angle_deg`` under
+    ``tilt_limit_shape``, with the same ``TILT_TOLERANCE_DEG`` as
+    ``kinematics3z.inverse``. Returns ``([(row, detail), ...], total tilt in
+    degrees per row)``, rows in order; the tilt is NaN for heights no rigid
+    bed can reach, which are reported too.
+    """
+    screws = np.asarray(screws, dtype=float).reshape(-1, 3)
+    total = screw_tilt.total_tilt_deg(screws[:, 0], screws[:, 1], screws[:, 2], profile)
+    limit = float(profile.max_tilt_angle_deg)
+    finite = np.isfinite(total)
+    problems: list[tuple[int, str]] = []
+    for index in np.flatnonzero(~finite):
+        problems.append((int(index),
+                         "screw heights no rigid bed can reach (their differences are too large)"))
+    if profile.tilt_limit_shape == "cone":
+        for index in np.flatnonzero(finite & (total > limit + TILT_TOLERANCE_DEG)):
+            problems.append((int(index),
+                             f"bed tilt {total[index]:.4f} deg exceeds the {_fmt(limit)} deg cone limit"))
+    elif profile.tilt_limit_shape == "box":
+        # A box can only be exceeded once the total tilt exceeds the limit,
+        # so the direction is needed only for those states.
+        suspects = np.flatnonzero(finite & (total > limit + TILT_TOLERANCE_DEG))
+        directions = screw_tilt.build_direction(
+            screws[suspects, 0], screws[suspects, 1], screws[suspects, 2], profile
+        )
+        for index, direction in zip(suspects, directions):
+            a_deg, b_deg = tilt.tilts_from_direction(direction)
+            if max(abs(a_deg), abs(b_deg)) > limit + TILT_TOLERANCE_DEG:
+                problems.append((int(index),
+                                 f"bed tilt (a {a_deg:.4f}, b {b_deg:.4f}) deg exceeds the "
+                                 f"{_fmt(limit)} deg box limit"))
+    else:
+        raise ValueError(f"unknown tilt_limit_shape {profile.tilt_limit_shape!r}")
+    problems.sort(key=lambda problem: problem[0])
+    return problems, total
+
+
 def check_lines(
     lines: Iterable[str],
     profile,
@@ -225,13 +318,7 @@ def check_lines(
         )
     markers = STRUCTURE_MARKERS[dialect]
 
-    limits = {
-        "X": (0.0, float(profile.max_x_axis)),
-        "Y": (0.0, float(profile.max_y_axis)),
-        "Z": (0.0, float(profile.max_z_axis)),
-        "U": (0.0, float(profile.max_z_axis)),
-        "V": (0.0, float(profile.max_z_axis)),
-    }
+    limits = axis_limits(profile)
 
     violations: list[Violation] = []
     state: dict[str, float] = {}
@@ -318,8 +405,7 @@ def check_lines(
             low, high = limits[axis]
             if not low <= value <= high:
                 violations.append(Violation(
-                    AXIS_RANGE, number,
-                    f"{axis}{_fmt(value)} is outside [{_fmt(low)}, {_fmt(high)}]",
+                    AXIS_RANGE, number, axis_range_detail(axis, value, low, high),
                 ))
             state[axis] = value
 
@@ -373,38 +459,10 @@ def check_lines(
     # --- TILT_LIMIT, vectorised over every screw state ---
     max_tilt_deg = None
     if screw_states:
-        screws = np.asarray(screw_states, dtype=float)
-        total = screw_tilt.total_tilt_deg(screws[:, 0], screws[:, 1], screws[:, 2], profile)
-        limit = float(profile.max_tilt_angle_deg)
+        problems, total = tilt_limit_problems(np.asarray(screw_states, dtype=float), profile)
+        for index, detail in problems:
+            violations.append(Violation(TILT_LIMIT, screw_lines[index], detail))
         finite = np.isfinite(total)
-        for index in np.flatnonzero(~finite):
-            violations.append(Violation(
-                TILT_LIMIT, screw_lines[index],
-                "screw heights no rigid bed can reach (their differences are too large)",
-            ))
-        if profile.tilt_limit_shape == "cone":
-            for index in np.flatnonzero(finite & (total > limit + TILT_TOLERANCE_DEG)):
-                violations.append(Violation(
-                    TILT_LIMIT, screw_lines[index],
-                    f"bed tilt {total[index]:.4f} deg exceeds the {_fmt(limit)} deg cone limit",
-                ))
-        elif profile.tilt_limit_shape == "box":
-            # A box can only be exceeded once the total tilt exceeds the limit,
-            # so the direction is needed only for those states.
-            suspects = np.flatnonzero(finite & (total > limit + TILT_TOLERANCE_DEG))
-            directions = screw_tilt.build_direction(
-                screws[suspects, 0], screws[suspects, 1], screws[suspects, 2], profile
-            )
-            for index, direction in zip(suspects, directions):
-                a_deg, b_deg = tilt.tilts_from_direction(direction)
-                if max(abs(a_deg), abs(b_deg)) > limit + TILT_TOLERANCE_DEG:
-                    violations.append(Violation(
-                        TILT_LIMIT, screw_lines[index],
-                        f"bed tilt (a {a_deg:.4f}, b {b_deg:.4f}) deg exceeds the "
-                        f"{_fmt(limit)} deg box limit",
-                    ))
-        else:
-            raise ValueError(f"unknown tilt_limit_shape {profile.tilt_limit_shape!r}")
         max_tilt_deg = float(total[finite].max()) if finite.any() else None
 
     # --- STRUCTURE ---
