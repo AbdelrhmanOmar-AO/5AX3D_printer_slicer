@@ -180,26 +180,46 @@ F10725; and the single-move extrusion limit defaults to **5 mm**.
 
 *Edited by the P4 session only.* Record the branch name here first.
 
-Branch **`claude/phase-p4-build-fzqw55`**, started from `main` at `4986f61`
-on 2026-09-23. **`main` merged in on 2026-09-28** (at `4c5219b`, pull request
-#12), so the branch carries all of P1 and the lab baseline. **Not yet in
-`main` itself.**
+Branch **`claude/phase-p4-build-fzqw55`**. **P4 is in `main`**: pull request
+#14, merged 2026-09-28 (`12999f5`). The branch was then restarted from that
+merge for follow-up work, as the branch rules require.
 
-**P4 is built except P4.4, which nothing so far calls for.** Pull request
-open to bring it into `main`.
+**P4 is complete except P4.4, which nothing so far calls for, and it is
+verified on both machines** (below).
 
 | Task | Status |
 |---|---|
 | P4.1 Clearance model | **Done**: `src/atom/clearance.py`. Nozzle cone (40 degrees half-angle, up to 70 mm) and gantry half-space; box format for gate M3. Agrees with the IK's own bed-corner lift to 0.002 mm. |
-| P4.3 Nozzle vs printed material | **Done**: `src/atom/nozzle_material_check.py`. Every nozzle position against earlier material; golden cube clear. |
-| P4.2 Swept check | **Done**: `src/atom/tilt_motion_check.py`. Every machine state between the points too: part and bed corners vs gantry, nozzle vs material, nozzle vs bed, and the validator's own axis-range and tilt-limit rules (P4-6). Golden cube clear over 49 063 states. |
-| P4.4 Safe travel | **Not needed so far**: nothing found calls for it. |
-| Viewer wiring | **Done**: colour mode "Collisions (P4)", red bed in the machine view, collision rows in the card. Laptop check pending. |
+| P4.3 Nozzle vs printed material | **Done**: `src/atom/nozzle_material_check.py`. Every nozzle position against earlier material. All 48 lab baseline toolpaths clear at their points. |
+| P4.2 Swept check | **Done**: `src/atom/tilt_motion_check.py`. Every machine state between the points too: part and bed corners vs gantry, nozzle vs material, nozzle vs bed, and the validator's own axis-range and tilt-limit rules (P4-6). |
+| P4.4 Safe travel | **Not needed**: the lab baseline shows no travel problem beyond hairline grazes (P4-8). |
+| Viewer wiring | **Done, checked on the laptop** 2026-09-28: colour mode "Collisions (P4)", red bed in the machine view, collision rows in the card. |
+| P4-4 fix (platform frame) | **Done**, vendored edit to `kinematics3z.get_plaftorm_size`; golden test passed on the laptop after it. |
 
 Tool: `python tools/check_motion_safety.py <toolpath .npz, directory or "pattern">`
-runs both checks (`README.md`, "Check a toolpath for collisions"). Measured
-in the session container: golden cube about 7 s, a 38 000-point
-`ramp60_xs` at 30 degrees about 9 s, 150 000 points about 42 s.
+runs both checks (`README.md`, "Check a toolpath for collisions").
+
+**Verified 2026-09-28:**
+
+| Where | What | Result |
+|---|---|---|
+| Laptop | `python -m pytest` | **836 passed, 8 skipped** |
+| Laptop | `pytest --run-pipeline tests/test_golden.py` after the P4-4 vendored edit | **5 passed, 1 skipped** (the forced-backend test, as expected) in 466 s: golden G-code unchanged |
+| Laptop | Viewer, "Collisions (P4)" and machine view on `ramp60_s_ms30` | Looks right (operator) |
+| Lab machine | Both checks on the 48 baseline toolpaths, about 15 min | **43 of 48 clear**; the other 5 below |
+
+The 5 flagged lab files, all at `max_slope 30`, none at their points:
+
+* `ramp60_s`, `ramp60_xs`, `twin_domes_s`: only `bed` and `axis_range` hits,
+  the lift `add_platform` adds to these pre-platform toolpaths. All 48 lab
+  runs wrote their G-code (4.16), which they could not have if any point had
+  still needed lift after the platform.
+* `tshape_xs` (1 move) and `twin_domes_xs` (4 moves): `nozzle_vs_material`
+  between points, **0.012 to 0.046 mm** past the cone, at 5 to 15 degrees of
+  tilt. Hairline grazes of an idealised cone by bead-centre points, below the
+  model's resolution (P4-8). Kept strict and reported, not hidden.
+
+Lab timing, both checks: `xs` files 3 to 9 s, `s` files 15 to 57 s.
 
 **Operator's decisions:**
 
@@ -207,86 +227,23 @@ in the session container: golden cube about 7 s, a 38 000-point
    viewer wired in after P4.2.
 2. (2026-09-28) Merge `main` in, and share P1.4's rules by moving them into
    functions in `src/atom/gcode_check.py` (**a P1 file, edited with the
-   operator's permission**). The validator's output is byte-identical on all
-   44 fixture reports (P4-6).
+   operator's permission**); the validator's output is byte-identical (P4-6).
+3. (2026-09-28) The P4 session fixes P4-4; the pull request opened and
+   merged; the golden-cube tests for P4.2 and P4.3 stay in the unit tier.
 
-**Findings** (details in `plan_corrections.md` 7b):
+**Still open for the operator:**
 
-* **P4-4, fixed 2026-09-28 at the operator's request:** the platform was
-  sized in one frame and the G-code written in another, so a part near the
-  bed-gantry limit could make `toolpath_to_gcode` abort. The lab baseline did
-  not hit it. Fixed in `kinematics3z.get_plaftorm_size` (a vendored edit): the
-  lift is re-solved in the G-code's frame whenever a platform is drawn. The
-  golden cube draws none, so its G-code is unchanged; **the golden test is
-  owed on the laptop** (below).
-* **P4-7, for the operator (P1's file):** the validator's 5 mm single-move
-  extrusion limit rejects the platform's own long edges (a 29.7 mm edge
-  extrudes 5.0009 mm). Every part about 30 mm or longer that needs a platform
-  would fail `validate_gcode`. The toolpath is fine; the limit needs a
-  decision.
-* The reference bed's corners reach the gantry at large tilts near the bed;
-  the IK asks for that lift and `add_platform` provides it (gate M2).
-* A nozzle buried in material is resolved from the first material up the
-  nozzle, so a badly colliding toolpath takes minutes, not hours (P4-2).
-* Between two points that pass, a linear move cannot break the axis ranges or
-  the tilt limit; those checks find points the IK accepts but the validator
-  rejects (a screw below zero), which the platform then fixes (P4-6).
+1. **P4-7** (P1's file): the validator's 5 mm single-move extrusion limit
+   rejects the platform's own long edges (a 29.7 mm edge extrudes 5.0009 mm),
+   so every part about 30 mm or longer that needs a platform fails
+   `validate_gcode`. Raise the limit, make it per mm of travel, or split the
+   platform's lines?
+2. **P4-8**, only if wanted: a default tolerance above the 0.01 mm float32
+   margin (say 0.1 mm) would hide the hairline grazes. Recommended: leave it,
+   so P2's steeper toolpaths are compared on the same strict check.
 
-**Open questions for the operator:**
-
-1. P4-7: raise the validator's 5 mm limit, make it per mm of travel, or
-   split the platform's long lines?
-2. The golden-cube tests for P4.2 (about 3.6 s) and P4.3 (about 2 s) stay in
-   the unit tier so CI guards them (recommended; nothing to do unless the
-   operator prefers `pipeline`).
-3. **Pull request opened** to bring P4 into `main` (operator's go-ahead,
-   2026-09-28).
-
-**Machine requests.** Two short sittings on two different machines:
-
-*Lab machine* (the reference for results; about 30 minutes, CPU only). The
-48 baseline toolpaths live in its `reports/toolpaths/`. The report is
-written outside `reports/` so the tree stays clean for the next pull:
-
-```powershell
-cd <the repository on the lab machine>
-conda activate atomizer
-git checkout -- reports/
-git fetch origin
-git checkout claude/phase-p4-build-fzqw55
-git pull
-python tools/check_motion_safety.py reports/toolpaths --json "$HOME\p4_lab_baseline.json"
-git checkout main
-```
-
-Expected: nozzle clear nearly everywhere; `bed` and `axis_range` hits on the
-30-degree files are the lift `add_platform` adds (the tool says so). Paste
-the 48 summary lines back, or send the JSON.
-
-*Laptop* (about 20 minutes; the golden test is required after the P4-4
-vendored edit):
-
-```powershell
-cd "$HOME\5AX3D_printer_slicer"
-conda activate atomizer
-git fetch origin
-git checkout claude/phase-p4-build-fzqw55
-git pull
-python -m pytest
-python -m pytest --run-pipeline tests/test_golden.py
-python tools/visualize_5ax.py reports/toolpaths/ramp60_s_ms30.npz
-git checkout main
-```
-
-Expected: the first `pytest` 0 failed (about a minute); the golden test all
-passed with the SHA unchanged (about 13 minutes, 784 s last time). In the
-viewer pick "Collisions (P4)" (the checks take
-about a minute on an `s` part), switch on Machine view and press Play; say
-whether the notes panel shows the P4.3/P4.2 totals and the card shows
-"Collision" rows where there are red dots.
-
-Unit suite on the branch: 815 passed, 17 skipped without a display (as in
-CI); 836 passed, 8 skipped under a virtual display with PySide6.
+**Next for P4:** nothing is owed. P4.4 only if P2's toolpaths show real travel
+collisions; P6.2 fills the clearance boxes when gate M3 is answered.
 
 ### 0c. P0.8 follow-on session status
 
