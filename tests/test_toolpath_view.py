@@ -380,8 +380,9 @@ def _nozzle_result(index, depth, axial):
                            axial_mm=np.asarray(axial, float), count=len(index))
 
 
-def _swept_result(rows, skipped=0):
-    return SimpleNamespace(violations=rows, skipped_moves=skipped)
+def _swept_result(rows, skipped=0, not_checked=None):
+    return SimpleNamespace(violations=rows, skipped_moves=skipped,
+                           not_checked=not_checked or {})
 
 
 def test_collision_marks_flag_the_point_and_the_move_to_it():
@@ -398,7 +399,13 @@ def test_collision_marks_flag_the_point_and_the_move_to_it():
     assert bed.notes[1] == ["bed vs gantry: 0.04 mm in, 100 % along the move (P4.2)"]
     assert marks.summary[0] == "P4.3 nozzle vs printed material: 1 positions"
     assert marks.summary[1] == "P4.2 swept check between points: 1 moves"
-    assert "P1.4" in marks.summary[-1]
+    assert len(marks.summary) == 2  # nothing left unchecked
+    tilt = tv.collision_marks(6, swept=_swept_result([{
+        "move": 3, "kind": "tilt_limit", "body": "bed", "clearance_mm": None,
+        "excess_deg": 5.0, "fraction": 1.0,
+        "detail": "bed tilt 35.0000 deg exceeds the 30 deg cone limit"}]))
+    assert tilt.notes[3] == ["tilt limit: bed tilt 35.0000 deg exceeds the 30 deg cone "
+                             "limit, 100 % along the move (P4.2)"]
 
 
 def test_clear_results_say_so():

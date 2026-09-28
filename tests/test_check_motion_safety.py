@@ -146,3 +146,7 @@ def test_bed_hits_before_the_platform_come_with_a_hint():
     assert cms.BED_HINT in cms.summary_line(entry)
     entry["file"] = "ramp60_s_platform.npz"
     assert cms.BED_HINT not in cms.summary_line(entry)
+    # A screw below zero is the same lift, seen as an axis range.
+    entry["file"] = "ramp60_s_ms30.npz"
+    entry["checks"]["swept"]["violations_by_kind"] = {"axis_range": 5}
+    assert cms.BED_HINT in cms.summary_line(entry)

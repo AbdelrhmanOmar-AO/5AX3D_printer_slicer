@@ -1559,11 +1559,10 @@ clearance model, axis ranges and tilt limits". As built
   code as P4.3 (`nozzle_material_check.cone_hits`). The hull fills hollows,
   so it would put the nozzle "inside" material whenever it works between two
   features or inside a cup.
-* **Axis ranges and the tilt limit between points are not checked yet.** By
-  the operator's decision they come from the P1.4 validator once it is in
-  `main`, so those rules exist once. Every report lists them under
-  `not_checked`. At the points themselves the IK already enforces both (NaN
-  `offset`), and moves touching an unreachable point are skipped and
+* **Axis ranges and the tilt limit between points were deferred to P1.4**,
+  so those rules exist once. **Done 2026-09-28, see P4-6**: every state is
+  now held to the validator's own rules, and `not_checked` is empty. Moves
+  touching a point the IK rejects (NaN `offset`) are still skipped and
   counted.
 * **Two checks added** that the plan's list does not name: the bed corners
   against every body at every state (the IK does this only at the points),
@@ -1633,9 +1632,13 @@ the Blender remesh and every stage on the CPU (development only; no number
 from it is reported anywhere). The mechanism is independent of both: it
 needs only a part whose bed corners are near the gantry at its largest tilt,
 which becomes common at a 30-degree budget and is exactly where P2 works.
-The P0.8 reports do not record whether G-code was written, so whether the
-laptop's `max_slope 30` runs hit it is unknown; the pipeline logs on the
-laptop would show "Fatal Error: collision found!".
+**Update (2026-09-28): the baseline did not hit it.** Since correction 4.16,
+`overhang_report.run_pipeline` fails a run whose stage left no fresh artifact,
+the G-code (stage 11) included, and `toolpath_to_gcode` aborts before opening
+its file. All 48 lab-machine baseline runs, the 16 at `max_slope 30` among
+them, were made with that check (commit `fadcab3`) and none failed. So P4-4 is
+latent: real, and a hazard for P2's larger tilts, but no committed number is
+affected.
 
 **Not fixed here.** The code is vendored (`tools/add_platform.py`,
 `kinematics3z.get_plaftorm_size`) and `tools/toolpath_to_gcode.py` belongs to
@@ -1670,3 +1673,38 @@ the machine view. Code: `toolpath_view.CollisionMarks` / `collision_marks`
 The Qt window needed no change: its dropdown and card are built from the
 same lists. Checked here under a virtual display (Qt window included); the
 laptop check is still to do.
+
+#### P4-6 P4.2 applies the validator's own axis-range and tilt-limit rules (operator's decision)
+
+P1.4 put both rules inside `gcode_check.check_lines`, which reads G-code line
+by line, so they could not be called on the machine states *between* toolpath
+points. With the operator's permission (2026-09-28), the P4 session moved
+them, unchanged, into shared functions in `src/atom/gcode_check.py` (a P1
+file): `axis_limits`, `axis_range_detail`, `axis_range_problems(states,
+profile)` and `tilt_limit_problems(screws, profile)`. `check_lines` now calls
+them. Its output is **byte-identical**: the validator's reports on all 11
+G-code fixtures, under both profiles and with the tilt limit as a cone and as
+a box (44 reports), were compared before and after.
+
+`tilt_motion_check` applies the same functions to every state it visits, as
+kinds `axis_range` (body = the axis, depth in mm) and `tilt_limit` (depth in
+degrees as `excess_deg`, no `clearance_mm`), each with the validator's own
+message as `detail`. Reports no longer list anything under `not_checked`.
+
+**What these can and cannot find between points.** A move is linear in the
+five axes. The axis ranges are a box in those axes; the total tilt is a
+monotone function of a norm that is linear in the screw differences, so it
+peaks at an end; and a box tilt limit can only be broken once the total
+passes the cone. So a move between two points that pass cannot break either
+rule. What the check does find is **points** the IK accepts and the
+validator would reject: a screw below zero, which `inverse` answers with a
+lift rather than NaN. On the 30-degree `ramp60_xs` stand-in (P4-4), 676 moves
+of the `_smoothed` toolpath have one, and none of the `_platform` toolpath:
+the platform supplies exactly that lift. The tool's before-platform hint now
+covers these too.
+
+A hazard noted, not seen: the IK's tilt tolerance is 1e-4 degrees and the
+screws are float32, so a point requested at exactly the limit could read a
+little over it from its screws. Atomizer's `max_slope` stays at or below the
+limit and its toolpaths have peaked at 29.4 degrees at a 30-degree budget.
+

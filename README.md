@@ -432,9 +432,11 @@ python tools/check_motion_safety.py "reports/toolpaths/*_xs_*.npz" --json report
 
 It prints one line per file and exits 1 if anything collides. On a toolpath
 from before `add_platform` (`_smoothed`, or the P0.8 archive), bed-corner hits
-are mostly the lift the platform stage adds; check the `_platform` toolpath.
-Axis ranges and the tilt limit between points are not checked yet (they come
-from the G-code validator, P1.4).
+and screws below zero are mostly the lift the platform stage adds; check the
+`_platform` toolpath.
+Every state is also held to the same axis-range and tilt-limit rules as
+`tools/validate_gcode.py` (one shared definition), so a problem shows up here
+before any G-code is written.
 
 In the viewer, the colour mode **Collisions (P4)** runs the same checks and
 marks each flagged point with a red dot; the current-point card says what was

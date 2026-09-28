@@ -13,11 +13,20 @@ those states and asks, for each one:
 * ``nozzle_vs_material``: is printed material inside the nozzle cone? (This
   is P4.3's test, applied between the points; P4.3 covers the points.)
 * ``nozzle_below_bed``: is the nozzle tip below the bed surface?
+* ``axis_range``: is any of X, Y, Z, U, V outside its travel?
+* ``tilt_limit``: does the bed tilt the screws imply break the limit?
 
-Not yet checked here: axis ranges and the tilt limit between points. By the
-operator's decision (2026-09-23) those come from the G-code validator (P1.4)
-once it is merged into ``main``, so the rules are written once. Every report
-lists them under ``not_checked``.
+The last two are the G-code validator's own rules (P1.4),
+`gcode_check.axis_range_problems` and `gcode_check.tilt_limit_problems`,
+applied to every state rather than to G-code lines, so the two can never
+disagree (operator's decision, 2026-09-28). Between two points that pass, a
+linear move cannot break either rule: the axis ranges are a box in the five
+axes, the total tilt is a monotone function of a norm that is linear in the
+screw differences (so it peaks at an end), and a box tilt limit can only be
+broken once the total passes the cone. So in practice these report the
+**points** the IK accepts but the validator rejects: a screw below zero, which
+the IK answers with a lift rather than a failure, or a tilt within the IK's
+tolerance but over the limit after the screws' float32 rounding.
 
 Method
 ------
@@ -59,15 +68,13 @@ from dataclasses import asdict, dataclass, field
 import numpy as np
 from scipy.spatial import ConvexHull, QhullError
 
-from . import bed_motion, clearance, contracts, machine_profile
+from . import bed_motion, clearance, contracts, gcode_check, machine_profile
 from . import nozzle_material_check as nm
 from . import overhang_metrics as om
 
-#: Checks this module does not perform yet, and where they will come from.
-NOT_CHECKED = {
-    "axis_range": "P1.4 G-code validator, once merged into main",
-    "tilt_limit": "P1.4 G-code validator, once merged into main",
-}
+#: Checks this module does not perform, and where they come from instead.
+#: Empty since the P1.4 rules are applied here too.
+NOT_CHECKED: dict = {}
 
 #: What each kind of violation means, for reports.
 KINDS = {
@@ -75,6 +82,8 @@ KINDS = {
     "bed": "a bed corner reaches a machine body",
     "nozzle_vs_material": "printed material is inside the nozzle cone",
     "nozzle_below_bed": "the nozzle tip is below the bed surface",
+    "axis_range": "an axis is outside its travel (the validator's AXIS_RANGE rule)",
+    "tilt_limit": "the bed tilt breaks the limit (the validator's TILT_LIMIT rule)",
 }
 
 
@@ -143,13 +152,18 @@ class SweptResult:
     violations: list = field(default_factory=list)
     settings: SweptCheckSettings = None
     model: dict = None
+    #: Checks not performed, and where they come from instead.
+    not_checked: dict = field(default_factory=lambda: dict(NOT_CHECKED))
 
     @property
     def ok(self) -> bool:
         return not self.violations
 
     def to_dict(self, limit: int | None = 100) -> dict:
-        worst = sorted(self.violations, key=lambda row: row["clearance_mm"])
+        # Tilt rows have no clearance in mm; they list after the geometric ones.
+        worst = sorted(self.violations, key=lambda row: (
+            row["clearance_mm"] is None,
+            row["clearance_mm"] if row["clearance_mm"] is not None else -row["excess_deg"]))
         listed = worst if limit is None else worst[:limit]
         by_kind = {}
         for row in self.violations:
@@ -166,7 +180,7 @@ class SweptResult:
             "min_bed_clearance_mm": _finite(self.min_bed_clearance_mm),
             "violations": len(self.violations),
             "violations_by_kind": by_kind,
-            "not_checked": dict(NOT_CHECKED),
+            "not_checked": dict(self.not_checked),
             "settings": asdict(self.settings) if self.settings else None,
             "clearance_model": self.model,
             "worst": [_rounded(row) for row in listed],
@@ -179,7 +193,10 @@ def _finite(value):
 
 def _rounded(row: dict) -> dict:
     out = dict(row)
-    out["clearance_mm"] = round(float(row["clearance_mm"]), 4)
+    if row["clearance_mm"] is not None:
+        out["clearance_mm"] = round(float(row["clearance_mm"]), 4)
+    if "excess_deg" in row:
+        out["excess_deg"] = round(float(row["excess_deg"]), 4)
     out["fraction"] = round(float(row["fraction"]), 4)
     out["tilt_deg"] = round(float(row["tilt_deg"]), 3)
     out["point_bed"] = [round(float(v), 4) for v in row["point_bed"]]
@@ -426,6 +443,19 @@ def check(machine_toolpath: contracts.MachineToolpath, profile=None, model=None,
         for s in interior[tip[interior, 2] < threshold]:
             found.append((int(s), "nozzle_below_bed", "bed", float(tip[s, 2]), tip[s]))
 
+    # -- the validator's own rules, on every state (P1.4) -------------------
+    limits = gcode_check.axis_limits(profile)
+    for s, axis, detail in gcode_check.axis_range_problems(states.machine, profile):
+        value = states.machine[s, gcode_check.MACHINE_AXES.index(axis)]
+        low, high = limits[axis]
+        outside = (low - value) if value < low else (value - high)
+        found.append((s, "axis_range", axis, -float(outside), tip[s], False, detail))
+    problems, screw_tilt_deg = gcode_check.tilt_limit_problems(states.machine[:, 2:], profile)
+    for s, detail in problems:
+        excess = float(screw_tilt_deg[s] - profile.max_tilt_angle_deg)
+        found.append((s, "tilt_limit", "bed", -excess if np.isfinite(excess) else -np.inf,
+                      tip[s], False, detail))
+
     return SweptResult(
         points=count,
         states=states.count,
@@ -455,26 +485,38 @@ def _chunks(count: int, size: int):
 
 
 def _worst_per_move(found, states: States, tilt, deposit) -> list:
-    """One row per (move, kind, body): the deepest state of that move."""
+    """One row per (move, kind, body): the deepest state of that move.
+
+    Entries are ``(state, kind, body, value, point[, partial[, detail]])``;
+    ``value`` is signed, negative inside, in mm, except for ``tilt_limit``,
+    where it is the excess over the limit in degrees, negated. Those rows
+    carry ``excess_deg`` and no ``clearance_mm``.
+    """
     worst = {}
-    for state_index, kind, body, clearance_mm, point, *flag in found:
+    for state_index, kind, body, value, point, *extra in found:
+        partial = bool(extra[0]) if extra else False
+        detail = extra[1] if len(extra) > 1 else None
         key = (int(states.move[state_index]), kind, body)
-        if key not in worst or clearance_mm < worst[key][2]:
-            worst[key] = (state_index, point, clearance_mm, bool(flag and flag[0]))
+        if key not in worst or value < worst[key][2]:
+            worst[key] = (state_index, point, value, partial, detail)
     rows = []
-    for (move, kind, body), (state_index, point, clearance_mm, partial) in sorted(
+    for (move, kind, body), (state_index, point, value, partial, detail) in sorted(
             worst.items()):
-        rows.append({
+        row = {
             "move": move,
             "fraction": float(states.fraction[state_index]),
             "kind": kind,
             "body": body,
-            "clearance_mm": clearance_mm,
+            "clearance_mm": None if kind == "tilt_limit" else value,
             "point_bed": np.asarray(point, dtype=np.float64).tolist(),
             "tilt_deg": float(tilt[state_index]),
             "deposit": bool(deposit[move]),
             "first_slab_only": partial,
-        })
+            "detail": detail,
+        }
+        if kind == "tilt_limit":
+            row["excess_deg"] = -value
+        rows.append(row)
     return rows
 
 

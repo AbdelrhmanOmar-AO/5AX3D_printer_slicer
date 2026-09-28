@@ -11,8 +11,8 @@ Checks available:
     Every machine state *between* the points too: moves that turn the tool
     and all travel are split into small steps, the bed is posed by the
     forward kinematics, and the part so far, the bed corners and the nozzle
-    are checked against the clearance model. Axis ranges and the tilt limit
-    between points are not checked yet (they come from the P1.4 validator).
+    are checked against the clearance model; every state is also checked
+    against the G-code validator's own axis-range and tilt-limit rules.
     Needs Taichi; runs on the CPU unless ``ATOM_TI_ARCH`` says otherwise.
 
 Every file is solved re-centred on the bed, as `toolpath_to_gcode` does.
@@ -122,8 +122,10 @@ def check_file(path: Path, profile, settings: dict, limit: int,
     return entry
 
 
-#: Printed after bed-corner hits on a toolpath from before `add_platform`.
-BED_HINT = ("bed hits before add_platform are mostly the lift the platform adds; "
+#: Printed after bed-corner or axis-range hits on a toolpath from before
+#: `add_platform`.
+BED_HINT = ("bed and axis-range hits before add_platform are mostly the lift the "
+            "platform adds (a bed corner in the gantry, a screw below zero); "
             "check the _platform toolpath")
 
 
@@ -149,7 +151,8 @@ def summary_line(entry: dict) -> str:
         else:
             kinds = ", ".join(f"{kind} {n}" for kind, n in check["violations_by_kind"].items())
             parts.append(f"swept: {check['violations']} moves ({kinds})")
-            if "bed" in check["violations_by_kind"] and before_platform(entry["file"]):
+            lift_kinds = {"bed", "axis_range"} & check["violations_by_kind"].keys()
+            if lift_kinds and before_platform(entry["file"]):
                 parts.append(BED_HINT)
     verdict = "clear" if entry["ok"] else "COLLISION  " + "; ".join(parts)
     return (f"{Path(entry['file']).name:<34} {entry['points']:>8} pts  "

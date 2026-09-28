@@ -252,13 +252,58 @@ def test_moves_to_unreachable_points_are_skipped_and_counted(ti_cpu, reference):
     assert result.states == tp.point_count - 1
 
 
-def test_report_says_what_is_not_checked_yet(ti_cpu, reference):
+def test_report_names_the_validator_rules_and_leaves_nothing_unchecked(ti_cpu, reference):
     tp, _ = sweep_case(5.0, 20.0, 0.0)
     report = tmc.check_toolpath(tp, reference).to_dict()
     assert report["check"] == "swept" and report["ok"] is True
-    assert set(report["not_checked"]) == {"axis_range", "tilt_limit"}
+    assert report["not_checked"] == {}
+    assert {"axis_range", "tilt_limit"} <= set(tmc.KINDS)
     assert report["clearance_model"]["model"] == "reference"
     assert report["settings"]["check_tilt_step_deg"] == 0.5
+
+
+def test_a_screw_below_zero_is_the_validators_axis_range_violation(ti_cpu, reference):
+    """30 mm up, 29.9 degrees toward 225: `inverse` answers a screw below zero
+    with a lift, not a failure, so the point is "reachable". The validator
+    would reject its G-code line; the swept check now says so first, in the
+    validator's own words, and the depth is how far below zero."""
+    from atom import gcode_check
+
+    tp, sweep = sweep_case(30.0, 29.9, 225.0)
+    solved = contracts.from_toolpath(tp, reference, center_on_bed=True)
+    screws = solved.machine[sweep, 2:]
+    assert solved.valid[sweep] and screws.min() < 0
+
+    result = tmc.check(solved, reference)
+    rows = [row for row in result.violations if row["kind"] == "axis_range"]
+    axis = "ZUV"[int(np.argmin(screws))]
+    worst = {row["body"]: row for row in rows}[axis]
+    assert worst["move"] == sweep and worst["fraction"] == 1.0
+    assert worst["clearance_mm"] == pytest.approx(screws.min())
+    assert worst["detail"] == gcode_check.axis_range_detail(axis, screws.min(), 0.0, 280.0)
+
+
+def test_a_state_over_the_tilt_limit_is_the_validators_tilt_limit_violation(ti_cpu, reference):
+    """No reachable point can break the tilt limit, so build one by hand: a
+    29.9-degree state with its screw differences stretched by 25 %."""
+    from atom import gcode_check, screw_tilt
+
+    tp, sweep = sweep_case(30.0, 29.9, 0.0)
+    solved = contracts.from_toolpath(tp, reference, center_on_bed=True)
+    screws = solved.machine[sweep, 2:]
+    solved.machine[sweep, 2:] = screws.mean() + 1.25 * (screws - screws.mean())
+    stretched = solved.machine[sweep, 2:]
+    tilt = float(np.ravel(screw_tilt.total_tilt_deg(*stretched[:, None], reference))[0])
+    assert tilt > 30.5
+
+    result = tmc.check(solved, reference)
+    (row,) = [row for row in result.violations if row["kind"] == "tilt_limit"]
+    assert row["move"] == sweep and row["fraction"] == 1.0
+    assert row["clearance_mm"] is None
+    assert row["excess_deg"] == pytest.approx(tilt - 30.0)
+    problems, _ = gcode_check.tilt_limit_problems(stretched[None], reference)
+    assert row["detail"] == problems[0][1]
+    assert result.to_dict()["worst"][-1]["kind"] == "tilt_limit"  # listed after mm rows
 
 
 def test_golden_cube_has_no_swept_violations(ti_cpu, reference, repo_root):

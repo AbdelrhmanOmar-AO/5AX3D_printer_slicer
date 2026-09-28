@@ -524,14 +524,21 @@ def collision_marks(count: int, nozzle=None, swept=None) -> CollisionMarks:
             what = row["kind"].replace("_", " ")
             if row["kind"] in ("part", "bed"):
                 what += f" vs {row['body']}"
+            if row.get("clearance_mm") is None or row["kind"] == "axis_range":
+                # The validator's rules say it in their own words.
+                amount = row.get("detail") or what
+            else:
+                amount = f"{-row['clearance_mm']:.2f} mm in"
             notes.setdefault(index, []).append(
-                f"{what}: {-row['clearance_mm']:.2f} mm in, "
-                f"{100 * row['fraction']:.0f} % along the move (P4.2)")
+                f"{what}: {amount}, {100 * row['fraction']:.0f} % along the move (P4.2)")
         summary.append(f"P4.2 swept check between points: {len(moves):,} moves"
                        + ("" if moves else ", clear"))
         if swept.skipped_moves:
             summary.append(f"  ({swept.skipped_moves:,} moves to unreachable points skipped)")
-        summary.append("Not checked yet: axis range and tilt limit between points (P1.4).")
+        not_checked = getattr(swept, "not_checked", None) or {}
+        if not_checked:
+            summary.append("Not checked yet: " + ", ".join(
+                name.replace("_", " ") for name in not_checked) + ".")
 
     return CollisionMarks(flagged=flagged, notes=notes, summary=summary)
 

@@ -339,3 +339,71 @@ def test_cli_missing_file_is_a_usage_error(tmp_path):
     with pytest.raises(SystemExit) as error:
         validate_gcode.main([str(tmp_path / "absent.gcode")])
     assert error.value.code == 2
+
+
+# --------------------------------------------------------------------------
+# The rules as shared functions (the swept check, P4.2, applies them too)
+# --------------------------------------------------------------------------
+
+
+def _screw_states(path):
+    """(line, Z, U, V) of every move that sets all three screws."""
+    states = []
+    for number, raw in enumerate(Path(path).read_text().splitlines(), start=1):
+        words = gcode_check.parse_words(gcode_check.strip_comment(raw))
+        if {"Z", "U", "V"} <= words.keys():
+            states.append((number, words["Z"], words["U"], words["V"]))
+    return states
+
+
+def test_axis_limits_are_the_ones_the_validator_reports(reference):
+    stats = check(CLEAN.read_text(), reference).stats
+    assert {axis: list(bounds) for axis, bounds in gcode_check.axis_limits(reference).items()} \
+        == stats["limits"]["axes"]
+
+
+def test_axis_range_problems_on_arrays(reference):
+    states = np.array([
+        [150.0, 145.0, 85.0, 85.0, 85.0],     # fine
+        [-0.5, 145.0, 85.0, 85.0, 85.0],      # X below 0
+        [150.0, 300.0, 85.0, -1.0, 281.0],    # Y over 293, U below 0, V over 280
+        [0.0, 293.0, 0.0, 280.0, 0.0],        # exactly on the limits: fine
+    ])
+    problems = gcode_check.axis_range_problems(states, reference)
+    assert [(row, axis) for row, axis, _ in problems] == [(1, "X"), (2, "Y"), (2, "U"), (2, "V")]
+    assert problems[0][2] == "X-0.5 is outside [0, 300]"
+    assert problems[0][2] == gcode_check.axis_range_detail("X", -0.5, 0.0, 300.0)
+
+
+def test_tilt_limit_problems_say_exactly_what_the_validator_says(reference):
+    """One rule: the screw states of the tilt fixture, fed to the shared
+    function, give the validator's violation word for word."""
+    path = FIXTURES / "validate_tilt_limit.gcode"
+    report = gcode_check.check_file(path, reference)
+    (violation,) = [v for v in report.violations if v.id == gcode_check.TILT_LIMIT]
+
+    states = _screw_states(path)
+    problems, total = gcode_check.tilt_limit_problems(
+        np.array([state[1:] for state in states]), reference)
+
+    (row, detail), = problems
+    assert states[row][0] == violation.line
+    assert detail == violation.detail
+    assert report.stats["max_tilt_deg"] == pytest.approx(np.nanmax(total))
+
+
+def test_tilt_limit_problems_report_heights_no_bed_can_reach(reference):
+    problems, total = gcode_check.tilt_limit_problems(
+        np.array([[85.0, 85.0, 85.0], [0.0, 900.0, 0.0]]), reference)
+    assert np.isnan(total[1]) and total[0] == pytest.approx(0.0)
+    assert problems == [(1, "screw heights no rigid bed can reach "
+                            "(their differences are too large)")]
+
+
+def test_tilt_limit_problems_follow_the_limit_shape(reference):
+    box = dataclasses.replace(reference, tilt_limit_shape="box")
+    odd = dataclasses.replace(reference, tilt_limit_shape="sphere")
+    level = np.array([[85.0, 85.0, 85.0]])
+    assert gcode_check.tilt_limit_problems(level, box)[0] == []
+    with pytest.raises(ValueError, match="tilt_limit_shape"):
+        gcode_check.tilt_limit_problems(level, odd)
