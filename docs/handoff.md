@@ -20,19 +20,21 @@ Last updated: 2026-09-28.
 >
 > Section 3 has the workflow; `plan_corrections.md` 7a P1-16 the reasoning.
 
-**Everything below is in `main`** (2026-09-28, `83bed6c`). **816 unit tests
-pass, 21 skipped.**
+**Everything below is in `main`** once P1.5's pull request merges (2026-09-28).
+**825 unit tests pass** with it (`ATOM_TI_ARCH=cpu pytest -m unit`, Linux, 9
+skipped for want of a display); `main` before it gave 820. The P0 session
+counted 816 passed and 21 skipped on another setup, where more tests skip.
 
 | Phase | State |
 |---|---|
 | **P0** | **Complete and closed**, P0.8 and P0.9a/b included |
 | **P4** | **Complete**, merged through pull request #17 |
 | **P5.4** | Viewer, bed motion and Qt window built |
-| **P1** | P1.1, P1.2, P1.3, P1.4, P1.6, P1.7 done. **Only P1.5 is left**, blocked on gate E1 |
+| **P1** | **Complete.** P1.5 was the last task: gate E1 answered (RepRapFirmware, axes X Y Z U V), `docs/firmware.md` written. Only its macro files remain, moved to P6.3 by the operator (section 0a) |
 | **P2** | **Not started. No session. This is the next work.** |
 
-Two of the three sessions have closed: the P0.8 follow-on (section 0c) and the
-P4 session (0b). The P1 session closes when P1.5 is unblocked and done. **A new
+All three sessions have closed: the P0.8 follow-on (section 0c), the P4
+session (0b) and, with P1.5 merged, the P1 session (0a). **A new
 session takes over P2**, and section 5's "immediate next step" is written for
 it.
 * **P2**, the actual contribution, has no session.
@@ -42,11 +44,11 @@ which records the one thing that went wrong because of it.
 
 ---
 
-## 0. Sessions: two closed, one finishing, P2 next (read first)
+## 0. Sessions: all three closed, P2 next (read first)
 
 | Session | Phase | Branch | State |
 |---|---|---|---|
-| P1 session | **P1**: kinematics and G-code toolchain | `claude/vibrant-rubin-waln7y` | **Finishing.** All of P1 in `main` but P1.5, which is blocked on gate E1. Closes when it lands |
+| P1 session | **P1**: kinematics and G-code toolchain | `claude/vibrant-rubin-waln7y` | **Closed** once P1.5's pull request merges: P1 complete (0a). Nothing of it is left on the branch |
 | P4 session | **P4**: motion safety for continuous tilt | `claude/phase-p4-build-fzqw55` | **Closed.** Complete and in `main` (pull request #17) — see 0b |
 | P0.8 follow-on | matrix runner, lab machine, test plumbing | `claude/new-session-l8g46d` | **Closed.** Fully in `main` (#9, #12) — see 0c |
 | **P2 session** | **the overhang-aware field** | not started | **The next work.** Nothing blocks starting; see section 5 |
@@ -57,8 +59,8 @@ on reports from scratch while P1.7, already in `main`, had done it better.
 
 **Every branch is on `origin` and readable by every session.** Nothing was
 hidden; the duplicating session did not fetch. That is the whole lesson, and it
-applies to the P2 session immediately: P1.5 will be in flight on a branch and
-not in `main`, so a fresh session that checks only `main` cannot see it.
+applies to the P2 session too: before building anything shared, check every
+branch, not only `main`, for work already in flight.
 
 > **Before building anything that sounds like infrastructure:**
 >
@@ -135,7 +137,8 @@ Branch `claude/vibrant-rubin-waln7y`. After each merge it restarts from `main`;
 most recently restarted from `main` after pull requests #8 (P1.3) and #9 (the
 P0.8 follow-on branch) were merged. The operator chose the order P1.4, P1.7,
 P1.1, P1.2, P1.3, the provenance follow-up (pull request #10), then P1.6.
-P1.5 stays open until gate E1 is answered.
+P1.5 was built last, after the operator answered gate E1 on 2026-09-28. **P1 is
+complete** and this session closes with it.
 
 The P1.4 golden run took **784 s**, against 457 s when the baseline was
 recorded. The test does not time anything and the hash matched, so the output
@@ -145,12 +148,13 @@ before P1.6, which measures `order_atoms` timings.
 
 | Task | Status |
 |---|---|
+| P1.5 Firmware dialect (gate E1) | **Done** (2026-09-28). The operator's E1 answers: **RepRapFirmware**; axes **X, Y, Z, U, V** (what Atomizer already writes, so the G-code is unchanged); homing/levelling undecided, so `G32` stays. `docs/firmware.md` records them and **specifies** what `enable3Z` / `disable3Z` must do. The **macro files are deferred to P6.3** by the operator: the paper behind Atomizer's printer (Cocco et al., SCF '25, supplied by the operator on the `paper` branch) does not publish them, and they need our board's driver numbers. Tests pin the axis letters and the header/footer order. Unit tests only; no laptop run needed, since no vendored file or G-code byte changed (`plan_corrections.md` 7a, P1-17). Not yet in `main` |
 | P1.4 G-code validator | **Done** (`58d2fe7`), verified on the laptop 2026-09-23: `pytest --run-pipeline tests/test_golden.py` gave **5 passed, 1 skipped** in 784 s. Golden SHA unchanged, and the real golden G-code validates with zero violations. (The P1.4 commit message expected 4 passed; that miscounted the file's unit tests.) **Merged into `main`** (pull request #4, `fab657f`), so the P4 session can bring it in |
 | P1.2 Templated header/footer + temperatures | **Built.** `atom.gcode_templates`; `kinematics3z.HEADER`/`FOOTER` now come from it, byte-identical to upstream (checked against the evaluated `e7b71ea` f-strings, and by converting the golden toolpath before and after: identical file). Optional `bed_temp`/`nozzle_temp` JSON keys and `--bed-temp`/`--nozzle-temp` options. Klipper raises GATE E1. **Verified on the laptop 2026-09-23:** `pytest --run-pipeline tests/test_golden.py` gave 5 passed, 1 skipped in 522 s, so the golden SHA is unchanged after editing the vendored `kinematics3z.py`, `atomize.py` and `toolpath_to_gcode.py`. In `main` (pull request #7) |
 | P1.3 Infill parameters | **Built.** `atom.infill_options`; optional `infill_period` / `shell_thickness` JSON keys (deposition widths) and `--infill-period` / `--shell-thickness` on `tools/sdf_to_isdf.py`; defaults are upstream's 8 and 2. **Golden verified on the laptop 2026-09-27:** 5 passed, 1 skipped in 674 s. `tests/test_infill_pipeline.py` failed on its first laptop run, from a wrong assertion in the test, not the feature (P1-13), after the pipeline itself had run to completion. The G-code that run left was then checked by hand: total extrusion **2894.792 mm against the golden's 3231.197 (-10.4 %)**, and `validate_gcode.py` reports no violations (43 870 lines, largest tilt 5.544 deg). Those are exactly the fixed test's assertions, so the parameter is shown to reach the stage. A formal re-run of the fixed test is optional. In `main` (pull request #8) |
 | P1.6 `order_atoms` profiler switch | **Done**, verified on the laptop 2026-09-27. `atom.ti_profiler`; `ATOM_TI_PROFILER` switches the kernel profiler on, **off by default** (upstream always ran it). Golden: 5 passed, 1 skipped in 518 s, so the output is unchanged. `order_atoms` alone on the golden files, run off / on / off: **335.5 / 338.8 / 334.9 s**, so the profiler cost **3.6 s, 1.1 %**. Too small to move any matrix estimate, so plan §0.2 and section 7 are unchanged. In `main` (pull request #11) |
-| Reference machine moved to the lab PC (operator's decision) | Documents updated: this file (header, sections 3, 5, 7b), `plan_corrections.md` 7a P1-16, and `SLICER_BUILD_PLAN.md` v3.4 (Appendix H). The laptop set is kept in `reports/baseline_overhang_laptop/` with a README, and `tools/backfill_provenance.py` now points there. Not yet in `main` |
-| Baseline tests generalised for PR #12 | `tests/test_provenance.py` pinned the laptop's host name and `parallel_workers == 1` for the committed baseline. PR #12 re-measures all 48 on the lab machine at 16/8/1 workers, so three tests failed on facts that legitimately changed. They now require one machine (whichever), a recorded worker count, and a summary that says so when worker counts are mixed; the per-stage backends stay pinned. Suggested by the P0.8 session on PR #12. Passes on both the laptop set and #12's lab set. Not yet in `main` |
+| Reference machine moved to the lab PC (operator's decision) | Documents updated: this file (header, sections 3, 5, 7b), `plan_corrections.md` 7a P1-16, and `SLICER_BUILD_PLAN.md` v3.4 (Appendix H). The laptop set is kept in `reports/baseline_overhang_laptop/` with a README, and `tools/backfill_provenance.py` now points there. In `main` (pull request #13) |
+| Baseline tests generalised for PR #12 | `tests/test_provenance.py` pinned the laptop's host name and `parallel_workers == 1` for the committed baseline. PR #12 re-measures all 48 on the lab machine at 16/8/1 workers, so three tests failed on facts that legitimately changed. They now require one machine (whichever), a recorded worker count, and a summary that says so when worker counts are mixed; the per-stage backends stay pinned. Suggested by the P0.8 session on PR #12. Passes on both the laptop set and #12's lab set. In `main` (pull request #13) |
 | P1.7 follow-up: parallel runs | **Built.** A report from `tools/run_matrix_parallel.py` now records the parent repository's commit (worker copies have no `.git`), the worker-pool size (`parallel_workers`) and the Taichi thread cap. The summary's runtime table gains a Run column ("alone" / "8 workers") and a note when runs shared the machine. The runner prints the mixed-provenance warning on screen, not only in the file. The 48 baseline reports now state `parallel_workers: 1`. CPU only; no laptop run needed (`plan_corrections.md` 7a, P1-14). In `main` (pull request #10) |
 | P1.1 Kinematics test suite | **Built.** `tests/test_kinematics3z.py` (24 tests) plus `tests/kinematics_f64_roundtrip.py`. No laptop run needed (CPU only). Two findings: the direction round trip is 4.5e-4 rad in 32-bit floats but exact in 64-bit (P1-8, both now tested), and a positive `offset` is a first estimate of the lift (P1-9, `docs/conventions.md` corrected). In `main` (pull request #6) |
 | P1.7 Provenance on reports | **Done**, verified on the laptop 2026-09-23. Every overhang report records its machine, backend (each stage's actual one), Taichi version, profile and commit (`atom.provenance`). All 48 baseline reports are backfilled (`tools/backfill_provenance.py`). `--summarize` states the origin above the table and warns on a mixed table. In `main` (pull request #5) |
@@ -850,7 +854,7 @@ the project's actual contribution, follows once gate D0 is taken.
 | P5.4 UI | **Qt window built** (`tools/viewer_qt.py`): side panel, timeline, toggle switches, dropdown. Needs `conda install -c conda-forge pyside6 pyvistaqt` once; falls back to the classic window without it. Laptop check pending |
 | P1.1 / P1.2 / P1.4 / P1.7 | **Done and in `main`.** Section 0a has each one's laptop check |
 | P1.3 | **Done and in `main`** (pull request #8) |
-| P1.5 firmware templates | Blocked on gate E1 |
+| P1.5 firmware templates | **Done** (2026-09-28): E1 answered, `docs/firmware.md`; macro files deferred to P6.3 (section 0a) |
 | P1.6 `order_atoms` without `kernel_profiler` | **Done** (section 0a): golden unchanged; the profiler cost only **1.1 %** of `order_atoms` |
 | P4.1 / P4.2 / P4.3 | **Built on `claude/phase-p4-build-fzqw55`, not in `main`** (section 0b) |
 | Parallel matrix runner | **Built and measured** on this session's branch, not in `main` (section 0c). 24 runs at 8 workers took **50:31, 0 failed**, a 5.19x speedup at 65 % efficiency. The full 48 should take **3 to 3.5 h at 16 workers** against 21.8 h serially |
@@ -910,8 +914,8 @@ measurement and reasoning: `docs/plan_corrections.md` **3.9**;
 
 ### The immediate next step: P2, and it is unblocked
 
-**P0, P4 and P5.4 are done and in `main`; P1 is done but for P1.5, which gate E1
-blocks.** Everything P2 was waiting on now exists:
+**P0, P1, P4 and P5.4 are done and in `main`** (P1.5's macro files wait for
+P6.3). Everything P2 was waiting on now exists:
 
 | P2 needs | State |
 |---|---|
@@ -935,9 +939,8 @@ stock Atomizer tilts *away* from overhangs, exactly degree for degree —
 should invert that to `theta_eff ≈ theta_geo − tilt_used`. Section 7b has the
 numbers; the plan's P2.2 test list has the check.
 
-**One coordination note.** P1.5 will be in flight on `claude/vibrant-rubin-waln7y`
-and not in `main`. Fetch every branch before building anything shared — that is
-correction 4.14, and it cost this project a day. P2.5 re-runs this same matrix with the
+**One coordination note.** Fetch every branch before building anything shared —
+that is correction 4.14, and it cost this project a day. P2.5 re-runs this same matrix with the
 flag on and compares, **on the lab machine**, the one that measured the
 committed baseline (header), so keep the reports committed. P2.5 also needs P1.7
 (provenance on every report) and P2.3 uses P4.1 (the clearance model).
@@ -1287,7 +1290,7 @@ CI installs neither, so `tests/test_viewer_qt.py` skips there.
 | **M2** | Tilt budget: max tilt on both axes at once, cone or box, can the design exceed 30 degrees, does reachable tilt vary with position? | **Most important.** Deferred until the mechanical design is settled. Determines whether horizontal overhangs are possible at all. |
 | M1 | Final bed geometry | Deferred; needed at P6.1 |
 | M3 | Clearance envelope | Deferred; needed at P6.2 |
-| E1 | Firmware (RRF or Klipper) and the three screws' axis letters | Deferred. The current header is RepRapFirmware-only (`G32`, `M98 P"..."`). |
+| E1 | Firmware (RRF or Klipper) and the three screws' axis letters | **Answered 2026-09-28** (`docs/firmware.md`): RepRapFirmware, axes X Y Z U V. Still open there: the macro files, our board's driver numbers, homing/levelling (`G32` kept), and what `disable3Z` does with a tilted bed |
 | HW | Printer assembled | Not yet |
 | D0 | Tilt budget and benchmark geometry | Needs P0.8 results plus P2.1's bound |
 | D1 | `max_overhang_deg`, overhang-vs-ceiling priority | Placeholder 45 degrees |

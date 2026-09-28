@@ -44,7 +44,7 @@ Checks
     The header and footer are present: ``G21`` and ``G90`` before the first
     move, the 3Z enable macro before the first U or V word, and the disable
     macro after the last one. Only the ``rrf`` dialect is defined; ``klipper``
-    raises until gate E1 is answered.
+    raises, since gate E1 chose RepRapFirmware (``docs/firmware.md``).
 
 Parsing
 -------
@@ -159,7 +159,7 @@ EXTRUSION_TOLERANCE_MM = 1e-6
 
 #: The macro calls that switch the three screws on and off, per dialect: the
 #: very strings `atom.gcode_templates` writes into the header and footer.
-#: Klipper is gate E1.
+#: RepRapFirmware only (gate E1, ``docs/firmware.md``).
 STRUCTURE_MARKERS = gcode_templates.MACRO_CALLS
 
 SCREW_WORDS = ("Z", "U", "V")
@@ -333,8 +333,9 @@ def check_lines(
     dialect = profile.firmware_dialect
     if dialect not in STRUCTURE_MARKERS:
         raise NotImplementedError(
-            f"GATE E1: the G-code structure for firmware dialect {dialect!r} is not "
-            "defined yet. Only 'rrf' is implemented."
+            f"The G-code structure for firmware dialect {dialect!r} is not defined. "
+            "Gate E1 chose RepRapFirmware ('rrf'), the only dialect implemented; "
+            "see docs/firmware.md."
         )
     markers = STRUCTURE_MARKERS[dialect]
 
