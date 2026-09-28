@@ -8,7 +8,7 @@
   "mesh": {
     "volume_mm3": 28687.5,
     "face_count": 20,
-    "sampled_face_count": 69632,
+    "sampled_face_count": 49152,
     "extents_mm": [
       50.0,
       22.5,
@@ -16,31 +16,31 @@
     ]
   },
   "toolpath": {
-    "point_count": 144168,
-    "deposition_count": 100817
+    "point_count": 142930,
+    "deposition_count": 100837
   },
   "runtime": {
-    "total_s": 2984.119318799989,
+    "total_s": 3807.0850468000863,
     "stages": {
-      "Direction computation": 37.3,
-      "Implicit layer computation": 43.3,
-      "Tangent computation": 39.3,
-      "Atoms alignment": 125.4,
-      "Extracting explicit atoms": 3.0,
-      "Toolpath planner": 2510.8
+      "Direction computation": 52.5,
+      "Implicit layer computation": 60.5,
+      "Tangent computation": 50.8,
+      "Atoms alignment": 170.1,
+      "Extracting explicit atoms": 3.4,
+      "Toolpath planner": 3147.2
     }
   },
   "metrics": {
     "max_tool_tilt_deg": 0.6898379537527943,
-    "unsupported_fraction_overall": 0.0046619121775097454,
-    "unsupported_fraction_near_overhangs": 0.0016704948841094174,
-    "deposition_points_near_overhangs": 4789,
+    "unsupported_fraction_overall": 0.004631236550075865,
+    "unsupported_fraction_near_overhangs": 0.0008438818565400844,
+    "deposition_points_near_overhangs": 4740,
     "surfaces": [
       {
         "geometric_angle_deg": 45.0,
         "area_mm2": 477.29707730091945,
-        "face_count": 8192,
-        "sample_count": 47009,
+        "face_count": 4096,
+        "sample_count": 23665,
         "max_effective_deg": 45.0,
         "mean_effective_deg": 45.0,
         "max_tilt_used_deg": 0.0
@@ -49,11 +49,50 @@
   },
   "verdict": {
     "printable": true,
+    "assessable": true,
     "worst_effective_deg": 45.0,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
       "max_unsupported_fraction": 0.01,
       "_gate": "D0: placeholders, team decision pending"
     }
+  },
+  "provenance": {
+    "source": "pipeline",
+    "machine": "cad-p07-2065-9",
+    "os": "Windows-10-10.0.26100-SP0",
+    "python": "3.10.21",
+    "taichi": "1.7.4",
+    "ti_arch_setting": "stock mix",
+    "stage_arches": {
+      "add_platform": "cuda",
+      "align_atoms": "cuda",
+      "atomize": "x64",
+      "bpn_to_sdf": "cuda",
+      "compute_tangents": "cuda",
+      "compute_tool_orientations": "cuda",
+      "extract_explicit_atoms": "cuda",
+      "obj_to_bpn": "x64",
+      "order_atoms": "x64",
+      "sdf_df_to_layers": "cuda",
+      "sdf_to_isdf": "x64",
+      "smooth_toolpath_point": "x64",
+      "tesselate_toolpath_orientations": "x64",
+      "toolpath_to_gcode": "cuda"
+    },
+    "machine_profile": "reference",
+    "git_commit": "fadcab359fb41539a80f43c4301fa7957daf8665",
+    "code_modified": false,
+    "recorded_utc": "2026-09-28T07:14:40+00:00",
+    "metrics_version": 2,
+    "scored": {
+      "machine": "cad-p07-2065-9",
+      "git_commit": "fadcab359fb41539a80f43c4301fa7957daf8665",
+      "code_modified": false,
+      "utc": "2026-09-28T07:14:40+00:00",
+      "metrics_version": 2
+    },
+    "parallel_workers": 8,
+    "taichi_cpu_threads": null
   }
 }

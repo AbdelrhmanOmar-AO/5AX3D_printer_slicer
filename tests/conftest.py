@@ -26,11 +26,23 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TOOLS_DIR = REPO_ROOT / "tools"
+SRC_DIR = REPO_ROOT / "src"
 
 # `tools/` holds CLI scripts rather than an importable package, so tests that
 # exercise their logic (e.g. tools/gcode_stats.py) import them by module name.
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
+
+# `src/` so `from atom import ...` works without the package being installed.
+#
+# Without this, no single test file could be run on its own: `pytest
+# tests/test_tilt.py` failed with "No module named 'atom'" while the whole suite
+# passed, because one of the `tools/` modules imported during a full collection
+# inserts `src` as a side effect and every later module then rides on it. That
+# is collection order deciding whether imports work — fine until someone runs
+# one file, which is the normal way to work on one.
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

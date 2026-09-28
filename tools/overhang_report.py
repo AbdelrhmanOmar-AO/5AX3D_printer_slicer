@@ -33,6 +33,14 @@ That copy is what makes ``--reanalyse`` possible: a change to the metrics
 re-scores every run already performed, in seconds, instead of re-slicing. The
 first baseline matrix took 20 hours, and a flaw found in the bed-contact rule
 afterwards would otherwise have cost all 20 again.
+
+Provenance
+----------
+Every report carries a ``provenance`` block (`atom.provenance`, build plan
+P1.7): the machine, the backend each stage actually ran on, the Taichi
+version, the machine profile and the commit. ``--summarize`` states it above
+the table, and when a table pools runs that are not comparable it warns and
+labels each cell with its group (plan §0 rule 10).
 """
 
 # No `from __future__ import annotations`: this module drives Taichi kernels
@@ -58,6 +66,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from atom import overhang_metrics as om  # noqa: E402
+from atom import provenance as prov  # noqa: E402
+from atom.ti_env import ARCH_LOG_ENV_VAR  # noqa: E402
 from atom.ti_env import init_taichi  # noqa: E402
 
 #: Where individual reports and the summary live.
@@ -110,11 +120,74 @@ def parse_stage_times(log_text):
     }
 
 
-def run_pipeline(param_path, max_slope_deg):
+#: What each pipeline stage must leave behind, in order, as
+#: (stage label, path template). Used to name the *first* stage that produced
+#: nothing, because `atomize.py` cannot.
+#:
+#: `tools/atomize.py` runs all 13 stages with `os.system` and **ignores every
+#: return code**. One early failure therefore produces twelve more, and the only
+#: thing that finally errors is this tool finding no toolpath — behind a log full
+#: of downstream noise. Diagnosing the first parallel run's failure took a
+#: directory listing per stage to find the one real cause.
+#:
+#: Worse, in a working tree that has run that part before, the *previous* run's
+#: outputs are still sitting there, so a failed stage can be read as a
+#: successful one and the report is quietly wrong. The freshness half of this
+#: check is what catches that.
+STAGE_ARTIFACTS = (
+    ("1 remesh (Blender)", "data/mesh/{part}.obj"),
+    ("2 point-normal cloud", "data/point_normal/{part}.npz"),
+    ("3 SDF", "data/sdf/{part}.npz"),
+    ("4 direction field", "data/direction/{part}.npz"),
+    ("5 implicit layers", "data/phasor/{part}.npz"),
+    ("6 tangents", "data/basis/{part}.npz"),
+    ("7 atom alignment", "data/triphasor/{part}.npz"),
+    ("8 explicit atoms", "data/frame/{part}.npz"),
+    ("9 order atoms", "data/toolpath/{part}.npz"),
+    ("10a smooth", "data/toolpath/{part}_smoothed.npz"),
+    ("10b tesselate", "data/toolpath/{part}_smoothed_tesselated.npz"),
+    ("10c add platform", "data/toolpath/{part}_platform.npz"),
+    ("11 G-code", "data/gcode/{part}.gcode"),
+)
+
+#: Slack on the freshness comparison, for filesystem timestamp granularity and
+#: any clock adjustment during a long run.
+FRESHNESS_TOLERANCE_S = 5.0
+
+
+def first_failed_stage(part, started_wall_s, root=None):
+    """The first stage whose artifact is missing or older than this run.
+
+    Returns (label, path, reason) or None if every stage delivered. "Older than
+    this run" is the case that matters most: the file exists, so nothing looks
+    wrong, but it belongs to a previous run of the same part.
+    """
+    root = REPO_ROOT if root is None else Path(root)
+    for label, template in STAGE_ARTIFACTS:
+        path = root / template.format(part=part)
+        if not path.is_file():
+            return label, path, "produced nothing"
+        if path.stat().st_mtime < started_wall_s - FRESHNESS_TOLERANCE_S:
+            return label, path, (
+                "left a file from an earlier run; this run did not rewrite it"
+            )
+    return None
+
+
+def run_pipeline(param_path, max_slope_deg, verify_stages=True):
     """Run `tools/atomize.py`, optionally overriding ``max_slope``.
 
     The override is applied through a temporary copy of the parameter file, so
     the committed one is untouched and no vendored stage is modified.
+
+    Returns ``(elapsed_s, params, stage_arches)``. ``stage_arches`` is the
+    backend each stage actually started on, which every stage records through
+    `atom.ti_env` when ``ATOM_TI_ARCH_LOG`` is set for it.
+
+    ``verify_stages`` checks afterwards that every stage left a fresh artifact
+    (see `first_failed_stage`). Only a unit test that stubs `subprocess.run`
+    should turn it off: such a test never runs the pipeline, so of course no
+    artifact appears, and the check would fire on a test about something else.
     """
     params = json.loads(Path(param_path).read_text(encoding="utf-8"))
     if max_slope_deg is not None:
@@ -123,19 +196,39 @@ def run_pipeline(param_path, max_slope_deg):
     with tempfile.TemporaryDirectory() as tmp:
         temporary = Path(tmp) / Path(param_path).name
         temporary.write_text(json.dumps(params, indent=4), encoding="utf-8")
+        arch_log = Path(tmp) / "stage_arches.jsonl"
+        env = dict(os.environ, **{ARCH_LOG_ENV_VAR: str(arch_log)})
 
         started = time.perf_counter()
+        started_wall = time.time()
         result = subprocess.run(
-            [sys.executable, "tools/atomize.py", str(temporary)], cwd=REPO_ROOT
+            [sys.executable, "tools/atomize.py", str(temporary)], cwd=REPO_ROOT, env=env
         )
         elapsed = time.perf_counter() - started
+        stage_arches = prov.read_arch_log(arch_log)
 
     if result.returncode != 0:
         raise SystemExit(
             f"atomize.py exited {result.returncode} for {param_path}. "
             "The report cannot be written."
         )
-    return elapsed, params
+
+    # atomize.py exits 0 even when a stage failed, so its exit code proves
+    # nothing. Find the first stage that did not deliver and say so.
+    failure = (
+        first_failed_stage(params["solid_name"], started_wall)
+        if verify_stages else None
+    )
+    if failure is not None:
+        label, path, reason = failure
+        raise SystemExit(
+            f"Stage {label} {reason}: {path}\n"
+            "atomize.py runs every stage with os.system and ignores the exit "
+            "codes, so the stages after this one will have failed too and the "
+            "log will be mostly their complaints. This is the one to fix."
+        )
+
+    return elapsed, params, stage_arches
 
 
 def load_mesh_arrays(stl_path, max_edge=None):
@@ -182,11 +275,14 @@ def measure(
     stage_times=None,
     toolpath_path=None,
     stl_path=None,
+    provenance=None,
 ):
     """Apply the three metrics and assemble the report.
 
     ``toolpath_path`` and ``stl_path`` default to the pipeline's own output
     locations; they are arguments so this can be exercised on synthetic data.
+    ``provenance`` is the block from `atom.provenance`; None records that it
+    is unknown, and the summary then warns.
     """
     from atom import toolpath3
 
@@ -283,27 +379,69 @@ def measure(
                 "_gate": "D0: placeholders, team decision pending",
             },
         },
+        "provenance": provenance,
     }
+
+
+#: Columns of the progress log. `machine` was appended once a second machine
+#: started running the pipeline; `migrate_progress_header` brings an older file
+#: up to it rather than writing ragged rows into it.
+PROGRESS_COLUMNS = (
+    "finished_utc", "part", "max_slope_deg", "metrics_version",
+    "worst_effective_deg", "unsupported_near_overhangs",
+    "max_tilt_used_deg", "printable", "runtime_s", "machine",
+)
+
+
+def migrate_progress_header(path=None):
+    """Bring a progress log written before `machine` existed up to date.
+
+    Returns True if the file was rewritten. Old rows are padded with an empty
+    machine rather than guessed at: the log predates the record, and inventing
+    a machine for it would be worse than admitting none.
+
+    A ragged CSV is the failure being avoided. This file is the crash trail from
+    correction 4.7, so it must stay readable by anything that opens it.
+    """
+    path = PROGRESS_LOG if path is None else path
+    if not path.is_file():
+        return False
+
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.reader(handle))
+    if not rows or tuple(rows[0]) == PROGRESS_COLUMNS:
+        return False
+
+    width = len(PROGRESS_COLUMNS)
+    padded = [list(PROGRESS_COLUMNS)]
+    for row in rows[1:]:
+        padded.append((list(row) + [""] * width)[:width])
+
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        csv.writer(handle).writerows(padded)
+    return True
 
 
 def append_progress(report):
     """Append one line to the progress log, flushed immediately.
 
     The per-run JSON is the real artifact; this is the at-a-glance trail that
-    survives a crash and shows what had been completed and when.
+    survives a crash and shows what had been completed and when — and on which
+    machine, since a run on another machine is a different computation
+    (corrections 3.9 and 4.14).
     """
     metrics, verdict = report["metrics"], report["verdict"]
     PROGRESS_LOG.parent.mkdir(parents=True, exist_ok=True)
 
     new_file = not PROGRESS_LOG.exists()
+    if not new_file:
+        migrate_progress_header()
+
+    provenance = report.get("provenance") or {}
     with PROGRESS_LOG.open("a", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         if new_file:
-            writer.writerow([
-                "finished_utc", "part", "max_slope_deg", "metrics_version",
-                "worst_effective_deg", "unsupported_near_overhangs",
-                "max_tilt_used_deg", "printable", "runtime_s",
-            ])
+            writer.writerow(list(PROGRESS_COLUMNS))
         writer.writerow([
             datetime.now(timezone.utc).isoformat(timespec="seconds"),
             report["part"],
@@ -314,6 +452,7 @@ def append_progress(report):
             f"{metrics['max_tool_tilt_deg']:.2f}",
             verdict["printable"],
             f"{report['runtime']['total_s']:.0f}",
+            provenance.get("machine") or "",
         ])
         handle.flush()
         os.fsync(handle.fileno())
@@ -354,6 +493,9 @@ def reanalyse(reports):
             skipped.append(f"{part} @ {slope:g} (no archived toolpath)")
             continue
 
+        # The toolpath still comes from the original run, so its provenance is
+        # kept; only the scoring is new. A report without one stays without.
+        old_provenance = old.get("provenance")
         fresh = measure(
             part,
             slope,
@@ -361,6 +503,10 @@ def reanalyse(reports):
             runtime_s=old.get("runtime", {}).get("total_s", 0.0),
             stage_times=old.get("runtime", {}).get("stages", {}),
             toolpath_path=archived,
+            provenance=(
+                prov.rescored(old_provenance, REPO_ROOT, METRICS_VERSION)
+                if isinstance(old_provenance, dict) else None
+            ),
         )
         report_path(part, slope).write_text(
             json.dumps(fresh, indent=2) + "\n", encoding="utf-8"
@@ -373,6 +519,68 @@ def reanalyse(reports):
 # --------------------------------------------------------------------------
 # Summary
 # --------------------------------------------------------------------------
+
+
+def provenance_groups(reports):
+    """Group reports by comparability: ``[(label, description, reports), ...]``.
+
+    Largest group first, labelled A, B, C ... A single group means every run in
+    the table can be pooled.
+    """
+    groups = {}
+    for report in reports:
+        groups.setdefault(prov.comparability_key(report.get("provenance")), []).append(report)
+    ordered = sorted(groups.values(), key=lambda members: -len(members))
+    return [
+        (chr(ord("A") + index), prov.describe(members[0].get("provenance")), members)
+        for index, members in enumerate(ordered)
+    ]
+
+
+def provenance_warning(reports):
+    """The warning text when ``reports`` are not all comparable, else None.
+
+    Also warns when every run shares one group but its origin is unknown: no
+    provenance recorded, or measured with ``--skip-pipeline``.
+    """
+    groups = provenance_groups(reports)
+    if len(groups) == 1:
+        if prov.is_known(groups[0][2][0].get("provenance")):
+            return None
+        return (
+            f"WARNING: where these {len(reports)} run(s) came from is unknown "
+            f"({groups[0][1]}). Record provenance before comparing them "
+            "(plan section 0 rule 10)."
+        )
+    lines = [
+        f"WARNING: this table mixes {len(groups)} provenance groups that are not "
+        "comparable (plan section 0 rule 10). Do not compare numbers across groups:"
+    ]
+    for label, description, members in groups:
+        lines.append(f"  [{label}] {len(members)} run(s): {description}")
+    return "\n".join(lines)
+
+
+def _provenance_section(reports):
+    """Where the numbers came from, above the table."""
+    groups = provenance_groups(reports)
+    if len(groups) == 1:
+        if prov.is_known(groups[0][2][0].get("provenance")):
+            return [f"Measured on: {groups[0][1]}. All {len(reports)} runs are comparable.", ""]
+        return [
+            f"> ⚠️ **Origin unknown** for all {len(reports)} run(s): {groups[0][1]}. "
+            "Record provenance before comparing them (plan §0 rule 10).",
+            "",
+        ]
+    lines = [
+        f"> ⚠️ **Mixed provenance: {len(groups)} groups.** Numbers from different "
+        "groups are not comparable (plan §0 rule 10). Each cell is labelled with "
+        "its group.",
+        ">",
+    ]
+    for label, description, members in groups:
+        lines.append(f"> **[{label}]** {len(members)} run(s): {description}")
+    return lines + [""]
 
 
 def _format_cell(report):
@@ -417,12 +625,21 @@ def summarize(reports):
         "`n/m` means not measured: no deposition was found near that surface.",
         "",
     ]
+    lines += _provenance_section(reports)
+
+    groups = provenance_groups(reports)
+    label_of = {}
+    if len(groups) > 1:
+        for label, _, members in groups:
+            for member in members:
+                label_of[id(member)] = f" [{label}]"
 
     header = "| Part | " + " | ".join(f"max_slope {s:g}°" for s in slopes) + " |"
     lines += [header, "|" + "---|" * (len(slopes) + 1)]
     for part in parts:
         cells = [
-            _format_cell(by_key[(part, s)]) if (part, s) in by_key else "—"
+            _format_cell(by_key[(part, s)]) + label_of.get(id(by_key[(part, s)]), "")
+            if (part, s) in by_key else "—"
             for s in slopes
         ]
         lines.append(f"| `{part}` | " + " | ".join(cells) + " |")
@@ -438,12 +655,25 @@ def _size_of(part):
     return match.group(1) if match else None
 
 
+def run_condition(report):
+    """How the run shared its machine: ``"alone"``, ``"8 workers"``, or
+    ``"not recorded"`` for a report that predates the field (P1.7 follow-up)."""
+    workers = (report.get("provenance") or {}).get("parallel_workers")
+    if workers is None:
+        return "not recorded"
+    return "alone" if workers == 1 else f"{workers} workers"
+
+
 def _timing_section(reports):
     """How pipeline cost scaled with part volume, from the runs themselves.
 
     Nobody has published how Atomizer's ordering stage scales, so this is a
     result in its own right rather than only a planning aid. It is built from
     whatever has been run; a single size gives a single row.
+
+    Each row says whether the run had the machine to itself. Runs made in a
+    worker pool are slower by contention (1.47x at 8 workers on the lab
+    machine), so their times measure the load as much as the part.
     """
     timed = [r for r in reports if r.get("runtime", {}).get("total_s", 0) > 0]
     if not timed:
@@ -472,7 +702,7 @@ def _timing_section(reports):
             f"| `{report['part']}` | {report['max_slope_deg']:g}° | "
             f"{volume:,.0f} | {points:,} | "
             + ("n/a" if math.isnan(ordering) else f"{ordering / 60:.1f}")
-            + f" | {total / 60:.1f} |"
+            + f" | {total / 60:.1f} | {run_condition(report)} |"
         )
 
     section = [
@@ -481,10 +711,21 @@ def _timing_section(reports):
         "How the pipeline's cost scaled with part size. `order_atoms` is the "
         "stage that dominates, and it runs on the CPU.",
         "",
-        "| Part | max_slope | Volume mm³ | Toolpath points | order_atoms min | Total min |",
-        "|---|---|---|---|---|---|",
+        "| Part | max_slope | Volume mm³ | Toolpath points | order_atoms min | Total min | Run |",
+        "|---|---|---|---|---|---|---|",
         *rows,
     ]
+
+    conditions = {run_condition(r) for r in timed}
+    if conditions != {"alone"}:
+        section += [
+            "",
+            "**Not all of these runs had the machine to itself** (the Run "
+            "column). A run sharing it with others is slower by contention, "
+            "1.47x at 8 workers on the lab machine, so compare times only "
+            "between runs made the same way, and do not fit a scaling curve "
+            "across them.",
+        ]
 
     sizes = {_size_of(r["part"]) for r in timed} - {None}
     if len(sizes) < 2:
@@ -725,6 +966,9 @@ def main(argv=None):
         SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
         SUMMARY_PATH.write_text(summarize(rewritten), encoding="utf-8")
         print(f"Re-scored {len(rewritten)} run(s); wrote {SUMMARY_PATH}.")
+        warning = provenance_warning(rewritten)
+        if warning:
+            print("\n" + warning)
         return 0
 
     if args.summarize:
@@ -734,6 +978,9 @@ def main(argv=None):
         SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
         SUMMARY_PATH.write_text(summarize(reports), encoding="utf-8")
         print(f"Wrote {SUMMARY_PATH} from {len(reports)} report(s).")
+        warning = provenance_warning(reports)
+        if warning:
+            print("\n" + warning)
         return 0
 
     if args.param_path is None:
@@ -745,18 +992,26 @@ def main(argv=None):
     part = params["solid_name"]
     max_slope = args.max_slope if args.max_slope is not None else params["max_slope"]
 
-    runtime_s, stage_times = 0.0, {}
+    runtime_s, stage_times, stage_arches = 0.0, {}, {}
     if not args.skip_pipeline:
         print(f"Running the pipeline: {part} at max_slope {max_slope:g}°")
-        runtime_s, _ = run_pipeline(args.param_path, args.max_slope)
+        runtime_s, _, stage_arches = run_pipeline(args.param_path, args.max_slope)
 
     log_path = REPO_ROOT / "data" / "log" / f"{part}.log"
     if log_path.is_file():
         stage_times = parse_stage_times(log_path.read_text(encoding="utf-8"))
 
+    provenance = prov.collect(
+        prov.SOURCE_SKIP_PIPELINE if args.skip_pipeline else prov.SOURCE_PIPELINE,
+        stage_arches,
+        REPO_ROOT,
+        METRICS_VERSION,
+    )
+
     init_taichi("cpu")
     report = measure(
-        part, max_slope, float(params["deposition_width"]), runtime_s, stage_times
+        part, max_slope, float(params["deposition_width"]), runtime_s, stage_times,
+        provenance=provenance,
     )
 
     if not args.skip_pipeline:
@@ -778,6 +1033,7 @@ def main(argv=None):
           f"{report['metrics']['unsupported_fraction_near_overhangs'] * 100:.2f}%")
     print(f"  max tilt used            : {report['metrics']['max_tool_tilt_deg']:.2f}°")
     print(f"  printable                : {verdict['printable']}")
+    print(f"  measured on              : {prov.describe(provenance)}")
     print(f"\nWrote {destination}")
     return 0
 

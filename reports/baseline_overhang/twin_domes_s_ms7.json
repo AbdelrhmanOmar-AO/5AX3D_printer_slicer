@@ -8,7 +8,7 @@
   "mesh": {
     "volume_mm3": 17693.43151370542,
     "face_count": 6828,
-    "sampled_face_count": 128256,
+    "sampled_face_count": 49800,
     "extents_mm": [
       50.0,
       22.5,
@@ -16,34 +16,73 @@
     ]
   },
   "toolpath": {
-    "point_count": 96261,
-    "deposition_count": 65028
+    "point_count": 97219,
+    "deposition_count": 64930
   },
   "runtime": {
-    "total_s": 2294.7739857000124,
+    "total_s": 2891.622501899954,
     "stages": {
-      "Direction computation": 36.9,
-      "Implicit layer computation": 42.1,
-      "Tangent computation": 38.1,
-      "Atoms alignment": 124.9,
-      "Extracting explicit atoms": 2.7,
-      "Toolpath planner": 1856.0
+      "Direction computation": 53.8,
+      "Implicit layer computation": 61.0,
+      "Tangent computation": 52.9,
+      "Atoms alignment": 171.2,
+      "Extracting explicit atoms": 3.5,
+      "Toolpath planner": 2282.5
     }
   },
   "metrics": {
     "max_tool_tilt_deg": 2.553053208207916,
-    "unsupported_fraction_overall": 0.0018607369133296426,
+    "unsupported_fraction_overall": 0.0019097489604189128,
     "unsupported_fraction_near_overhangs": NaN,
     "deposition_points_near_overhangs": 0,
     "surfaces": []
   },
   "verdict": {
     "printable": false,
+    "assessable": false,
     "worst_effective_deg": NaN,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
       "max_unsupported_fraction": 0.01,
       "_gate": "D0: placeholders, team decision pending"
     }
+  },
+  "provenance": {
+    "source": "pipeline",
+    "machine": "cad-p07-2065-9",
+    "os": "Windows-10-10.0.26100-SP0",
+    "python": "3.10.21",
+    "taichi": "1.7.4",
+    "ti_arch_setting": "stock mix",
+    "stage_arches": {
+      "add_platform": "cuda",
+      "align_atoms": "cuda",
+      "atomize": "x64",
+      "bpn_to_sdf": "cuda",
+      "compute_tangents": "cuda",
+      "compute_tool_orientations": "cuda",
+      "extract_explicit_atoms": "cuda",
+      "obj_to_bpn": "x64",
+      "order_atoms": "x64",
+      "sdf_df_to_layers": "cuda",
+      "sdf_to_isdf": "x64",
+      "smooth_toolpath_point": "x64",
+      "tesselate_toolpath_orientations": "x64",
+      "toolpath_to_gcode": "cuda"
+    },
+    "machine_profile": "reference",
+    "git_commit": "fadcab359fb41539a80f43c4301fa7957daf8665",
+    "code_modified": false,
+    "recorded_utc": "2026-09-28T08:25:19+00:00",
+    "metrics_version": 2,
+    "scored": {
+      "machine": "cad-p07-2065-9",
+      "git_commit": "fadcab359fb41539a80f43c4301fa7957daf8665",
+      "code_modified": false,
+      "utc": "2026-09-28T08:25:19+00:00",
+      "metrics_version": 2
+    },
+    "parallel_workers": 8,
+    "taichi_cpu_threads": null
   }
 }

@@ -244,7 +244,32 @@ Three things look alarming and are not:
   compiled-kernel cache, so it recompiles instead of reusing. Results are
   unaffected, but every stage pays the compilation cost again. Clear it with
   `ti cache clean -p C:/taichi_cache/ticache`, or delete the folder; an
-  interrupted run can leave the lock behind.
+  interrupted run can leave the lock behind. To move the cache somewhere else
+  entirely — a local disk when the home directory is a network share, or a
+  per-process directory when several runs go at once — set
+  `TI_OFFLINE_CACHE_FILE_PATH`. Verified on Taichi 1.7.4, and it needs no edit
+  to any stage:
+
+  ```powershell
+  $env:TI_OFFLINE_CACHE_FILE_PATH = "$env:LOCALAPPDATA\ticache"
+  ```
+
+#### `Windows fatal exception: access violation` during `pytest`
+
+The run dies partway through, in `pyvista/plotting/renderer.py`, and takes the
+whole suite with it — an access violation kills the process rather than failing
+one test. It happens where a real graphics window cannot open: a remote desktop
+session, a headless machine, or a driver VTK does not get on with. The viewer
+tests are the only ones that open windows, and nothing in the slicing pipeline
+depends on them. Skip them on that machine:
+
+```powershell
+$env:ATOM_SKIP_DISPLAY_TESTS = "1"          # this session
+[Environment]::SetEnvironmentVariable('ATOM_SKIP_DISPLAY_TESTS','1','User')   # permanently
+```
+
+Leave it unset anywhere a window does open: those tests found the Windows-only
+Play bug in `docs/plan_corrections.md` 4.13, which no headless test could see.
 
 #### "No module named ..." after a `git pull`
 
@@ -293,6 +318,8 @@ The parameters in the JSON file are:
 * `top_lines` and `bottom_lines` (optional): paths to single-channel, 8-bit-per-pixel PNG files representing the target tangent directions for the top and bottom surfaces, respectively. The mapping is $\[0, 255] \leftarrow \[−\pi/2, \pi/2]\$. The orientation defines a 2D line in the xy-plane. The 2D line field is defined on the upper face of the solid’s bounding box and is planarly projected onto the top and bottom surfaces along the z-axis.
 * `ortho_to_wall` (optional): if true, forces the tool orientation to be parallel to the boundary. By default, this is false, as enabling this feature causes many tool orientation changes that are detrimental to surface quality.
 * `infill` (optional): if true, a gyroid pattern infills the solid.
+* `infill_period` and `shell_thickness` (optional, this fork, used when `infill` is true): the gyroid's period and the solid shell under the surface, both in deposition widths. Defaults 8 and 2, the upstream values. `tools/sdf_to_isdf.py` takes the same as `--infill-period` and `--shell-thickness`.
+* `bed_temp` and `nozzle_temp` (optional, this fork): the bed and nozzle temperatures in °C written into the G-code header. Defaults 55 and 210, the upstream values; leaving them out gives exactly the upstream header. `tools/toolpath_to_gcode.py` takes the same as `--bed-temp` and `--nozzle-temp`.
 
 The inputs and outputs are:
 
@@ -362,6 +389,31 @@ view. Hover over any control for a tooltip.
 **Screenshot:** `--screenshot out.png` saves a picture without opening a
 window. Run `--help` for every option, and see the tool's docstring for which
 file to open when.
+
+### Check G-code before printing (this fork)
+
+`tools/validate_gcode.py` reads a G-code file and checks that the printer can
+run it safely. It never changes the file.
+
+```powershell
+python tools/validate_gcode.py data/gcode/calibration_cube.gcode
+```
+
+It checks:
+
+- every X, Y and screw (Z, U, V) value is within the machine's travel;
+- the bed tilt implied by the three screws stays within the tilt limit;
+- no value is `nan` or infinite;
+- every feed rate (F) is above zero, and below `--max-feed` if you give one;
+- no single move pushes out more than 5 mm of filament (`--max-e` changes
+  that), and retracts and primes balance;
+- the header and footer are there, with the 3Z enable and disable macros
+  around the moves.
+
+It prints `OK: no violations.` and exits with code 0 when the file passes.
+Otherwise it lists each problem with its line number and exits with 1. Add
+`--json` for the full report, or `--machine ours` to check against another
+machine profile.
 
 ### Check a toolpath for collisions (this fork, build plan P4)
 

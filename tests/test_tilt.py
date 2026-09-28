@@ -116,7 +116,7 @@ def test_cone_limit_uses_the_total_angle():
     assert not tilt.within_limit(30.1, 0.0, 30.0, "cone")
     # 20 and 20 is 27.9 total, so inside a 30 degree cone.
     assert tilt.within_limit(20.0, 20.0, 30.0, "cone")
-    # 25 and 25 is 34.6 total, so outside it.
+    # 25 and 25 is 34.78 total, so outside it.
     assert not tilt.within_limit(25.0, 25.0, 30.0, "cone")
 
 

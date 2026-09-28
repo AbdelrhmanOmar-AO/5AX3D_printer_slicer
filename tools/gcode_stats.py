@@ -48,6 +48,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# The tokeniser is shared with the G-code validator (build plan P1.4), so the
+# repository has one G-code word parser. `strip_comment` and `parse_words` stay
+# importable from this module for existing callers (tools/visualize_5ax.py).
+from atom.gcode_check import parse_words, strip_comment  # noqa: F401
+
 #: Axis words tracked in the per-axis min/max table, in report order.
 AXIS_WORDS: tuple[str, ...] = ("X", "Y", "Z", "U", "V", "E")
 
@@ -56,35 +61,6 @@ MOTION_WORDS: frozenset[str] = frozenset({"X", "Y", "Z", "U", "V"})
 
 #: Number of leading/trailing lines kept verbatim in the record.
 CONTEXT_LINES: int = 40
-
-#: A G-code word: a letter followed by a number (``X12.5``, ``E-2.0``, ``F2700``).
-_WORD_RE = re.compile(r"(?P<letter>[A-Za-z])(?P<value>-?\d*\.?\d+(?:[eE][-+]?\d+)?)")
-
-#: A double-quoted string parameter, as used by RepRapFirmware macro calls.
-#: These are removed before word parsing: the path in
-#: ``M98 P"/macros/enable3Z.g"`` otherwise parses as an ``E3`` word and
-#: corrupts the extrusion totals.
-_QUOTED_RE = re.compile(r'"[^"]*"')
-
-
-def strip_comment(line: str) -> str:
-    """Return ``line`` with any ``;`` comment and surrounding whitespace removed."""
-    return line.split(";", 1)[0].strip()
-
-
-def parse_words(code: str) -> dict[str, float]:
-    """Parse the G-code words of one comment-free line into ``{letter: value}``.
-
-    Later occurrences of the same letter win, which matches how firmware reads a
-    malformed line. Quoted string parameters (e.g. the ``P"/macros/enable3Z.g"``
-    of an RRF macro call) are removed first, so text inside them is never read
-    as a word.
-    """
-    unquoted = _QUOTED_RE.sub("", code)
-    return {
-        match.group("letter").upper(): float(match.group("value"))
-        for match in _WORD_RE.finditer(unquoted)
-    }
 
 
 def compute_stats(text: str) -> dict[str, Any]:

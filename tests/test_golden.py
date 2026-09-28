@@ -207,6 +207,28 @@ def test_forced_backend_stays_within_tolerance(golden_stats, pipeline_stats):
     )
 
 
+@pytest.mark.pipeline
+def test_pipeline_gcode_passes_the_validator(pipeline_stats, repo_root):
+    """The G-code the golden run just wrote has zero validator violations (P1.4).
+
+    Reuses the module's single pipeline run: `pipeline_stats` is requested only
+    so that the run has happened. Holds on any backend, so it is not skipped
+    under ``ATOM_TI_ARCH``.
+    """
+    from atom import gcode_check, machine_profile
+
+    gcode_path = repo_root / "data" / "gcode" / f"{PART}.gcode"
+    report = gcode_check.check_file(gcode_path, machine_profile.load_profile())
+    shown = "\n".join(
+        f"  line {violation.line}: {violation.id}: {violation.detail}"
+        for violation in report.violations[:20]
+    )
+    assert report.ok, (
+        f"{len(report.violations)} validator violation(s) in {gcode_path.name} "
+        f"({report.stats['violation_counts']}):\n{shown}"
+    )
+
+
 def test_golden_statistics_are_self_consistent(golden_stats):
     """Guards against a corrupted or hand-edited baseline file.
 

@@ -2,6 +2,7 @@ import taichi as ti
 import numpy as np
 
 from . import direction, math, toolpath3
+from .gcode_templates import make_footer, make_header
 from .machine_profile import load_profile
 
 # Machine constants are loaded from a profile under config/machines/, chosen by
@@ -36,41 +37,13 @@ RETRACT_THRESH = _PROFILE.retract_thresh
 RETRACT_LENGTH = _PROFILE.retract_length
 RETRACT_SPEED = _PROFILE.retract_speed
 
-HEADER = \
-f"""G21 ; set units to millimeters
-G90 ; use absolute coordinates
-M190 S55 ; wait for bed temperature to be reached
-G32 ; homing and bed calibration
-M104 S210 ; set temperature
-M109 S210 ; wait for temperature to be reached
-T0
-M82 ; use absolute distances for extrusion
-; switch to enable 3Z mode
-M98 P"/macros/enable3Z.g"
-M400 ; wait 
-; purging line
-G92 E0
-G1 Z{1.3 + Z_OFFSET} U{1.3 + Z_OFFSET} V{1.3 + Z_OFFSET} F500 ; move z up little to prevent scratching of surface
-G1 X0.1 Y20 Z{0.3 + Z_OFFSET} U{0.3 + Z_OFFSET} V{0.3 + Z_OFFSET} F1000.0 ; move to start-line position
-G1 X0.1 Y200.0 Z{0.3 + Z_OFFSET} U{0.3 + Z_OFFSET} V{0.3 + Z_OFFSET} F1000.0 E15 ; draw 1st line
-G1 X0.4 Y200.0 Z{0.3 + Z_OFFSET} U{0.3 + Z_OFFSET} V{0.3 + Z_OFFSET} F1000.0 ; move to side a little
-G1 X0.4 Y20 Z{0.3 + Z_OFFSET} U{0.3 + Z_OFFSET} V{0.3 + Z_OFFSET} F1000.0 E30 ; draw 2nd line
-G1 E28.0 F2700 ; retract
-; done purging extruder
-M83 ; relative extrusion
-"""
-FOOTER = \
-f"""M82 ; absolute extrusion
-G92 E0
-G1 E-2.0 F2700 ; retract
-G92 E0
-M104 S0 ; turn off temperature
-M140 S0
-M106 S0    ; fan off
-; switch to disable 3Z mode
-M98 P"/macros/disable3Z.g"
-M400 ; wait 
-"""
+# The header and footer are built from templates chosen by the profile's
+# firmware dialect, with upstream's temperatures (bed 55, nozzle 210) as the
+# defaults: byte-identical to the f-strings that used to stand here (build plan
+# P1.2). tools/toolpath_to_gcode.py builds its own when given other
+# temperatures.
+HEADER = make_header(_PROFILE)
+FOOTER = make_footer(_PROFILE)
 
 class Toolpath:
 	def _init_(self) -> None:

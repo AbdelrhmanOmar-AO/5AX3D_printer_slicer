@@ -7,6 +7,8 @@ import taichi as ti
 from atom.ti_env import init_taichi
 
 import atom.fff3
+from atom.gcode_templates import temperature_arguments
+from atom.infill_options import infill_arguments
 
 init_taichi("cpu", offline_cache_cleaning_policy="never")
 
@@ -58,6 +60,19 @@ class Parameters:
 
         self.top_lines = param_dict.get("top_lines")
         self.bottom_lines = param_dict.get("bottom_lines")
+
+        # Build plan P1.2: optional temperatures in deg C. Absent keys keep
+        # upstream's header (bed 55, nozzle 210) byte for byte.
+        self.bed_temp = param_dict.get("bed_temp")
+        self.nozzle_temp = param_dict.get("nozzle_temp")
+        # Checked now, not at the G-code stage an hour later.
+        self.temperature_arguments = temperature_arguments(self.bed_temp, self.nozzle_temp)
+
+        # Build plan P1.3: optional infill settings, in deposition widths.
+        # Absent keys keep upstream's 8 and 2, and the upstream command.
+        self.infill_period = param_dict.get("infill_period")
+        self.shell_thickness = param_dict.get("shell_thickness")
+        self.infill_arguments = infill_arguments(self.infill_period, self.shell_thickness)
 
         self.log_path = f"data/log/{self.solid_name}.log"
         self.stl_path = f"data/mesh/{self.solid_name}.stl"
@@ -155,7 +170,7 @@ if __name__ == "__main__":
     process_mesh_command = f"blender -b -P tools/process_for_atomizer.py -- {params.stl_path} {params.obj_path} {cell_sides_length * 0.5:.6f}"
     obj_to_bpn_cmd = f"python tools/obj_to_bpn.py {params.obj_path} {params.bpn_path}"
     bpn_to_sdf_cmd = f"python tools/bpn_to_sdf.py {params.bpn_path} {params.sdf_path} {params.deposition_width:.2f}"
-    sdf_to_isdf_cmd = f"python tools/sdf_to_isdf.py {params.bpn_path} {params.sdf_path} {params.sdf_path} no_gui=True"
+    sdf_to_isdf_cmd = f"python tools/sdf_to_isdf.py {params.bpn_path} {params.sdf_path} {params.sdf_path} no_gui=True{params.infill_arguments}"
 
     compute_tool_orientations_cmd = f"python tools/compute_tool_orientations.py {params.sdf_path} {params.direction_path} --maxslope {params.max_slope}"
     if params.ortho_to_wall:
@@ -182,7 +197,7 @@ if __name__ == "__main__":
     smooth_toolpath_point_cmd = f"python tools/smooth_toolpath_point.py {params.toolpath_path} {params.smoothed_toolpath_path} {params.smoothing_iter_count}"
     tesselate_toolpath_orientations_cmd = f"python tools/tesselate_toolpath_orientations.py {params.smoothed_toolpath_path} {params.smoothed_tesselated_toolpath_path} {params.degree_angle_max_diff}"
     add_platform_cmd = f"python tools/add_platform.py {params.smoothed_tesselated_toolpath_path} {params.platform_toolpath_path} {params.deposition_width} {layer_height}"
-    toolpath_to_gcode_cmd = f"python tools/toolpath_to_gcode.py {params.platform_toolpath_path} {params.gcode_path}"
+    toolpath_to_gcode_cmd = f"python tools/toolpath_to_gcode.py {params.platform_toolpath_path} {params.gcode_path}{params.temperature_arguments}"
     ratrig_to_craftware_cmd = f"python tools/ratrig_to_craftware.py {params.gcode_path} {params.craftware_gcode_path}"
 
     visualize_bpn_cmd = f"python tools/visualize_bpn.py {params.bpn_path}"

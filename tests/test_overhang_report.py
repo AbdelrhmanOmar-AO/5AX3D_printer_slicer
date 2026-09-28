@@ -8,8 +8,11 @@ the numbers in the baseline table mean what they claim to.
 No `from __future__ import annotations`: this drives Taichi through the tool.
 """
 
+import csv
 import json
 import math
+import os
+import time
 
 import numpy as np
 import pytest
@@ -185,6 +188,55 @@ def _fake_report(part, slope, worst, near_fraction, tilt, printable):
         },
         "verdict": {"printable": printable, "worst_effective_deg": worst},
     }
+
+
+# --------------------------------------------------------------------------
+# Progress log
+# --------------------------------------------------------------------------
+
+
+def test_the_progress_log_gains_a_machine_column(tmp_path):
+    """An older log must be migrated, not left ragged.
+
+    The log is the crash trail from correction 4.7, so it has to stay readable
+    by anything that opens it — appending a tenth field to nine-field rows would
+    break that quietly.
+    """
+    log = tmp_path / "matrix_progress.csv"
+    old_header = [
+        "finished_utc", "part", "max_slope_deg", "metrics_version",
+        "worst_effective_deg", "unsupported_near_overhangs",
+        "max_tilt_used_deg", "printable", "runtime_s",
+    ]
+    with log.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(old_header)
+        writer.writerow(["2026-09-23T12:00:00+00:00", "ramp45_xs", "7", "2",
+                         "45.00", "0.0024", "0.61", "True", "341"])
+
+    assert overhang_report.migrate_progress_header(log) is True
+
+    with log.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.reader(handle))
+
+    assert tuple(rows[0]) == overhang_report.PROGRESS_COLUMNS
+    assert len(rows[1]) == len(overhang_report.PROGRESS_COLUMNS)
+    assert rows[1][-1] == "", "an old row has no machine, and must not gain a made-up one"
+    assert rows[1][1] == "ramp45_xs", "the existing data must survive the migration"
+
+
+def test_migrating_an_already_current_log_does_nothing(tmp_path):
+    log = tmp_path / "matrix_progress.csv"
+    with log.open("w", encoding="utf-8", newline="") as handle:
+        csv.writer(handle).writerow(list(overhang_report.PROGRESS_COLUMNS))
+    before = log.read_bytes()
+
+    assert overhang_report.migrate_progress_header(log) is False
+    assert log.read_bytes() == before
+
+
+def test_migrating_a_missing_log_is_not_an_error(tmp_path):
+    assert overhang_report.migrate_progress_header(tmp_path / "nope.csv") is False
 
 
 def test_summary_lays_parts_against_slopes():

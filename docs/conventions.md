@@ -122,7 +122,7 @@ vertical, not 40°. This is why the limit's shape matters:
 | `cone` | total angle from vertical ≤ limit | ✅ declared |
 | `box` | each axis ≤ limit independently | — |
 
-A box permits more on the diagonal: (25°, 25°) is 34.6° total, inside a 30° box
+A box permits more on the diagonal: (25°, 25°) is 34.78° total, inside a 30° box
 but outside a 30° cone. Which one our machine has is **gate M2**.
 `atom.tilt.within_limit`.
 
@@ -148,15 +148,18 @@ example below: 10° of tilt spreads the screws over more than 50 mm.
 There is no flag and no exception.
 
 When it is not NaN, `offset` is a non-negative **required vertical clearance**
-in mm: how much the part must be raised for the move to be safe.
-`kinematics3z.get_plaftorm_size` takes the maximum over a toolpath to size the
-sacrificial platform.
+in mm: how much to raise the part before trying again. It is a first estimate,
+not the exact lift. Raising the part moves the tilted bed's corners by less
+than the lift, so one step can fall short: 6.10 mm, then 0.37, then smaller,
+6.49 mm in total for a 20-degree tilt near the bed. `kinematics3z.get_plaftorm_size`
+therefore takes the maximum over a toolpath, raises the part by it, and repeats
+until the offset is zero. Measured in `tests/test_kinematics3z.py` (P1.1).
 
 | `offset` | Meaning |
 |---|---|
 | `NaN` | Unreachable. See the causes below. |
 | `0.0` | Reachable as-is. |
-| `> 0.0` | Reachable only if the part is raised by this much. |
+| `> 0.0` | Reachable only if the part is raised: by at least this much (see above). |
 
 Causes of NaN, in the order `inverse` checks them:
 
