@@ -58,8 +58,9 @@ STATUS_VERIFIED = "verified"
 STATUS_PLACEHOLDER = "PLACEHOLDER"
 VALID_STATUS = frozenset({STATUS_VERIFIED, STATUS_PLACEHOLDER})
 
-#: G-code dialects. The upstream header is RepRapFirmware; Klipper support is
-#: gated on E1 and not implemented.
+#: G-code dialects. RepRapFirmware is upstream's and, by gate E1
+#: (docs/firmware.md), ours. "klipper" still loads, but writing or checking
+#: G-code for it raises: it is not implemented.
 VALID_FIRMWARE = frozenset({"rrf", "klipper"})
 
 #: Shape of the tilt limit: a cone limits total tilt in any direction, a box

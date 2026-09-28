@@ -357,8 +357,8 @@ def test_empty_file_is_not_ok(reference):
     assert check("; nothing\n", reference).ids() == {gcode_check.STRUCTURE}
 
 
-def test_klipper_is_gated(reference):
-    with pytest.raises(NotImplementedError, match="GATE E1"):
+def test_klipper_is_refused(reference):
+    with pytest.raises(NotImplementedError, match="Gate E1 chose RepRapFirmware"):
         check(CLEAN.read_text(), dataclasses.replace(reference, firmware_dialect="klipper"))
 
 

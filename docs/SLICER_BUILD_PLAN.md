@@ -1,8 +1,8 @@
 # 5-Axis Slicer — Detailed Build Plan (for Claude Code)
 
-> **Version:** v3.4 · 2026-09-28 · **The lab machine is the reference for overhang results.** The operator adopted the lab machine's full re-run of the 48-run baseline (`cad-p07-2065-9`, pull request #12) as the committed baseline: every comparison against it, P2.5 included, now runs there with `tools/run_matrix_parallel.py`. The golden test stays on the laptop. The two machines agree on every P0.8 conclusion (0 verdict changes in 48), and the laptop's serial set is kept in `reports/baseline_overhang_laptop/` for its timings. P1 is done except P1.5 (gate E1). Changes in Appendix H.
+> **Version:** v3.5 · 2026-09-28 · **P1 complete; gate E1 answered.** The printer runs **RepRapFirmware** with axes **X, Y, Z, U, V**, which is what Atomizer already writes, so the G-code does not change. `docs/firmware.md` records the answers and specifies what the `enable3Z` / `disable3Z` macros must do; the macro files themselves wait for the authors' files or our board (P6.3), by the operator's decision. The next phase is P2. Changes in Appendix I.
 >
-> *Previous:* v3.3 · 2026-09-23 · **P0 closed; P5.4 built early; next phase is P1 + P2.** The 48-run baseline finished at metrics v2 and settled both questions v3.2 left open: stock Atomizer's support-free limit is **45°**, and its tilt points almost exactly away from overhangs (`θ_eff = θ_geo + tilt_used`, r = 0.992). The viewer (P5.4a/b + a Qt window) was built while the matrix ran. New corrections folded in: the kinematics realise a requested direction only to ~0.14°, and the golden hash is valid only on the backend mix that captured it. Source: `docs/plan_corrections.md`, `docs/handoff.md` and `reports/baseline_overhang.md` at commit `a003735d`. Changes in Appendix G.
+> *Previous:* v3.4 · 2026-09-28 · **The lab machine is the reference for overhang results.** The operator adopted the lab machine's full re-run of the 48-run baseline (`cad-p07-2065-9`, pull request #12) as the committed baseline: every comparison against it, P2.5 included, now runs there with `tools/run_matrix_parallel.py`. The golden test stays on the laptop. The two machines agree on every P0.8 conclusion (0 verdict changes in 48), and the laptop's serial set is kept in `reports/baseline_overhang_laptop/` for its timings. P1 is done except P1.5 (gate E1). Changes in Appendix H.
 > **Audience:** Claude Code, working in the team's fork of Atomizer on GitHub. A human teammate (the "operator") reviews each task's commit and runs anything that needs the GPU laptop or the printer.
 > **Companion doc:** "5-Axis Slicer: Revised Build Plan" (Claude Doc) holds the high-level view: phase outcomes, inputs, dependencies and testing strategy. This file holds the task-level instructions.
 
@@ -167,7 +167,7 @@ Checked against `xavierchermain/atomizer` `main` on 2026-09-19 and corrected aga
 | **M1** | External (mechanical) | Final bed geometry: ball-pivot XY positions, rail angles, ball Z, Z offset, axis travel, ball-to-corner, nozzle-to-gantry | Mechanical | P6.1 only |
 | **M2** | External (mechanical) | **Tilt budget, now the most important mechanical input.** (a) Max tilt on both axes **at the same time**, and is the limit a cone or a box? (b) Can the design exceed 30°? A fully horizontal overhang needs ≥ 45° of usable tilt where it is printed. (c) Does the reachable tilt depend on position/height, as on Multipole's Archer ("limited when the extruder is close to the bed, sharp angles further out")? | Mechanical | P6.1; informs D0 |
 | **M3** | External (mechanical) | 3D clearance envelope of gantry/hotend/frame (STEP or simple boxes) | Mechanical | P6.2 (P4 and P2.3 use a proxy meanwhile) |
-| **E1** | External (electronics) | Firmware and how the three Z screws are exposed (Z/U/V?). What should enable/disable-3Z do? Evidence now points to **RepRapFirmware on a Duet**: Atomizer's header is RRF, Open5x runs RRF 3.1.1 on a Duet 2, Multipole ships Duet 3 + RRF. Klipper would need a new dialect. | Electronics | P1.5 final templates, P6.3 |
+| **E1** | External (electronics) | Firmware and how the three Z screws are exposed (Z/U/V?). What should enable/disable-3Z do? **Answered 2026-09-28** (`docs/firmware.md`): **RepRapFirmware**, axes **X, Y, Z, U, V**; the macros are specified there from the G-code, their files wait for the authors' or our board's; homing/levelling undecided, `G32` kept. Atomizer's own printer ran RRF 3.6.0 on a RatRig V-Core 3.1 (Cocco et al., SCF '25). | Electronics | P1.5 (done), P6.3 |
 | **HW** | External | Printer assembled and wired | Mech + Elec | P7, P8 |
 | **D0** | Team decision | **Tilt budget and benchmark geometry.** Inputs: P0.8 (**complete**: support-free limit 45°, `θ_eff = θ_geo + tilt_used`), P2.1's analytic bound (45° + usable tilt), and M2. Decide: the overhang angles the benchmarks target (e.g. give the T-shape crossbar an angled underside if usable tilt < 45°), and whether to ask mechanical for more tilt. Taken end of week ~2, re-checked after P2.5 and when M2 arrives. | Team | P2.5 targets, P5.3, P8 |
 | **D1** | Team decision | `max_overhang_deg` (placeholder 45°) and priority when a cell is both a top surface and near an overhang | Team | P2.2 tuning |
@@ -311,6 +311,7 @@ This sets up P2 precisely: the mechanism is **sign-wrong**, not subtly wrong, an
 ### P1.5 Firmware dialect templates (partly gated by E1)
 - **Steps:** ask the operator for the E1 answers. If still open, commit only the `rrf` path plus a `docs/firmware.md` listing the E1 questions (firmware choice, axis names for the three screws, what enable/disable-3Z must do, homing/bed-calibration command). No macro files are written until E1 is answered.
 - **Done when:** either the E1 answers are recorded and the templates + `firmware/enable3Z.*` / `disable3Z.*` exist, or `docs/firmware.md` lists the open questions and the task stays open (it does not block P2–P5).
+- **Done (v3.5, 2026-09-28, plan_corrections P1-17).** E1 answered: RepRapFirmware, X Y Z U V, so `rrf` is the dialect and the G-code is unchanged; `klipper` stays refused. `docs/firmware.md` records the answers and **specifies** the two macros (what they must leave the machine in, not their commands). Tests pin the axis letters, the order `G32` → enable macro → first U/V move, and the footer's final disable macro. **The macro files are deferred to P6.3** by the operator: the paper behind Atomizer's printer does not publish them, and every `M584` line needs our board's driver numbers.
 
 ### P1.6 `order_atoms` profiler switch (cheap speed-up, golden-guarded)
 - **Why:** `order_atoms` is 86 % of runtime and passes `kernel_profiler=True` to `ti.init`, which has a cost. Removing it cannot change the output, and the golden SHA proves that.
@@ -485,7 +486,7 @@ This sets up P2 precisely: the mechanism is **sign-wrong**, not subtly wrong, an
 
 - **P6.1 (M1, M2):** fill in `config/machines/ours.json` from the operator's numbers (never estimate; keep integer-typed constants as ints, hazard 3); set `status: "verified"`, `tilt_limit_shape`, and any position-dependent limits the mechanical team gives. Regenerate the reachability map (P2.3). Parametrize the kinematics and tilt suites over `["reference", "ours"]`. Re-run `tools/tilt_bound.py` and tell the operator if D0 needs revisiting.
 - **P6.2 (M3):** `config/machines/ours.clearance.json` as boxes in the machine frame; unit tests that spot-check 3 points the operator gives you.
-- **P6.3 (E1):** real firmware dialect templates + `firmware/` macros; update the validator's `STRUCTURE` check. Unit test: header/footer snapshot for `ours`.
+- **P6.3 (E1):** `firmware/enable3Z.g` and `disable3Z.g`, written to the specification in `docs/firmware.md` section 3 from the authors' files or for our board (its open items O-1 to O-4: the files, driver numbers, `bed.g` / `M671` levelling, and what `disable3Z` does with a tilted bed); update the validator's `STRUCTURE` check if the header changes. Unit test: header/footer snapshot for `ours`.
 - **P6.4:** switch the default `ATOM_MACHINE` to `ours`; operator runs `unit` + `pipeline` + `benchmark`; commit re-generated reports.
 - **Exit:** full suite green on `ours`; the reference profile stays in the test matrix permanently.
 
@@ -639,3 +640,14 @@ Source: pull request #12 (the lab machine's 48 runs), `docs/plan_corrections.md`
 | Correction 4.20 | `--resume` counts a report as done only if it was measured on this machine | §0.2 |
 | P2.5 runner | `tools/run_matrix_parallel.py` on the lab machine (add `--overhang-aware`), not `scripts/run_baseline_matrix.ps1` | P2.5 steps |
 | P1 status | P1.1–P1.4, P1.6, P1.7 in `main`; P1.5 waits on gate E1 | Version line |
+
+## Appendix I — v3.5 changes (2026-09-28): gate E1 answered, P1 complete
+
+Source: the operator's E1 answers, `docs/firmware.md`, `docs/plan_corrections.md` 7a P1-17, and Cocco et al., "Towards Accessible Non-Planar FFF Using Triple Z-Axis Kinematics", SCF '25 (doi:10.1145/3745778.3766652).
+
+| Item | Change | Where in the plan |
+|---|---|---|
+| Gate E1 | RepRapFirmware; axes X, Y, Z, U, V; `G32` kept, levelling undecided | §3 gates table, P1.5 |
+| P1.5 | Done without the macro files, which move to P6.3 by the operator's decision; `docs/firmware.md` specifies them | P1.5, P6.3 |
+| The paper | Atomizer's printer ran RRF 3.6.0 on a RatRig V-Core 3.1, "configured" rather than modified; its geometry matches the `reference` profile (two rail angles differ only in sign convention, checked numerically); Z axes limited to 1900 mm/min; at most 1 mm and 1° between G-code points | `docs/firmware.md` section 5; relevant to D3 and P6 |
+| P1 status | P1 complete: P1.1–P1.7 done; only P1.5's macro files remain, now under P6.3 | Version line |

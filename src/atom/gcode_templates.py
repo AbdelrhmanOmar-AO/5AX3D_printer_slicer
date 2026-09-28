@@ -15,13 +15,14 @@ with the defaults. The ``rrf`` template with the default temperatures is
 Dialects
 --------
 ``rrf``
-    RepRapFirmware, the upstream dialect: ``G32`` homes and calibrates the bed,
-    and ``M98 P"..."`` calls the macros that switch the three bed screws into
-    3Z mode and back.
+    RepRapFirmware, the upstream dialect and, since gate E1 was answered
+    (2026-09-28, ``docs/firmware.md``), our printer's too: ``G32`` homes and
+    calibrates the bed, and ``M98 P"..."`` calls the macros that switch the
+    three bed screws into 3Z mode and back. The axis letters stay X, Y, Z, U, V.
 ``klipper``
-    Not written yet. Gate E1 (firmware, and how the three screws are exposed)
-    is open, so building it raises ``NotImplementedError`` rather than
-    emitting commands Klipper does not have.
+    Not implemented, and not planned: gate E1 chose RepRapFirmware. Building
+    it raises ``NotImplementedError`` rather than emitting commands Klipper
+    does not have.
 
 Units: degrees Celsius for temperatures, millimetres for positions.
 """
@@ -86,9 +87,9 @@ M106 S0    ; fan off
 
 def _gate_e1(dialect: str) -> NotImplementedError:
     return NotImplementedError(
-        f"GATE E1: the G-code header and footer for firmware dialect {dialect!r} "
-        "are not written yet. Only 'rrf' is implemented; the firmware and how "
-        "the three bed screws are exposed are still open (build plan P1.5)."
+        f"The G-code header and footer for firmware dialect {dialect!r} are not "
+        "implemented. Gate E1 chose RepRapFirmware ('rrf'), the only dialect "
+        "written; see docs/firmware.md (build plan P1.5)."
     )
 
 

@@ -1009,7 +1009,8 @@ the operator's laptop. They now say which machine they are pretending to be.
 | Item | Status |
 |---|---|
 | P0.8 matrix | **Done** (2026-09-23): 48 of 48 at metrics v2. The first run, 48 runs in 19.9 h, produced sound tilt and runtime data but unusable unsupported figures; `--reanalyse` recovered 39 of those from their archived toolpaths. |
-| Gates M1, M2, M3, E1 | Deferred by the team until the mechanical design is settled |
+| Gates M1, M2, M3 | Deferred by the team until the mechanical design is settled |
+| Gate E1 | **Answered** (2026-09-28, `docs/firmware.md`): RepRapFirmware, axes X Y Z U V, `G32` kept while levelling is undecided. The macro files wait for the authors' files or our board (P6.3) |
 | Gate D0 (tilt budget, benchmark geometry) | Matrix done. Still needs P2.1's analytic bound, the team's decision, and ideally M2 |
 | T-shape `underside_angle_deg` | Defaults to 90; gate D0 picks the real value |
 | Thresholds (45 deg effective, 1 % unsupported) | Placeholders, gate D0. Now meaningful: with the metric fixed, parts can actually pass. |
@@ -1017,7 +1018,7 @@ the operator's laptop. They now say which machine they are pretending to be.
 | Which stage first diverges across backends | 3.9 argues the field solvers, from which stages change backend and how the planner works. Not measured stage by stage. The atom count in `data/frame/<part>.npz` settles it in one command if it ever matters. |
 | Backend recorded beside each number | **Closed** by plan task **P1.7**: `provenance.stage_arches` records the backend every stage actually started on, and `ti_arch_setting` records whether anything was forced. |
 | `order_atoms` with `kernel_profiler=False` | **Closed** by P1.6 (2026-09-27): output unchanged, and only **1.1 %** faster (335.2 s mean against 338.8 s). The profiler was not what made the stage slow |
-| P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
+| P1.5 firmware templates | **Done** (2026-09-28, P1-17): E1 recorded, `rrf` is the dialect, `docs/firmware.md` specifies the macros. The macro files themselves are deferred by the operator to P6.3 |
 | P4 vs P1.4 ordering | **Closed.** P4 is complete and in `main` (pull request #17); P1.4 reached `main` first. |
 | P4 branch not merged | **Closed** (2026-09-28): merged through pull request #17, viewer included. |
 | P0.8 follow-on branch not merged | **Closed** (2026-09-28): `claude/new-session-l8g46d` is fully in `main` through pull requests #9 and #12, and that session is closed. Handoff 0c records what it delivered and its two declared convention breaches. |
@@ -1442,6 +1443,65 @@ counts differ. The per-stage backends stay pinned.
 A full 48 at 8 workers is therefore **roughly 3.5 to 4 h**, against about 20 h
 serially on the laptop. That is an estimate from those two runs, not a
 measurement of a full 48 at 8.
+
+#### P1-17 Gate E1 answered; P1.5 built without the macro files
+
+*The operator's answers (2026-09-28), and what the paper behind Atomizer's
+printer adds. Changes plan §3 (E1), P1.5 and P6.3 (plan v3.5, Appendix I).*
+
+**The answers.** RepRapFirmware; axis letters X, Y, Z, U, V ("as RRF allows",
+which is also what Atomizer writes); for the macros, find what they do from RRF,
+then from Atomizer's own documentation; homing and levelling not decided, so
+`G32` stays. `docs/firmware.md` records
+them.
+
+**Why no macro files.** The plan's P1.5 writes `firmware/enable3Z.*` and
+`disable3Z.*` once E1 is answered. Their contents are not published: the
+operator supplied the paper (Cocco et al., SCF '25, doi:10.1145/3745778.3766652),
+and it says only that "RepRap firmware can be configured to interpret 5-axis
+G-code without any modifications". It gives no `M584` lines, macros or axis
+letters. Writing them from general RRF practice would be a guess, and every
+`M584` line needs our board's driver numbers, which do not exist yet. The
+operator chose to build P1.5 now and add the files later (P6.3). So
+`docs/firmware.md` specifies what the macros must **do**, taken from the G-code
+and the kinematics, instead:
+
+* `enable3Z` runs after `G32` and leaves Z, U, V as independent axes that
+  **agree on height**. The G-code's first move after it is Z = U = V, which
+  means a level bed only if the split kept one zero and direction;
+* `disable3Z` runs last and joins the screws into one Z again, so the next
+  `G32` works.
+
+**Klipper** stays accepted in a profile but refused when G-code is written or
+checked, now with a message saying E1 chose RepRapFirmware rather than "GATE
+E1". Removing it from the valid dialects would change what a profile may say,
+which nobody asked for.
+
+**Tests** (`tests/test_gcode_templates.py`, "Gate E1"): the validator's axis
+letters are E1's; every move the pipeline writes uses only X Y Z U V E F; the
+header levels (`G32`) before the enable macro, and no U or V word comes before
+it; the macro is followed by `M400`; the footer ends with the disable macro;
+and `docs/firmware.md` names the macro paths and commands the G-code uses.
+
+**What the paper adds, for later phases** (recorded in `docs/firmware.md`
+section 5):
+
+* its printer ran RRF **3.6.0** on a RatRig V-Core 3.1;
+* the Z axes are limited to **1900 mm/min**. RRF slows a move so no axis
+  exceeds its limit, so fast tilting moves run slower than the G-code asks.
+  Relevant to D3 (max tilt rate) and to any print-time estimate;
+* at most **1 mm and 1 degree** between G-code points keeps the firmware's
+  straight-line interpolation of machine coordinates within 0.05 mm and
+  0.01 degrees. Atomizer tessellates orientation to 1 degree; point spacing
+  was not checked;
+* its ball positions, ball height, build area and 30-degree tilt match the
+  `reference` profile exactly. Two rail angles are stated in the opposite
+  direction (150.11 and -90 against -29.89 and 90). `kinematics3z.inverse`
+  built with the paper's angles gives **identical** screw heights on 200 random
+  poses up to 25 degrees, so the difference is a sign convention only;
+* backlash in the bed makes layer alignment depend on tilt direction, and the
+  balls are held on their rails by gravity alone, so an ungreased rail can
+  lift the bed off. Both matter at P7/P8.
 
 ### 7b. P4 session (branch recorded in `docs/handoff.md` section 0b)
 

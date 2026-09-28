@@ -133,16 +133,81 @@ def test_the_validator_checks_the_same_macro_strings_the_header_writes():
 
 
 # --------------------------------------------------------------------------
-# Gate E1
+# Gate E1: RepRapFirmware, axes X Y Z U V
 # --------------------------------------------------------------------------
 
 
-def test_klipper_is_gated(reference):
+# Answered 2026-09-28 (docs/firmware.md, build plan P1.5): RepRapFirmware, axes
+# X Y Z U V. These tests pin the G-code side of those answers, because the
+# printer's configuration and its enable3Z/disable3Z macros are written against
+# them: changing a letter here means changing the firmware too.
+
+E1_AXES = ("X", "Y", "Z", "U", "V")
+FIRMWARE_DOC = Path(__file__).resolve().parent.parent / "docs" / "firmware.md"
+
+
+def lines_of(text: str) -> list[str]:
+    return [gcode_check.strip_comment(line) for line in text.splitlines()]
+
+
+def test_klipper_is_refused(reference):
     klipper = dataclasses.replace(reference, firmware_dialect="klipper")
-    with pytest.raises(NotImplementedError, match="GATE E1"):
+    with pytest.raises(NotImplementedError, match="Gate E1 chose RepRapFirmware"):
         gcode_templates.make_header(klipper)
-    with pytest.raises(NotImplementedError, match="GATE E1"):
+    with pytest.raises(NotImplementedError, match="Gate E1 chose RepRapFirmware"):
         gcode_templates.make_footer(klipper)
+
+
+def test_the_axis_letters_are_e1s():
+    assert gcode_check.MACHINE_AXES == E1_AXES
+    assert gcode_check.SCREW_WORDS == E1_AXES[2:]
+
+
+def test_pipeline_moves_use_only_e1s_axis_letters():
+    """Every move in the calibration cube's G-code, written by
+    toolpath_to_gcode.py, uses the E1 axes plus E and F, and nothing else."""
+    moves = [
+        gcode_check.parse_words(code)
+        for code in lines_of(read_exact(FIXTURES / "calibration_cube_head.gcode"))
+        if code.startswith(("G0 ", "G1 "))
+    ]
+    assert len(moves) > 400
+    letters = set().union(*(set(words) for words in moves)) - {"G"}
+    assert letters <= set(E1_AXES) | {"E", "F"}
+    assert set(E1_AXES) <= letters
+
+
+def test_the_header_levels_the_bed_before_splitting_the_screws(reference):
+    """``G32`` levels the bed while the three screws are still one Z axis, so
+    it must come before the enable macro, and no U or V word may come before
+    that macro (docs/firmware.md, requirement 1)."""
+    codes = lines_of(gcode_templates.make_header(reference))
+    enable = gcode_templates.MACRO_CALLS["rrf"]["enable_3z"]
+    level = codes.index("G32")
+    split = codes.index(enable)
+    first_screw_move = next(
+        i for i, code in enumerate(codes)
+        if code != enable and {"U", "V"} & set(gcode_check.parse_words(code))
+    )
+    assert level < split < first_screw_move
+    assert codes[split + 1] == "M400", "the purge must wait for the macro to finish"
+
+
+def test_the_footer_joins_the_screws_last(reference):
+    """The disable macro is the footer's last command bar its wait, after the
+    heaters and fan are off: nothing moves a screw after it."""
+    codes = [code for code in lines_of(gcode_templates.make_footer(reference)) if code]
+    assert codes[-2:] == [gcode_templates.MACRO_CALLS["rrf"]["disable_3z"], "M400"]
+
+
+def test_the_firmware_doc_names_what_the_gcode_calls():
+    """docs/firmware.md is where the printer side is specified: it must name the
+    macro files and the commands the G-code actually uses."""
+    doc = FIRMWARE_DOC.read_text(encoding="utf-8")
+    for call in gcode_templates.MACRO_CALLS["rrf"].values():
+        assert call in doc
+    for word in ("G32", "M400", "RepRapFirmware", "X, Y, Z, U, V"):
+        assert word in doc
 
 
 # --------------------------------------------------------------------------
