@@ -1744,3 +1744,37 @@ raise the default, scale it with the move's length (a limit per mm of travel
 rather than per move), or have `add_platform` split long lines. Not changed
 here.
 
+#### P4-8 The lab baseline under both checks: 43 of 48 clear, the rest lift or hairline grazes (result)
+
+Run 2026-09-28 on the lab machine (`cad-p07-2065-9`), `tools/check_motion_safety.py`
+on the 48 baseline toolpaths (`reports/toolpaths/`, the `_smoothed` stage, so
+before `add_platform`), reference clearance model. About 15 minutes.
+
+* **At the points (P4.3): all 48 clear.**
+* **Between the points (P4.2): 43 of 48 clear.** All 5 flagged files are at
+  `max_slope 30`:
+  * `ramp60_s` (4 975 `bed`, 3 291 `axis_range` moves), `ramp60_xs` (1 063,
+    556) and `twin_domes_s` (8 `bed`): the lift `add_platform` adds, a bed
+    corner in the gantry or a screw below zero. All 48 runs wrote G-code
+    under the stage check (4.16), which `toolpath_to_gcode` refuses if any
+    point still needs lift after the platform.
+  * `tshape_xs` (1 move) and `twin_domes_xs` (4): `nozzle_vs_material`,
+    depths **0.0120, 0.0122, 0.0155, 0.0221, 0.0464 mm**, at 5.3 to 14.6
+    degrees of tilt, 20 to 67 % along the move; four printing moves and one
+    travel. None buried (`first_slab_only` false).
+
+**The five nozzle hits are hairline grazes, not collisions.** They pass the
+0.01 mm tolerance by 0.002 to 0.036 mm. The nozzle is an idealised 40-degree
+cone (Atomizer's planning proxy, gate M3 for the real shape) and material is
+represented by bead-centre points of beads 0.9 x 0.45 mm, so an overlap of a
+few hundredths of a millimetre is below what either model resolves. The
+32-bit direction error (P1-8, 0.026 degrees) would need a blocker about
+100 mm away to reach 0.046 mm, so rounding does not explain them. They happen
+at low tilt, between two points that are each clear, and the `s` versions of
+both parts are clear.
+
+Kept as they are, deliberately: the tolerance stays at 0.01 mm (a float32
+margin, not a physical one), and the reports carry the depth, so that P2's
+steeper toolpaths are measured on the same strict check and a real problem
+(depths of tenths of a millimetre or more) stands out against these.
+
