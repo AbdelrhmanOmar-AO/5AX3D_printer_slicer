@@ -1601,7 +1601,7 @@ container (the P4.3 one about 2 s), above the unit tier's "~2 s". They are
 kept in the unit tier so CI guards them; the operator may prefer them in
 `pipeline`.
 
-#### P4-4 The platform is sized in one frame and the G-code written in another, so large tilts can abort the G-code (hazard, vendored code, not fixed)
+#### P4-4 The platform is sized in one frame and the G-code written in another, so large tilts can abort the G-code (hazard, vendored code, fixed 2026-09-28)
 
 Found by running the P4 checks on a 30-degree stock toolpath. `toolpath_to_gcode`
 printed `Fatal Error: collision found!` and wrote no G-code for `ramp60_xs`
@@ -1640,13 +1640,31 @@ them, were made with that check (commit `fadcab3`) and none failed. So P4-4 is
 latent: real, and a hazard for P2's larger tilts, but no committed number is
 affected.
 
-**Not fixed here.** The code is vendored (`tools/add_platform.py`,
-`kinematics3z.get_plaftorm_size`) and `tools/toolpath_to_gcode.py` belongs to
-the P1 session. Options for whoever owns it, each behind the golden test:
-size the platform in the frame the G-code will use (compute the platform's
-footprint first); or add a small margin to the platform height; or let
-`toolpath_to_gcode` accept a lift below a stated tolerance. The operator
-decides.
+**Fixed (2026-09-28, the operator asked the P4 session to).** A vendored
+edit to `kinematics3z.get_plaftorm_size`, the first of the three options:
+size the platform in the frame the G-code will use. The platform's footprint
+(`ceil(max / width) * width` from the origin) is known before its height, so
+after solving the lift in the part's frame as before, the function checks
+whether `add_platform` will draw platform layers (it does only when the
+platform is at least two layers high, by the same expression). If it will,
+the lift is solved again with the part-plus-platform box re-centred, the way
+`toolpath_to_gcode` will re-centre it. Without drawn layers the frames are
+already the same and nothing changes, which includes the golden cube (no
+platform), so its G-code is unaffected; the golden test is still owed on the
+laptop, as for any vendored edit.
+
+Checked three ways: the stand-in `ramp60_xs` that aborted now gets a
+10.80 mm platform instead of 10.35, `toolpath_to_gcode` writes its G-code, and
+both P4 checks are clear on the result; two synthetic parts (25 degrees toward
+135, 28 degrees toward 225, 40 mm from the origin) left 5.1 and 7.2 mm of lift
+in the G-code's frame with the old sizing and none with the new
+(`tests/test_platform_sizing.py`); and the golden cube's platform size is
+unchanged. Neither `add_platform.py` nor `toolpath_to_gcode.py` was edited,
+and `toolpath_to_gcode` still aborts on any lift, so a real collision is
+still refused.
+
+A small, deliberate cost: parts that needed the second solve get a slightly
+taller platform (0.45 mm on the stand-in).
 
 #### P4-5 The viewer shows the P4 checks (P5.4's open item, as built)
 
@@ -1707,4 +1725,22 @@ A hazard noted, not seen: the IK's tilt tolerance is 1e-4 degrees and the
 screws are float32, so a point requested at exactly the limit could read a
 little over it from its screws. Atomizer's `max_slope` stays at or below the
 limit and its toolpaths have peaked at 29.4 degrees at a 30-degree budget.
+
+#### P4-7 The validator's 5 mm single-move limit rejects the platform's own edges (finding, P1's decision)
+
+Found while checking the P4-4 fix. The first G-code this repository has
+written *with* a platform (the golden cube has none) fails `validate_gcode`
+with 46 `EXTRUSION` violations, all on platform lines: `add_platform` draws
+each platform layer's outline as four straight moves, and the long side of
+a 29.7 mm platform extrudes 5.0009 mm of filament at 0.9 x 0.45 mm, just over
+the 5 mm limit agreed on 2026-09-23 (`gcode_check.DEFAULT_MAX_E_MM`). Nothing
+else in the file breaks any rule.
+
+So every part at least about 30 mm long that needs a platform will fail the
+validator as it stands: all `s` parts would (about 8.4 mm per 50 mm line).
+The toolpath is fine; the limit was chosen from the golden cube, whose
+largest move was a 2 mm prime. Options, P1's file and the operator's call:
+raise the default, scale it with the move's length (a limit per mm of travel
+rather than per move), or have `add_platform` split long lines. Not changed
+here.
 

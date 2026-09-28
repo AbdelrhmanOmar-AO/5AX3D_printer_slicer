@@ -185,7 +185,8 @@ on 2026-09-23. **`main` merged in on 2026-09-28** (at `4c5219b`, pull request
 #12), so the branch carries all of P1 and the lab baseline. **Not yet in
 `main` itself.**
 
-**P4 is built except P4.4, which nothing so far calls for.**
+**P4 is built except P4.4, which nothing so far calls for.** Pull request
+open to bring it into `main`.
 
 | Task | Status |
 |---|---|
@@ -211,13 +212,18 @@ in the session container: golden cube about 7 s, a 38 000-point
 
 **Findings** (details in `plan_corrections.md` 7b):
 
-* **P4-4, latent, for the operator to decide:** the platform is sized in one
-  frame and the G-code written in another, so a part near the bed-gantry
-  limit can make `toolpath_to_gcode` abort over a 0.04 mm lift. Found on a
-  stand-in run in the session container. **The lab baseline did not hit it**:
-  its runs check that the G-code was written (4.16), and all 16 at 30 degrees
-  passed. It matters for P2's larger tilts. Vendored code, partly P1's; not
-  fixed.
+* **P4-4, fixed 2026-09-28 at the operator's request:** the platform was
+  sized in one frame and the G-code written in another, so a part near the
+  bed-gantry limit could make `toolpath_to_gcode` abort. The lab baseline did
+  not hit it. Fixed in `kinematics3z.get_plaftorm_size` (a vendored edit): the
+  lift is re-solved in the G-code's frame whenever a platform is drawn. The
+  golden cube draws none, so its G-code is unchanged; **the golden test is
+  owed on the laptop** (below).
+* **P4-7, for the operator (P1's file):** the validator's 5 mm single-move
+  extrusion limit rejects the platform's own long edges (a 29.7 mm edge
+  extrudes 5.0009 mm). Every part about 30 mm or longer that needs a platform
+  would fail `validate_gcode`. The toolpath is fine; the limit needs a
+  decision.
 * The reference bed's corners reach the gantry at large tilts near the bed;
   the IK asks for that lift and `add_platform` provides it (gate M2).
 * A nozzle buried in material is resolved from the first material up the
@@ -228,11 +234,13 @@ in the session container: golden cube about 7 s, a 38 000-point
 
 **Open questions for the operator:**
 
-1. P4-4: who fixes the platform/G-code frame mismatch, and how?
-2. The golden-cube tests for P4.2 (about 3.6 s) and P4.3 (about 2 s) are in
-   the unit tier, above its "~2 s" guideline, so CI guards them. Keep, or
-   move to `pipeline`?
-3. Open the pull request that brings P4 into `main`?
+1. P4-7: raise the validator's 5 mm limit, make it per mm of travel, or
+   split the platform's long lines?
+2. The golden-cube tests for P4.2 (about 3.6 s) and P4.3 (about 2 s) stay in
+   the unit tier so CI guards them (recommended; nothing to do unless the
+   operator prefers `pipeline`).
+3. **Pull request opened** to bring P4 into `main` (operator's go-ahead,
+   2026-09-28).
 
 **Machine requests.** Two short sittings on two different machines:
 
@@ -255,7 +263,8 @@ Expected: nozzle clear nearly everywhere; `bed` and `axis_range` hits on the
 30-degree files are the lift `add_platform` adds (the tool says so). Paste
 the 48 summary lines back, or send the JSON.
 
-*Laptop* (about 5 minutes):
+*Laptop* (about 20 minutes; the golden test is required after the P4-4
+vendored edit):
 
 ```powershell
 cd "$HOME\5AX3D_printer_slicer"
@@ -264,17 +273,20 @@ git fetch origin
 git checkout claude/phase-p4-build-fzqw55
 git pull
 python -m pytest
+python -m pytest --run-pipeline tests/test_golden.py
 python tools/visualize_5ax.py reports/toolpaths/ramp60_s_ms30.npz
 git checkout main
 ```
 
-Expected: 0 failed. In the viewer pick "Collisions (P4)" (the checks take
+Expected: the first `pytest` 0 failed (about a minute); the golden test all
+passed with the SHA unchanged (about 13 minutes, 784 s last time). In the
+viewer pick "Collisions (P4)" (the checks take
 about a minute on an `s` part), switch on Machine view and press Play; say
 whether the notes panel shows the P4.3/P4.2 totals and the card shows
 "Collision" rows where there are red dots.
 
-Unit suite on the branch: 811 passed, 17 skipped without a display (as in
-CI); 832 passed, 8 skipped under a virtual display with PySide6.
+Unit suite on the branch: 815 passed, 17 skipped without a display (as in
+CI); 836 passed, 8 skipped under a virtual display with PySide6.
 
 ### 0c. P0.8 follow-on session status
 

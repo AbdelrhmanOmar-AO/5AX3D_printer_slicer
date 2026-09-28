@@ -343,12 +343,11 @@ def get_vertical_offset_kernel(point_in: ti.types.ndarray(), normal_in: ti.types
 		ti.atomic_max(max_offset, offset)
 	return ti.math.nan if error else max_offset
 
-def get_plaftorm_size(toolpath, nozzle_width, layer_height):
-	toolpath_min, toolpath_max = toolpath.get_aabb()
-	toolpath_offset = 0.5*(np.array((MAX_X_AXIS, MAX_Y_AXIS, 0)) + toolpath_min-toolpath_max) - toolpath_min
-	z_shift = 0.0
-	
-	while True:	
+def _lift_needed(toolpath, box_min, box_max, z_shift):
+	# Raise the part until no point asks for lift, with the toolpath re-centred
+	# on the bed the way toolpath_to_gcode re-centres a box from box_min to box_max.
+	toolpath_offset = 0.5*(np.array((MAX_X_AXIS, MAX_Y_AXIS, 0)) + box_min-box_max) - box_min
+	while True:
 		offset = get_vertical_offset_kernel(toolpath.point, toolpath.tool_orientation, toolpath_offset[0], toolpath_offset[1], z_shift)
 		if np.isnan(offset):
 			print("Fatal Error: No platform could solve the collision.")
@@ -357,8 +356,29 @@ def get_plaftorm_size(toolpath, nozzle_width, layer_height):
 			z_shift += offset
 		else:
 			break
+	return z_shift
 
-	return np.ceil(toolpath_max[0]/nozzle_width)*nozzle_width, np.ceil(toolpath_max[1]/nozzle_width)*nozzle_width, np.ceil(z_shift/layer_height)*layer_height
+def get_plaftorm_size(toolpath, nozzle_width, layer_height):
+	toolpath_min, toolpath_max = toolpath.get_aabb()
+	platform_x = np.ceil(toolpath_max[0]/nozzle_width)*nozzle_width
+	platform_y = np.ceil(toolpath_max[1]/nozzle_width)*nozzle_width
+	z_shift = _lift_needed(toolpath, toolpath_min, toolpath_max, 0.0)
+
+	# tools/add_platform.py draws platform layers only when the platform is at
+	# least two layers high, and they span x from 0 to platform_x and y from 0
+	# to platform_y. toolpath_to_gcode then re-centres that larger box, not the
+	# part's, and re-centring changes the screw heights non-uniformly, so a lift
+	# found in the part's frame can fall short and abort the G-code over a few
+	# hundredths of a millimetre (docs/plan_corrections.md 7b, P4-4). Solve
+	# again in the frame the G-code will use. Without drawn layers the two
+	# frames are the same and nothing here changes.
+	# The same expression add_platform uses to count the layers it draws.
+	if int(np.ceil(z_shift/layer_height)*layer_height/layer_height) - 1 > 0:
+		box_min = np.minimum(toolpath_min, np.array((0.0, 0.0, toolpath_min[2])))
+		box_max = np.maximum(toolpath_max, np.array((platform_x, platform_y, toolpath_max[2])))
+		z_shift = _lift_needed(toolpath, box_min, box_max, z_shift)
+
+	return platform_x, platform_y, np.ceil(z_shift/layer_height)*layer_height
 
 @ti.kernel
 def toolpath_from_cartesian_toolpath(
