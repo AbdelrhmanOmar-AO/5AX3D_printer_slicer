@@ -372,6 +372,46 @@ def test_the_dry_run_and_the_real_run_agree_on_the_warmup(monkeypatch, tmp_path)
     assert ran[0] == predicted
 
 
+def test_the_two_measured_efficiencies_bracket_each_other():
+    """Measured twice at 8 workers: 65 % on short jobs, 79 % on long ones."""
+    assert 0 < rmp.EFFICIENCY_SHORT_JOBS < rmp.EFFICIENCY_LONG_JOBS < 1.0
+    assert rmp.MEASURED_EFFICIENCY == rmp.EFFICIENCY_SHORT_JOBS, (
+        "the single-number fallback must be the conservative end"
+    )
+
+
+def test_the_estimate_is_reported_as_a_range(tmp_path, capsys):
+    """Two measurements, so two figures. Interpolating between them by job mix
+    would be a model, and models of this machine have lost to measurements of it
+    twice (4.19)."""
+    rmp.main(["--sizes", "xs", "--workers", "8", "--dry-run",
+              "--root", str(tmp_path / "w")])
+    out = capsys.readouterr().out
+    assert "79%-65% efficiency" in out
+    assert " to " in out
+    assert "expect this" in out
+
+
+def test_a_short_job_mix_is_named_as_the_slower_end(tmp_path, capsys):
+    rmp.main(["--sizes", "xs", "--workers", "8", "--dry-run",
+              "--root", str(tmp_path / "w")])
+    assert "mostly short jobs" in capsys.readouterr().out
+
+
+def test_a_long_job_mix_is_named_as_the_faster_end(tmp_path, capsys):
+    rmp.main(["--sizes", "xs", "s", "--workers", "8", "--dry-run",
+              "--root", str(tmp_path / "w")])
+    assert "mostly long jobs" in capsys.readouterr().out
+
+
+def test_an_explicit_efficiency_replaces_the_range(tmp_path, capsys):
+    rmp.main(["--sizes", "xs", "--workers", "8", "--dry-run",
+              "--efficiency", "0.5", "--root", str(tmp_path / "w")])
+    out = capsys.readouterr().out
+    assert "at 50% efficiency" in out
+    assert "79%-65%" not in out
+
+
 def test_the_measured_efficiency_makes_the_estimate_larger():
     """The ideal was 2.4x optimistic against the first real run, so both are
     reported and the realistic one is the headline."""

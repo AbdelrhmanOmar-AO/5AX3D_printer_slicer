@@ -243,17 +243,35 @@ def build_jobs(sizes, parts=orep.MATRIX_PARTS, slopes=orep.MATRIX_SLOPES,
     return jobs
 
 
-#: Parallel efficiency measured on the 36-core lab machine, 2026-09-24:
-#: 23 runs at 8 workers finished in 37:10 against 3:12:53 of serial work, a
-#: 5.19x speedup from 8 workers. Each run took about 1.47x longer than it would
-#: have alone.
+#: Parallel efficiency measured on the 36-core lab machine, at 8 workers, twice.
+#: **It depends on how long the jobs are**, which one measurement could not have
+#: shown:
 #:
-#: One data point, on one machine, at one worker count. Efficiency will fall as
-#: workers are added — they share memory bandwidth, one GPU and two sockets — so
-#: applying this figure at 16 or 36 workers is optimistic. `--efficiency`
-#: overrides it.
-MEASURED_EFFICIENCY = 0.65
+#: | Run | Jobs | Speedup | Efficiency |
+#: |---|---|---|---|
+#: | 2026-09-24 | 23 short (`xs`, 5-10 min each) | 5.19x | **65 %** |
+#: | 2026-09-28 | 23 mostly long (`s`, 40-75 min) | 6.31x | **79 %** |
+#:
+#: Longer jobs amortise what does not parallelise — process startup, Taichi
+#: initialisation, the cache copy — and keep the pool saturated instead of
+#: draining it at the tail. So a full matrix, which is mostly `s`, sits near the
+#: top of that range and an `xs`-only run near the bottom.
+#:
+#: Reported as a **range** rather than interpolated. Picking a figure between two
+#: measurements by job mix would be a model, and this session has twice watched a
+#: model of this machine lose to a measurement of it (corrections 4.19, and the
+#: cold cache in handoff section 3).
+#:
+#: Both figures are at 8 workers. **Efficiency will fall as workers are added** —
+#: they share memory bandwidth, one GPU and two sockets — and 16 workers is not
+#: measurable on the 64 GiB machine at all, because it runs out of committed
+#: memory first (4.19). `--efficiency` overrides both.
+EFFICIENCY_SHORT_JOBS = 0.65
+EFFICIENCY_LONG_JOBS = 0.79
 MEASURED_AT_WORKERS = 8
+
+#: Kept as the conservative end, for callers wanting one number.
+MEASURED_EFFICIENCY = EFFICIENCY_SHORT_JOBS
 
 
 def choose_warmup(jobs):
@@ -670,8 +688,8 @@ def main(argv=None):
     parser.add_argument(
         "--efficiency", type=float, default=0.0,
         help=(
-            f"Parallel efficiency for the estimate (default {MEASURED_EFFICIENCY}, "
-            f"measured at {MEASURED_AT_WORKERS} workers on the lab machine). "
+            f"Pin the estimate to one efficiency instead of the measured "
+            f"{EFFICIENCY_LONG_JOBS}-{EFFICIENCY_SHORT_JOBS} range. "
             "Only affects what is printed."
         ),
     )
@@ -709,9 +727,14 @@ def main(argv=None):
     workers_wanted = min(workers_wanted, len(jobs))
 
     ideal = projected_seconds(jobs, workers_wanted)
-    likely = projected_seconds(
-        jobs, workers_wanted, efficiency=args.efficiency or MEASURED_EFFICIENCY
-    )
+    if args.efficiency:
+        slow = fast = projected_seconds(jobs, workers_wanted,
+                                        efficiency=args.efficiency)
+    else:
+        slow = projected_seconds(jobs, workers_wanted,
+                                 efficiency=EFFICIENCY_SHORT_JOBS)
+        fast = projected_seconds(jobs, workers_wanted,
+                                 efficiency=EFFICIENCY_LONG_JOBS)
     timed = sum(1 for j in jobs if j["estimate_s"])
     serial = sum(j["estimate_s"] for j in jobs)
 
@@ -719,17 +742,25 @@ def main(argv=None):
     print(f"Sizes: {', '.join(args.sizes)}   Slopes: "
           f"{', '.join(f'{s:g}' for s in args.slopes)} deg")
     if timed:
-        efficiency = args.efficiency or MEASURED_EFFICIENCY
         print(f"Serial estimate (from {timed} previous run(s)): "
               f"{format_duration(serial)}")
         print(f"Parallel, ignoring contention:  {format_duration(ideal)} "
-              "(a lower bound, and 2.4x optimistic on the one run measured)")
-        print(f"Parallel, at {efficiency:.0%} efficiency:    "
-              f"{format_duration(likely)}  <- expect this")
-        if efficiency == MEASURED_EFFICIENCY and workers_wanted != MEASURED_AT_WORKERS:
-            print(f"   ({efficiency:.0%} was measured at {MEASURED_AT_WORKERS} "
-                  f"workers, not {workers_wanted}; efficiency falls as workers "
-                  "are added)")
+              "(a lower bound; 2.4x optimistic against the first real run)")
+        if args.efficiency:
+            print(f"Parallel, at {args.efficiency:.0%} efficiency: "
+                  f"{format_duration(slow)}  <- expect this")
+        else:
+            mean = serial / max(timed, 1)
+            end = ("the faster end: mostly long jobs"
+                   if mean > 25 * 60 else
+                   "the slower end: mostly short jobs")
+            print(f"Parallel, at {EFFICIENCY_LONG_JOBS:.0%}-"
+                  f"{EFFICIENCY_SHORT_JOBS:.0%} efficiency: "
+                  f"{format_duration(fast)} to {format_duration(slow)} "
+                  "<- expect this")
+            print(f"   Mean job {format_duration(mean)}, so {end}. Both figures "
+                  f"measured at {MEASURED_AT_WORKERS} workers; efficiency falls "
+                  "as workers are added.")
     else:
         print("No previous runtimes, so no estimate. The first run will supply them.")
     safe = workers_ram_allows()
