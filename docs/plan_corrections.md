@@ -1018,17 +1018,17 @@ the operator's laptop. They now say which machine they are pretending to be.
 | Backend recorded beside each number | **Closed** by plan task **P1.7**: `provenance.stage_arches` records the backend every stage actually started on, and `ti_arch_setting` records whether anything was forced. |
 | `order_atoms` with `kernel_profiler=False` | **Closed** by P1.6 (2026-09-27): output unchanged, and only **1.1 %** faster (335.2 s mean against 338.8 s). The profiler was not what made the stage slow |
 | P1.5 firmware templates | Blocked on E1; only the `rrf` path exists |
-| P4 vs P1.4 ordering | P4 depends on P1.4 (the validator). Which P4 tasks start before P1.4 reaches `main` is the operator's call; P4.1 and P4.3 do not use it |
-| P4 branch not merged | P4.1, P4.2 and P4.3 are built on `claude/phase-p4-build-fzqw55` and are **not in `main`** (2026-09-24). They touch the viewer, which P5.4 also touches, so the merge needs care. |
-| This session's branch not merged | `claude/new-session-l8g46d` carries the parallel runner, the failing-stage check, `ATOM_SKIP_DISPLAY_TESTS` and the conftest fix. Handoff section 0c lists them and declares two convention breaches for the operator to rule on. |
-| P2 | No session assigned. Waits on gate D0; P2.0 and P2.1 do not |
+| P4 vs P1.4 ordering | **Closed.** P4 is complete and in `main` (pull request #17); P1.4 reached `main` first. |
+| P4 branch not merged | **Closed** (2026-09-28): merged through pull request #17, viewer included. |
+| P0.8 follow-on branch not merged | **Closed** (2026-09-28): `claude/new-session-l8g46d` is fully in `main` through pull requests #9 and #12, and that session is closed. Handoff 0c records what it delivered and its two declared convention breaches. |
+| P2 | **The next work, and nothing blocks starting it.** No session yet. P2.0 and P2.1 do not need gate D0, and D0 now has everything it needs but the team's decision. |
 | Parallel matrix runner | **Built** (2026-09-24) as `tools/run_matrix_parallel.py`: a copy of the working tree per worker, so no two runs share a `data/` path. Handoff section 3 has the design and the numbers. Tested with the slicing stubbed out; **contention between workers is still unmeasured**, so its projection is arithmetic rather than an observation. |
 | Contention between parallel workers | **Measured twice at 8 workers, and it depends on job length**: 65 % on short `xs` jobs (2026-09-24), **79 %** on the mostly-`s` resume (2026-09-28). The runner reports the range rather than interpolating. **Above 8 workers it cannot be measured on the 64 GiB machine at all** — 16 workers exhausts committed memory first (4.19). |
 | Workers per GiB of RAM | Calibrated from two points on one machine (8 works on 64 GiB, 16 does not). A machine with a large pagefile, or an `xs`-only run, may take more. 4.19. |
 | Parallel efficiency on the laptop | Unmeasured. The lab machine's 65 % came from 36 cores and two sockets; a 6-core 45 W laptop will throttle instead, which is a different limit. `--sizes xs --workers 3` settles it in about an hour. |
 | CPU model in the provenance block | P1.7 records the machine's **host name**, not its processor. A host name distinguishes machines; `Intel(R) Xeon(R) Gold 6254` is what a reader comparing two timings needs. `platform.processor()` will not give it — the Windows registry or `/proc/cpuinfo` will. Worth adding to `atom.provenance`; see 4.14. |
-| Correction numbers 4.14 to 4.17 | **Taken** by this session, straight into section 4 rather than a per-session heading in section 7, because it is merging rather than staying in flight. P1 and P4 must not reuse them. |
-| A third concurrent session | The plan allows two. Three ran, and 4.14 is what it cost. |
+| Correction numbers 4.14 to 4.20 | **Taken** by the P0.8 follow-on session, straight into section 4 rather than a per-session heading in section 7. Seven numbers, all merged. A later session must not reuse them; the next free number is **4.21**. |
+| A third concurrent session | The plan allows two. Three ran, and 4.14 is what it cost: a day of duplicated work. Two have since closed, so P2 starts alongside P1 alone. |
 
 ## 6. Quick index
 

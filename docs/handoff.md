@@ -20,14 +20,21 @@ Last updated: 2026-09-28.
 >
 > Section 3 has the workflow; `plan_corrections.md` 7a P1-16 the reasoning.
 
-* **P0 complete** (48 matrix runs at metrics v2) and **P5.4** (viewer, bed
-  motion, Qt window) built — both in `main`.
-* **P1**: P1.1, P1.2, P1.3, P1.4, P1.6 and P1.7 are in `main`. Only P1.5 is
-  left, blocked on gate E1.
-* **P4**: P4.1, P4.2 and P4.3 are built on `claude/phase-p4-build-fzqw55` and
-  **not yet in `main`**.
-* **This session** (P0.8 follow-on: the parallel matrix runner and the lab
-  machine) is on `claude/new-session-l8g46d`, **not yet in `main`**.
+**Everything below is in `main`** (2026-09-28, `83bed6c`). **816 unit tests
+pass, 21 skipped.**
+
+| Phase | State |
+|---|---|
+| **P0** | **Complete and closed**, P0.8 and P0.9a/b included |
+| **P4** | **Complete**, merged through pull request #17 |
+| **P5.4** | Viewer, bed motion and Qt window built |
+| **P1** | P1.1, P1.2, P1.3, P1.4, P1.6, P1.7 done. **Only P1.5 is left**, blocked on gate E1 |
+| **P2** | **Not started. No session. This is the next work.** |
+
+Two of the three sessions have closed: the P0.8 follow-on (section 0c) and the
+P4 session (0b). The P1 session closes when P1.5 is unblocked and done. **A new
+session takes over P2**, and section 5's "immediate next step" is written for
+it.
 * **P2**, the actual contribution, has no session.
 
 **Three sessions have been running at once, not two.** Read section 0, then 0c,
@@ -35,25 +42,23 @@ which records the one thing that went wrong because of it.
 
 ---
 
-## 0. Three sessions are running in parallel (read first)
+## 0. Sessions: two closed, one finishing, P2 next (read first)
 
-Each on its own branch:
-
-| Session | Phase | Branch | In `main`? |
+| Session | Phase | Branch | State |
 |---|---|---|---|
-| P1 session | **P1**: kinematics and G-code toolchain | `claude/vibrant-rubin-waln7y` | P1.1, P1.2, P1.4, P1.7 yes; P1.3 no |
-| P4 session | **P4**: motion safety for continuous tilt | `claude/phase-p4-build-fzqw55` | **No** — P4.1, P4.2, P4.3 await a merge |
-| P0.8 follow-on | matrix runner, lab machine, test plumbing | `claude/new-session-l8g46d` | **No** — see 0c |
+| P1 session | **P1**: kinematics and G-code toolchain | `claude/vibrant-rubin-waln7y` | **Finishing.** All of P1 in `main` but P1.5, which is blocked on gate E1. Closes when it lands |
+| P4 session | **P4**: motion safety for continuous tilt | `claude/phase-p4-build-fzqw55` | **Closed.** Complete and in `main` (pull request #17) — see 0b |
+| P0.8 follow-on | matrix runner, lab machine, test plumbing | `claude/new-session-l8g46d` | **Closed.** Fully in `main` (#9, #12) — see 0c |
+| **P2 session** | **the overhang-aware field** | not started | **The next work.** Nothing blocks starting; see section 5 |
 
-The plan allows at most two sessions at once. Three ran, and **it cost a day of
-duplicated work** (`plan_corrections.md` 4.14): the P0.8 session built
-provenance on reports from scratch while P1.7, already in `main`, had done it
-better.
+Three sessions ran at once where the plan allows two, and **it cost a day of
+duplicated work** (`plan_corrections.md` 4.14): the P0.8 session built provenance
+on reports from scratch while P1.7, already in `main`, had done it better.
 
-**Every branch above is on `origin` and readable by every session.** Nothing was
-hidden; the duplicating session did not fetch. And `main` alone is not enough to
-check — P4.1 to P4.3 are on a branch and not in `main`, so they are the next
-thing at risk of being written twice.
+**Every branch is on `origin` and readable by every session.** Nothing was
+hidden; the duplicating session did not fetch. That is the whole lesson, and it
+applies to the P2 session immediately: P1.5 will be in flight on a branch and
+not in `main`, so a fresh session that checks only `main` cannot see it.
 
 > **Before building anything that sounds like infrastructure:**
 >
@@ -243,41 +248,54 @@ Lab timing, both checks: `xs` files 3 to 9 s, `s` files 15 to 57 s.
 **Next for P4:** nothing is owed. P4.4 only if P2's toolpaths show real travel
 collisions; P6.2 fills the clearance boxes when gate M3 is answered.
 
-### 0c. P0.8 follow-on session status
+### 0c. P0.8 follow-on session — CLOSED 2026-09-28
 
-*Edited by this session only.*
+Branch `claude/new-session-l8g46d`, **fully merged into `main`** (pull requests
+#9 and #12). Nothing is outstanding and nothing is owed. Kept here because a
+later session will meet its output.
 
-Branch `claude/new-session-l8g46d`, merged up to `main` on 2026-09-24 and not
-yet merged down into it. What it carries that `main` does not:
+**What it delivered:**
 
 | | |
 |---|---|
-| `tools/run_matrix_parallel.py` | The parallel matrix runner (section 3). 34 tests |
-| Failing-stage check | In `run_pipeline`: names the first stage that produced nothing *or* left a file from an earlier run (`plan_corrections.md` 4.16) |
-| `ATOM_SKIP_DISPLAY_TESTS` | `tests/_display.py`. A VTK access violation on the lab machine killed the whole suite rather than one test |
-| `tests/conftest.py` | Adds `src/` to `sys.path`, so a single test file can be run alone (4.15) |
-| `machine` column | In `reports/matrix_progress.csv`, from P1.7's `provenance.machine`, with a padding migration for older logs |
-| Section 3 | The two lab machines assessed and measured |
+| `tools/run_matrix_parallel.py` | The parallel matrix runner. A copy of the working tree per worker, so no two runs can share a `data/` path |
+| The lab machine's baseline | All 48 runs on `cad-p07-2065-9`, now the reference set (see the note at the top of this file) |
+| Failing-stage check | `run_pipeline` names the first stage that produced nothing *or* left a file from an earlier run (4.16) |
+| `ATOM_SKIP_DISPLAY_TESTS` | `tests/_display.py`. A VTK access violation had killed the whole suite rather than one test |
+| `tests/conftest.py` | `src/` on `sys.path`, so a single test file can be run alone (4.15) |
+| Section 3 | Both university machines assessed, set up and measured |
+| Corrections | **4.14 to 4.20** |
 
-**Two convention breaches to declare, both deliberate and both the operator's
-to rule on:**
+**Measured, and worth not re-deriving:**
 
-1. **`tools/overhang_report.py` is P1's file** (section 0, "Who owns which
-   files"), and this session edited it — the failing-stage check and the
-   progress-log column. The edits are additive and were re-applied *onto* P1.7's
-   version after this session's duplicate provenance work was discarded whole,
-   so P1's own code is untouched. It also added a `verify_stages` flag to
-   `run_pipeline` so P1.7's arch-log test, which stubs `subprocess.run` and
-   therefore writes no artifact, can opt out for a stated reason instead of the
-   check being weakened.
-2. **Corrections 4.14 to 4.17 went straight into section 4**, rather than under
-   a per-session heading in section 7 as the convention now asks. This session
-   is merging rather than staying in flight, so they are already in their final
-   place. **Those four numbers are taken** — P1 and P4 must not reuse them.
+* the lab machine is **1.21x slower per run** than the laptop, uniformly across
+  stages, so it is not a faster machine — it is a wider one;
+* parallel efficiency at 8 workers is **65 % on short jobs, 79 % on long ones**;
+* a full 48-run matrix there takes about **3.5 hours**, against 21.8 h serially;
+* on the laptop the same runner gives roughly **4x** (21:46 to 5:26 at 4
+  workers), so losing the lab machine costs about 1.5x, not 15x;
+* **the overhang conclusions are machine-independent**: 0 verdict flips, worst
+  effective overhang within 0.0082 degrees, max tilt within 0.2131 degrees. Only
+  the unsupported *fraction* moved — 47 of 48 cells, median 0.174 pp — because a
+  point count near a threshold is the one sensitive metric.
 
-**Outstanding on the lab machine:** the first real parallel run is still owed.
-The one attempted on 2026-09-24 failed on a missing input, which is fixed;
-section 3 has the detail and the command.
+**Two convention breaches, declared and left on the record:**
+
+1. **`tools/overhang_report.py` is P1's file** and this session edited it: the
+   failing-stage check, the progress-log `machine` column, and a
+   `verify_stages` flag so P1.7's arch-log test can opt out of the check for a
+   stated reason rather than the check being weakened. All additive, and
+   re-applied *onto* P1.7's version after this session's duplicate provenance
+   work was discarded whole.
+2. **Corrections 4.14 to 4.20 went straight into section 4** rather than a
+   per-session heading in section 7. **Those seven numbers are taken.**
+
+**The expensive mistake, for whoever runs sessions in parallel next:** this
+session rebuilt provenance on reports from scratch while P1.7, already in
+`main`, had done it better. A day's work, discarded. Correction **4.14** has the
+comparison and the habit that prevents it — fetch every branch and read the
+plan's task list before building anything that sounds like infrastructure.
+Nothing was hidden; nobody looked.
 
 ---
 
@@ -890,15 +908,36 @@ measurement and reasoning: `docs/plan_corrections.md` **3.9**;
    the backend difference will be credited to the contribution. Always record
    the backend beside a reported number.
 
-### The immediate next step
+### The immediate next step: P2, and it is unblocked
 
-**P1 and P4 are in progress** (section 0). The build plan v3.3 set this order:
-P1 and P4 in parallel, and P2 once the team has taken gate D0.
+**P0, P4 and P5.4 are done and in `main`; P1 is done but for P1.5, which gate E1
+blocks.** Everything P2 was waiting on now exists:
 
-When P2 starts, begin with **P2.0** (field-only evaluation, so each field change
-does not cost a full run) and **P2.1** (document the orientation-field pipeline
-and the analytic tilt bound; it feeds D0), then **P2.2** (the overhang
-constraint itself) once D0 is recorded. P2.5 re-runs this same matrix with the
+| P2 needs | State |
+|---|---|
+| Validated overhang metrics | Done (P0.8), validated against a known case (3.7) |
+| A committed baseline to compare against | Done — 48 runs on the lab machine, one provenance group |
+| Tilt contracts and conventions | Done (P0.6): `atom.tilt`, `atom.contracts`, `docs/conventions.md` |
+| A G-code validator (P2 outputs must pass it) | Done (P1.4): `atom.gcode_check`, `tools/validate_gcode.py` |
+| Provenance on every report (P2.5 compares across runs) | Done (P1.7) |
+| A clearance model (P2.3) | Done (P4.1) |
+| A viewer to look at what the new field does | Done (P5.4) |
+| A matrix that re-runs in hours, not a day | Done — about **3.5 h** on the lab machine at 8 workers |
+
+**Start with P2.0** (field-only evaluation, so a field change does not cost a
+full run) and **P2.1** (document the orientation-field pipeline and the analytic
+tilt bound; it feeds gate D0), then **P2.2** (the overhang constraint itself)
+once D0 is recorded. Neither P2.0 nor P2.1 needs D0.
+
+**The finding P2 exists to overturn**, and the sharpest test of whether it works:
+stock Atomizer tilts *away* from overhangs, exactly degree for degree —
+`theta_eff = theta_geo + tilt_used`, r = 0.992 over 18 runs. P2.2's sign check
+should invert that to `theta_eff ≈ theta_geo − tilt_used`. Section 7b has the
+numbers; the plan's P2.2 test list has the check.
+
+**One coordination note.** P1.5 will be in flight on `claude/vibrant-rubin-waln7y`
+and not in `main`. Fetch every branch before building anything shared — that is
+correction 4.14, and it cost this project a day. P2.5 re-runs this same matrix with the
 flag on and compares, **on the lab machine**, the one that measured the
 committed baseline (header), so keep the reports committed. P2.5 also needs P1.7
 (provenance on every report) and P2.3 uses P4.1 (the clearance model).
