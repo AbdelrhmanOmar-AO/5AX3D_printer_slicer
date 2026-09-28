@@ -57,6 +57,7 @@ import argparse
 import csv
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -151,6 +152,48 @@ DATA_OUTPUTS = (
 # --------------------------------------------------------------------------
 
 
+#: The comparability fields (`atom.provenance.COMPARABILITY_FIELDS`) that can be
+#: known *before* a run. `stage_arches` cannot: which backend each of the 14
+#: stages actually started on is only recorded once they have run. So resume
+#: compares on the rest, which is enough to tell one machine from another.
+RESUME_MATCH_FIELDS = ("machine", "ti_arch_setting", "taichi", "machine_profile")
+
+
+def this_machine_key():
+    """What a run started here, now, would record for `RESUME_MATCH_FIELDS`.
+
+    Built the same way `atom.provenance.collect` builds those fields, so the two
+    cannot drift apart silently.
+    """
+    machine = platform.node() or None
+    return (
+        machine.lower() if isinstance(machine, str) else None,
+        os.environ.get("ATOM_TI_ARCH", "").strip().lower() or prov.STOCK_MIX,
+        prov.taichi_version(),
+        os.environ.get("ATOM_MACHINE", "").strip() or "reference",
+    )
+
+
+def report_machine_key(report):
+    """The same key, read out of a report, or None when it cannot be compared.
+
+    None for a report with no provenance, an incomplete block, or one written by
+    `--skip-pipeline`, where the toolpath's origin is unknown. None never equals
+    `this_machine_key()`, so such a report counts as **not from here** and its
+    combination is re-run rather than skipped.
+    """
+    block = (report or {}).get("provenance")
+    if not prov.is_known(block):
+        return None
+    machine = block.get("machine")
+    return (
+        machine.lower() if isinstance(machine, str) else None,
+        block.get("ti_arch_setting"),
+        block.get("taichi"),
+        block.get("machine_profile"),
+    )
+
+
 def build_jobs(sizes, parts=orep.MATRIX_PARTS, slopes=orep.MATRIX_SLOPES,
                resume=False):
     """Every (part, slope) to run, in longest-first order.
@@ -173,10 +216,12 @@ def build_jobs(sizes, parts=orep.MATRIX_PARTS, slopes=orep.MATRIX_SLOPES,
 
     current = set()
     if resume:
+        mine = this_machine_key()
         current = {
             (r["part"], r["max_slope_deg"])
             for r in orep.load_reports(quiet=True)
             if r.get("metrics_version") == orep.METRICS_VERSION
+            and report_machine_key(r) == mine
         }
 
     jobs = []
@@ -198,17 +243,35 @@ def build_jobs(sizes, parts=orep.MATRIX_PARTS, slopes=orep.MATRIX_SLOPES,
     return jobs
 
 
-#: Parallel efficiency measured on the 36-core lab machine, 2026-09-24:
-#: 23 runs at 8 workers finished in 37:10 against 3:12:53 of serial work, a
-#: 5.19x speedup from 8 workers. Each run took about 1.47x longer than it would
-#: have alone.
+#: Parallel efficiency measured on the 36-core lab machine, at 8 workers, twice.
+#: **It depends on how long the jobs are**, which one measurement could not have
+#: shown:
 #:
-#: One data point, on one machine, at one worker count. Efficiency will fall as
-#: workers are added — they share memory bandwidth, one GPU and two sockets — so
-#: applying this figure at 16 or 36 workers is optimistic. `--efficiency`
-#: overrides it.
-MEASURED_EFFICIENCY = 0.65
+#: | Run | Jobs | Speedup | Efficiency |
+#: |---|---|---|---|
+#: | 2026-09-24 | 23 short (`xs`, 5-10 min each) | 5.19x | **65 %** |
+#: | 2026-09-28 | 23 mostly long (`s`, 40-75 min) | 6.31x | **79 %** |
+#:
+#: Longer jobs amortise what does not parallelise — process startup, Taichi
+#: initialisation, the cache copy — and keep the pool saturated instead of
+#: draining it at the tail. So a full matrix, which is mostly `s`, sits near the
+#: top of that range and an `xs`-only run near the bottom.
+#:
+#: Reported as a **range** rather than interpolated. Picking a figure between two
+#: measurements by job mix would be a model, and this session has twice watched a
+#: model of this machine lose to a measurement of it (corrections 4.19, and the
+#: cold cache in handoff section 3).
+#:
+#: Both figures are at 8 workers. **Efficiency will fall as workers are added** —
+#: they share memory bandwidth, one GPU and two sockets — and 16 workers is not
+#: measurable on the 64 GiB machine at all, because it runs out of committed
+#: memory first (4.19). `--efficiency` overrides both.
+EFFICIENCY_SHORT_JOBS = 0.65
+EFFICIENCY_LONG_JOBS = 0.79
 MEASURED_AT_WORKERS = 8
+
+#: Kept as the conservative end, for callers wanting one number.
+MEASURED_EFFICIENCY = EFFICIENCY_SHORT_JOBS
 
 
 def choose_warmup(jobs):
@@ -287,6 +350,79 @@ def tree_megabytes():
         if source.is_file():
             total += source.stat().st_size
     return total / 1e6
+
+
+#: RAM per worker, **calibrated from two observations rather than modelled.**
+#:
+#: On the 64 GiB lab machine, 16 workers failed 24 of 48 runs with
+#:
+#:     [host_memory_pool.cpp] Virtual memory allocation (1073741824 B) failed
+#:
+#: while 8 workers completed 24 of 24. 8 GiB per worker reproduces that: 64 / 8
+#: is exactly the count that worked.
+#:
+#: **A memory model gave the wrong answer here, so there is not one.** Counting
+#: Taichi's reservations alone — 1 GiB per process, and a worker runs two at once
+#: (`atomize.py` plus its current stage) — suggests 2 GiB per worker and would
+#: have permitted 26. The gap is everything that is not Taichi's reservation:
+#: Blender during stage 1, the SDF and toolpath arrays a large part actually
+#: needs, two Python interpreters, and on Windows a commit limit set by RAM plus
+#: whatever the pagefile allows. None of those are knowable here.
+#:
+#: So this is a floor from one machine, not a law. A machine with a generous
+#: pagefile may take more; `xs`-only runs certainly can. It exists to turn a
+#: 24-run failure into a warning, and `--workers` still overrides it.
+#:
+#: Taichi 1.7.4 offers no setting for that pool — `device_memory_GB` is the GPU
+#: side — so worker count is the only lever. `docs/plan_corrections.md` 4.19.
+GIB_PER_WORKER = 8.0
+
+
+def total_ram_gib():
+    """Physical RAM in GiB, or None where it cannot be read.
+
+    No psutil dependency: this is a warning, and a missing figure must not stop
+    a run.
+    """
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            class Status(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = Status()
+            status.dwLength = ctypes.sizeof(Status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return status.ullTotalPhys / 1024**3
+        else:
+            pages = os.sysconf("SC_PHYS_PAGES")
+            size = os.sysconf("SC_PAGE_SIZE")
+            return pages * size / 1024**3
+    except Exception:
+        pass
+    return None
+
+
+def workers_ram_allows(ram_gib=None):
+    """Workers this machine's RAM is known to support, or None if RAM is unknown.
+
+    `GIB_PER_WORKER` explains why this is a calibration and not a calculation.
+    """
+    ram = total_ram_gib() if ram_gib is None else ram_gib
+    if not ram:
+        return None
+    return max(1, int(ram // GIB_PER_WORKER))
 
 
 def create_worker(root, index, overwrite=False):
@@ -552,8 +688,8 @@ def main(argv=None):
     parser.add_argument(
         "--efficiency", type=float, default=0.0,
         help=(
-            f"Parallel efficiency for the estimate (default {MEASURED_EFFICIENCY}, "
-            f"measured at {MEASURED_AT_WORKERS} workers on the lab machine). "
+            f"Pin the estimate to one efficiency instead of the measured "
+            f"{EFFICIENCY_LONG_JOBS}-{EFFICIENCY_SHORT_JOBS} range. "
             "Only affects what is printed."
         ),
     )
@@ -591,9 +727,14 @@ def main(argv=None):
     workers_wanted = min(workers_wanted, len(jobs))
 
     ideal = projected_seconds(jobs, workers_wanted)
-    likely = projected_seconds(
-        jobs, workers_wanted, efficiency=args.efficiency or MEASURED_EFFICIENCY
-    )
+    if args.efficiency:
+        slow = fast = projected_seconds(jobs, workers_wanted,
+                                        efficiency=args.efficiency)
+    else:
+        slow = projected_seconds(jobs, workers_wanted,
+                                 efficiency=EFFICIENCY_SHORT_JOBS)
+        fast = projected_seconds(jobs, workers_wanted,
+                                 efficiency=EFFICIENCY_LONG_JOBS)
     timed = sum(1 for j in jobs if j["estimate_s"])
     serial = sum(j["estimate_s"] for j in jobs)
 
@@ -601,19 +742,46 @@ def main(argv=None):
     print(f"Sizes: {', '.join(args.sizes)}   Slopes: "
           f"{', '.join(f'{s:g}' for s in args.slopes)} deg")
     if timed:
-        efficiency = args.efficiency or MEASURED_EFFICIENCY
         print(f"Serial estimate (from {timed} previous run(s)): "
               f"{format_duration(serial)}")
         print(f"Parallel, ignoring contention:  {format_duration(ideal)} "
-              "(a lower bound, and 2.4x optimistic on the one run measured)")
-        print(f"Parallel, at {efficiency:.0%} efficiency:    "
-              f"{format_duration(likely)}  <- expect this")
-        if efficiency == MEASURED_EFFICIENCY and workers_wanted != MEASURED_AT_WORKERS:
-            print(f"   ({efficiency:.0%} was measured at {MEASURED_AT_WORKERS} "
-                  f"workers, not {workers_wanted}; efficiency falls as workers "
-                  "are added)")
+              "(a lower bound; 2.4x optimistic against the first real run)")
+        if args.efficiency:
+            print(f"Parallel, at {args.efficiency:.0%} efficiency: "
+                  f"{format_duration(slow)}  <- expect this")
+        else:
+            mean = serial / max(timed, 1)
+            end = ("the faster end: mostly long jobs"
+                   if mean > 25 * 60 else
+                   "the slower end: mostly short jobs")
+            print(f"Parallel, at {EFFICIENCY_LONG_JOBS:.0%}-"
+                  f"{EFFICIENCY_SHORT_JOBS:.0%} efficiency: "
+                  f"{format_duration(fast)} to {format_duration(slow)} "
+                  "<- expect this")
+            print(f"   Mean job {format_duration(mean)}, so {end}. Both figures "
+                  f"measured at {MEASURED_AT_WORKERS} workers; efficiency falls "
+                  "as workers are added.")
     else:
         print("No previous runtimes, so no estimate. The first run will supply them.")
+    safe = workers_ram_allows()
+    ram = total_ram_gib()
+    if safe is not None and workers_wanted > safe:
+        print()
+        print(f"WARNING: {workers_wanted} workers may exceed what this machine's "
+              f"RAM can commit.")
+        print(f"   RAM is {ram:.0f} GiB, and {GIB_PER_WORKER:g} GiB per worker "
+              f"allows about {safe}.")
+        print("   16 workers on a 64 GiB machine failed 24 of 48 runs with "
+              "'Virtual memory allocation (1073741824 B) failed'; 8 completed "
+              "24 of 24 (plan_corrections 4.19).")
+        print(f"   Consider --workers {safe}. This is calibrated from that one "
+              "machine, not a memory model, so it may be pessimistic for "
+              "xs-only runs.")
+        print()
+    elif ram is not None:
+        print(f"RAM: {ram:.0f} GiB, within the {safe} workers calibrated at "
+              f"{GIB_PER_WORKER:g} GiB each")
+
     print(f"Worker trees: {args.root}")
     print(f"Disk: {workers_wanted} x {tree_megabytes():.0f} MB of worker copies, "
           "plus each worker's stage outputs (`data/sdf`, `data/toolpath` and the "

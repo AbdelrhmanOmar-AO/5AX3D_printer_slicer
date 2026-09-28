@@ -939,6 +939,71 @@ machine is easy to explain away — which is exactly what happened when the same
 run's cold-cache figures were first read as the machine being slow (3.9's
 neighbour, handoff section 3). A test pins the choice.
 
+### 4.19 Taichi reserves 1 GiB of host memory per process, and it is not tunable
+
+The full 48-run matrix at 16 workers **failed 24 of 48 runs**, all within 90
+seconds of the workers starting:
+
+```
+[host_memory_pool.cpp] Virtual memory allocation (1073741824 B) failed
+RuntimeError: ... Virtual memory allocation (1073741824 B) failed
+```
+
+`1073741824 B` is exactly 1 GiB, and `host_memory_pool` is **RAM, not VRAM**.
+Taichi commits that pool at `materialize_runtime()`, in every process. A worker
+runs two Taichi processes at once — `atomize.py` and whichever stage it has
+launched — and on Windows a committed reservation counts against the commit
+limit whether or not it is touched.
+
+The same machine ran **8 workers with 24 of 24 succeeding**. The 17
+`FileNotFoundError: data/sdf/*.npz` entries in the logs are downstream noise
+from 4.16: the stage never ran, so its output was missing.
+
+**Taichi 1.7.4 exposes no setting for this pool.** `device_memory_GB` and
+`device_memory_fraction` are the GPU side; there is no host equivalent in
+`ti.init`. So **worker count is the only lever**, and `run_matrix_parallel.py`
+now warns when it is set beyond what RAM has been shown to support.
+
+**That warning is a calibration, not a calculation, and the difference matters.**
+Counting Taichi's reservations alone — 1 GiB per process, two processes per
+worker — gives 2 GiB per worker and would have permitted 26 on this machine. The
+observation says 16 is too many. The gap is everything that is not a Taichi
+reservation: Blender during stage 1, the arrays a large part actually needs, two
+Python interpreters per worker, and a Windows commit limit set by RAM plus
+whatever the pagefile allows. None of that is knowable from inside the tool, so
+the constant is 8 GiB per worker because 64 / 8 is the count that worked. It is a
+floor from one machine, and `--workers` still overrides it.
+
+The general lesson, and the second time this session has learned it: **a model
+of a machine's behaviour is worth less than one measurement of it.** The first
+time, a cold cache made a better GPU look five times slower and the figures were
+nearly read as the machine being slow (handoff section 3).
+
+### 4.20 `--resume` was blind to which machine wrote a report
+
+Found immediately after 4.19, while recovering from it. `--resume` skipped any
+combination whose report was current by `metrics_version` — and the 24 that had
+just failed still held the **laptop's** committed reports, which are current. So
+`--resume` would have reported "Nothing to run" and done nothing, with 24 runs
+outstanding.
+
+Correct while one machine wrote every report. Wrong from the moment two do, which
+is exactly what P1.7's provenance exists to record.
+
+`build_jobs` now compares each report's machine against this one, using the
+subset of `provenance.COMPARABILITY_FIELDS` knowable *before* a run — machine,
+`ti_arch_setting`, `taichi`, `machine_profile`. `stage_arches` cannot be in it:
+which backend each of the 14 stages started on is only known once they have run.
+
+Three cases deliberately count as **not from here**, so they are re-run rather
+than skipped: a report with no provenance (the 48 predating P1.7), an incomplete
+block, and one written by `--skip-pipeline`, where the toolpath's origin is
+unknown. Unknown is never "mine".
+
+Two existing tests broke on this, and they were right to: they asserted that the
+committed reports counted as done, which quietly depended on the test running on
+the operator's laptop. They now say which machine they are pretending to be.
+
 ## 5. Open plan items not yet resolved
 
 | Item | Status |
@@ -958,7 +1023,8 @@ neighbour, handoff section 3). A test pins the choice.
 | This session's branch not merged | `claude/new-session-l8g46d` carries the parallel runner, the failing-stage check, `ATOM_SKIP_DISPLAY_TESTS` and the conftest fix. Handoff section 0c lists them and declares two convention breaches for the operator to rule on. |
 | P2 | No session assigned. Waits on gate D0; P2.0 and P2.1 do not |
 | Parallel matrix runner | **Built** (2026-09-24) as `tools/run_matrix_parallel.py`: a copy of the working tree per worker, so no two runs share a `data/` path. Handoff section 3 has the design and the numbers. Tested with the slicing stubbed out; **contention between workers is still unmeasured**, so its projection is arithmetic rather than an observation. |
-| Contention between parallel workers | **Measured at 8 workers** (2026-09-24): 5.19x speedup, 65 % efficiency, each run 1.47x slower under load. The ideal estimate was 2.4x optimistic, so the runner now prints both. **Above 8 workers it is still a guess**, and efficiency falls as workers are added; 16 workers is 3 to 3.5 h for the full 48, not the 2:33 that 65 % would give. |
+| Contention between parallel workers | **Measured twice at 8 workers, and it depends on job length**: 65 % on short `xs` jobs (2026-09-24), **79 %** on the mostly-`s` resume (2026-09-28). The runner reports the range rather than interpolating. **Above 8 workers it cannot be measured on the 64 GiB machine at all** — 16 workers exhausts committed memory first (4.19). |
+| Workers per GiB of RAM | Calibrated from two points on one machine (8 works on 64 GiB, 16 does not). A machine with a large pagefile, or an `xs`-only run, may take more. 4.19. |
 | Parallel efficiency on the laptop | Unmeasured. The lab machine's 65 % came from 36 cores and two sockets; a 6-core 45 W laptop will throttle instead, which is a different limit. `--sizes xs --workers 3` settles it in about an hour. |
 | CPU model in the provenance block | P1.7 records the machine's **host name**, not its processor. A host name distinguishes machines; `Intel(R) Xeon(R) Gold 6254` is what a reader comparing two timings needs. `platform.processor()` will not give it — the Windows registry or `/proc/cpuinfo` will. Worth adding to `atom.provenance`; see 4.14. |
 | Correction numbers 4.14 to 4.17 | **Taken** by this session, straight into section 4 rather than a per-session heading in section 7, because it is merging rather than staying in flight. P1 and P4 must not reuse them. |
@@ -989,6 +1055,8 @@ The items a later task is most likely to get wrong if it trusts the plan:
 | 4.16 | `atomize.py` ignores stage exit codes, so one failure becomes twelve — and a stale output can pass for a fresh one |
 | 4.17 | Never hand-write the pipeline's input list; `git ls-files -- data` is the list |
 | 4.18 | A warm-up run is serial time: make it the shortest job, never the longest |
+| 4.19 | Taichi commits 1 GiB of RAM per process; worker count is the only lever, and calibrate it, do not model it |
+| 4.20 | `--resume` must compare the machine, not just the metrics version |
 
 And the habits that caught most of them:
 
