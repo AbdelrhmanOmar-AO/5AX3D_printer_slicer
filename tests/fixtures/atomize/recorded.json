@@ -1,0 +1,150 @@
+{
+  "_comment": "What tools/atomize.py did before build plan P5.1a moved its stage commands into build_stage_commands/run_stages: every command it ran, in order, everything it printed and the log it wrote, with the stages stubbed out. Recorded by tests/_atomize_record.py from atomize.py as it stood at commit f5ffcd2 (pull request #19). tests/test_atomize_stages.py requires the refactored script to reproduce it byte for byte. Do not regenerate it from a later atomize.py: it is the before picture.",
+  "recorded_from_commit": "f5ffcd2096b487fe6cb59d12a156abc7e9a07bc9",
+  "cases": [
+    {
+      "name": "calibration_cube",
+      "params": {
+        "solid_name": "calibration_cube",
+        "deposition_width": 0.9,
+        "max_slope": 7.0,
+        "infill": true
+      },
+      "argv": []
+    },
+    {
+      "name": "no_infill",
+      "params": {
+        "solid_name": "plain",
+        "deposition_width": 0.6,
+        "max_slope": 30.0
+      },
+      "argv": []
+    },
+    {
+      "name": "every_option",
+      "params": {
+        "solid_name": "every_option",
+        "deposition_width": 0.9,
+        "max_slope": 15.0,
+        "infill": true,
+        "infill_period": 12,
+        "shell_thickness": 3,
+        "bed_temp": 60,
+        "nozzle_temp": 215,
+        "top_lines": "data/image/0.png",
+        "bottom_lines": "data/image/90.png",
+        "ortho_to_wall": true,
+        "all_up": true
+      },
+      "argv": []
+    },
+    {
+      "name": "warmup",
+      "params": {
+        "solid_name": "calibration_cube",
+        "deposition_width": 0.9,
+        "max_slope": 7.0,
+        "infill": true
+      },
+      "argv": [
+        "--warmup"
+      ]
+    }
+  ],
+  "results": {
+    "calibration_cube": {
+      "commands": [
+        "blender -b -P tools/process_for_atomizer.py -- data/mesh/calibration_cube.stl data/mesh/calibration_cube.obj 0.084375",
+        "python tools/obj_to_bpn.py data/mesh/calibration_cube.obj data/point_normal/calibration_cube.npz",
+        "python tools/bpn_to_sdf.py data/point_normal/calibration_cube.npz data/sdf/calibration_cube.npz 0.90",
+        "python tools/sdf_to_isdf.py data/point_normal/calibration_cube.npz data/sdf/calibration_cube.npz data/sdf/calibration_cube.npz no_gui=True",
+        "python tools/compute_tool_orientations.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log",
+        "python tools/sdf_df_to_layers.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz data/phasor/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log",
+        "python tools/compute_tangents.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz data/basis/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log",
+        "python tools/align_atoms.py data/sdf/calibration_cube.npz data/phasor/calibration_cube.npz data/basis/calibration_cube.npz data/triphasor/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log",
+        "python tools/extract_explicit_atoms.py data/sdf/calibration_cube.npz data/triphasor/calibration_cube.npz data/frame/calibration_cube.npz --logpath data/log/calibration_cube.log",
+        "python tools/order_atoms.py data/sdf/calibration_cube.npz data/frame/calibration_cube.npz data/toolpath/calibration_cube.npz --logpath data/log/calibration_cube.log",
+        "python tools/smooth_toolpath_point.py data/toolpath/calibration_cube.npz data/toolpath/calibration_cube_smoothed.npz 8",
+        "python tools/tesselate_toolpath_orientations.py data/toolpath/calibration_cube_smoothed.npz data/toolpath/calibration_cube_smoothed_tesselated.npz 1.0",
+        "python tools/add_platform.py data/toolpath/calibration_cube_smoothed_tesselated.npz data/toolpath/calibration_cube_platform.npz 0.9 0.44999998807907104",
+        "python tools/toolpath_to_gcode.py data/toolpath/calibration_cube_platform.npz data/gcode/calibration_cube.gcode",
+        "python tools/ratrig_to_craftware.py data/gcode/calibration_cube.gcode data/gcode/calibration_cube_craftware.gcode"
+      ],
+      "stdout": "# Parameters\n- Solid name: calibration_cube\n- STL input: data/mesh/calibration_cube.stl\n- GCode output: data/gcode/calibration_cube.gcode\n- Log file: data/log/calibration_cube.log\n- Deposition width: 0.90\n- Layer height: 0.45\n- Cell sides length: 0.169\n- Machine max slope angle: 7.0 degrees\n\nStep 1 Starting: Remesh\n\n\nStep 2 Starting: Mesh to Point Normal Cloud\n\n\nStep 3 Starting: Point Normal Cloud to SDF\n\n\nStep 3 Bis Starting: SDF to SDF with Infill\n\n\nStep 4 Starting: Direction Field Computation\n\n\nStep 5 Starting: Implicit Layers Computation\n\n\nStep 6 Starting: Tangents Computation\n\n\nStep 7 Starting: Atoms alignment\n\n\nStep 8 Starting: Implicit to Explicit Atoms\n\n\nStep 9 Starting: Order Atoms\n\n\nStep 10 Starting: Smooth, Tesselate and Add a Platform\n\n\nStep 11 Starting: G-Code Generation\n\n",
+      "log": "# Parameters\n\n- Solid name: calibration_cube\n- STL input: data/mesh/calibration_cube.stl\n- GCode output: data/gcode/calibration_cube.gcode\n- Log file: data/log/calibration_cube.log\n- Deposition width: 0.90\n- Layer height: 0.45\n- Cell sides length: 0.169\n- Machine max slope angle: 7.0 degrees\n\n# Pipeline commands\n\nblender -b -P tools/process_for_atomizer.py -- data/mesh/calibration_cube.stl data/mesh/calibration_cube.obj 0.084375\npython tools/obj_to_bpn.py data/mesh/calibration_cube.obj data/point_normal/calibration_cube.npz\npython tools/bpn_to_sdf.py data/point_normal/calibration_cube.npz data/sdf/calibration_cube.npz 0.90\npython tools/compute_tool_orientations.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log\npython tools/sdf_df_to_layers.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz data/phasor/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log\npython tools/compute_tangents.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz data/basis/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log\npython tools/align_atoms.py data/sdf/calibration_cube.npz data/phasor/calibration_cube.npz data/basis/calibration_cube.npz data/triphasor/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log\npython tools/extract_explicit_atoms.py data/sdf/calibration_cube.npz data/triphasor/calibration_cube.npz data/frame/calibration_cube.npz --logpath data/log/calibration_cube.log\npython tools/order_atoms.py data/sdf/calibration_cube.npz data/frame/calibration_cube.npz data/toolpath/calibration_cube.npz --logpath data/log/calibration_cube.log\npython tools/smooth_toolpath_point.py data/toolpath/calibration_cube.npz data/toolpath/calibration_cube_smoothed.npz 8\n\n# Visualize commands\n\npython tools/visualize_bpn.py data/point_normal/calibration_cube.npz\npython tools/visualize_bpn_sdf.py data/point_normal/calibration_cube.npz data/sdf/calibration_cube.npz\npython tools/visualize_bpn_df.py data/point_normal/calibration_cube.npz data/direction/calibration_cube.npz\npython tools/visualize_bpn_layers.py data/point_normal/calibration_cube.npz data/phasor/calibration_cube.npz\npython tools/visualize_bases.py data/point_normal/calibration_cube.npz data/basis/calibration_cube.npz\npython tools/visualize_implicit_atoms.py data/point_normal/calibration_cube.npz data/triphasor/calibration_cube.npz\npython tools/visualize_explicit_atoms.py data/frame/calibration_cube.npz 0.450\npython tools/visualize_toolpath.py data/toolpath/calibration_cube_smoothed.npz\n\n# Direction Field Computation\n\n\n# Implicit Layers Computation\n\n\n# Tangents Computation\n\n\n# Atoms alignment\n\n\n# Implicit to Explicit Atoms\n\n\n# Order Atoms\n\n\n# Smooth, Tesselate and Add a Platform\n\n\n# G-Code Generation\n\n",
+      "error": null
+    },
+    "no_infill": {
+      "commands": [
+        "blender -b -P tools/process_for_atomizer.py -- data/mesh/plain.stl data/mesh/plain.obj 0.056250",
+        "python tools/obj_to_bpn.py data/mesh/plain.obj data/point_normal/plain.npz",
+        "python tools/bpn_to_sdf.py data/point_normal/plain.npz data/sdf/plain.npz 0.60",
+        "python tools/compute_tool_orientations.py data/sdf/plain.npz data/direction/plain.npz --maxslope 30.0 --logpath data/log/plain.log",
+        "python tools/sdf_df_to_layers.py data/sdf/plain.npz data/direction/plain.npz data/phasor/plain.npz --maxslope 30.0 --logpath data/log/plain.log",
+        "python tools/compute_tangents.py data/sdf/plain.npz data/direction/plain.npz data/basis/plain.npz --maxslope 30.0 --logpath data/log/plain.log",
+        "python tools/align_atoms.py data/sdf/plain.npz data/phasor/plain.npz data/basis/plain.npz data/triphasor/plain.npz --maxslope 30.0 --logpath data/log/plain.log",
+        "python tools/extract_explicit_atoms.py data/sdf/plain.npz data/triphasor/plain.npz data/frame/plain.npz --logpath data/log/plain.log",
+        "python tools/order_atoms.py data/sdf/plain.npz data/frame/plain.npz data/toolpath/plain.npz --logpath data/log/plain.log",
+        "python tools/smooth_toolpath_point.py data/toolpath/plain.npz data/toolpath/plain_smoothed.npz 8",
+        "python tools/tesselate_toolpath_orientations.py data/toolpath/plain_smoothed.npz data/toolpath/plain_smoothed_tesselated.npz 1.0",
+        "python tools/add_platform.py data/toolpath/plain_smoothed_tesselated.npz data/toolpath/plain_platform.npz 0.6 0.30000001192092896",
+        "python tools/toolpath_to_gcode.py data/toolpath/plain_platform.npz data/gcode/plain.gcode",
+        "python tools/ratrig_to_craftware.py data/gcode/plain.gcode data/gcode/plain_craftware.gcode"
+      ],
+      "stdout": "# Parameters\n- Solid name: plain\n- STL input: data/mesh/plain.stl\n- GCode output: data/gcode/plain.gcode\n- Log file: data/log/plain.log\n- Deposition width: 0.60\n- Layer height: 0.30\n- Cell sides length: 0.113\n- Machine max slope angle: 30.0 degrees\n\nStep 1 Starting: Remesh\n\n\nStep 2 Starting: Mesh to Point Normal Cloud\n\n\nStep 3 Starting: Point Normal Cloud to SDF\n\n\nStep 4 Starting: Direction Field Computation\n\n\nStep 5 Starting: Implicit Layers Computation\n\n\nStep 6 Starting: Tangents Computation\n\n\nStep 7 Starting: Atoms alignment\n\n\nStep 8 Starting: Implicit to Explicit Atoms\n\n\nStep 9 Starting: Order Atoms\n\n\nStep 10 Starting: Smooth, Tesselate and Add a Platform\n\n\nStep 11 Starting: G-Code Generation\n\n",
+      "log": "# Parameters\n\n- Solid name: plain\n- STL input: data/mesh/plain.stl\n- GCode output: data/gcode/plain.gcode\n- Log file: data/log/plain.log\n- Deposition width: 0.60\n- Layer height: 0.30\n- Cell sides length: 0.113\n- Machine max slope angle: 30.0 degrees\n\n# Pipeline commands\n\nblender -b -P tools/process_for_atomizer.py -- data/mesh/plain.stl data/mesh/plain.obj 0.056250\npython tools/obj_to_bpn.py data/mesh/plain.obj data/point_normal/plain.npz\npython tools/bpn_to_sdf.py data/point_normal/plain.npz data/sdf/plain.npz 0.60\npython tools/compute_tool_orientations.py data/sdf/plain.npz data/direction/plain.npz --maxslope 30.0 --logpath data/log/plain.log\npython tools/sdf_df_to_layers.py data/sdf/plain.npz data/direction/plain.npz data/phasor/plain.npz --maxslope 30.0 --logpath data/log/plain.log\npython tools/compute_tangents.py data/sdf/plain.npz data/direction/plain.npz data/basis/plain.npz --maxslope 30.0 --logpath data/log/plain.log\npython tools/align_atoms.py data/sdf/plain.npz data/phasor/plain.npz data/basis/plain.npz data/triphasor/plain.npz --maxslope 30.0 --logpath data/log/plain.log\npython tools/extract_explicit_atoms.py data/sdf/plain.npz data/triphasor/plain.npz data/frame/plain.npz --logpath data/log/plain.log\npython tools/order_atoms.py data/sdf/plain.npz data/frame/plain.npz data/toolpath/plain.npz --logpath data/log/plain.log\npython tools/smooth_toolpath_point.py data/toolpath/plain.npz data/toolpath/plain_smoothed.npz 8\n\n# Visualize commands\n\npython tools/visualize_bpn.py data/point_normal/plain.npz\npython tools/visualize_bpn_sdf.py data/point_normal/plain.npz data/sdf/plain.npz\npython tools/visualize_bpn_df.py data/point_normal/plain.npz data/direction/plain.npz\npython tools/visualize_bpn_layers.py data/point_normal/plain.npz data/phasor/plain.npz\npython tools/visualize_bases.py data/point_normal/plain.npz data/basis/plain.npz\npython tools/visualize_implicit_atoms.py data/point_normal/plain.npz data/triphasor/plain.npz\npython tools/visualize_explicit_atoms.py data/frame/plain.npz 0.300\npython tools/visualize_toolpath.py data/toolpath/plain_smoothed.npz\n\n# Direction Field Computation\n\n\n# Implicit Layers Computation\n\n\n# Tangents Computation\n\n\n# Atoms alignment\n\n\n# Implicit to Explicit Atoms\n\n\n# Order Atoms\n\n\n# Smooth, Tesselate and Add a Platform\n\n\n# G-Code Generation\n\n",
+      "error": null
+    },
+    "every_option": {
+      "commands": [
+        "blender -b -P tools/process_for_atomizer.py -- data/mesh/every_option.stl data/mesh/every_option.obj 0.084375",
+        "python tools/obj_to_bpn.py data/mesh/every_option.obj data/point_normal/every_option.npz",
+        "python tools/bpn_to_sdf.py data/point_normal/every_option.npz data/sdf/every_option.npz 0.90",
+        "python tools/sdf_to_isdf.py data/point_normal/every_option.npz data/sdf/every_option.npz data/sdf/every_option.npz no_gui=True --infill-period 12 --shell-thickness 3",
+        "python tools/compute_tool_orientations.py data/sdf/every_option.npz data/direction/every_option.npz --maxslope 15.0 --ortho_to_wall --allup --logpath data/log/every_option.log",
+        "python tools/sdf_df_to_layers.py data/sdf/every_option.npz data/direction/every_option.npz data/phasor/every_option.npz --maxslope 15.0 --allup --logpath data/log/every_option.log",
+        "python tools/compute_tangents.py data/sdf/every_option.npz data/direction/every_option.npz data/basis/every_option.npz --maxslope 15.0 --top_lines data/image/0.png --bottom_lines data/image/90.png --logpath data/log/every_option.log",
+        "python tools/align_atoms.py data/sdf/every_option.npz data/phasor/every_option.npz data/basis/every_option.npz data/triphasor/every_option.npz --maxslope 15.0 --logpath data/log/every_option.log",
+        "python tools/extract_explicit_atoms.py data/sdf/every_option.npz data/triphasor/every_option.npz data/frame/every_option.npz --logpath data/log/every_option.log",
+        "python tools/order_atoms.py data/sdf/every_option.npz data/frame/every_option.npz data/toolpath/every_option.npz --logpath data/log/every_option.log",
+        "python tools/smooth_toolpath_point.py data/toolpath/every_option.npz data/toolpath/every_option_smoothed.npz 8",
+        "python tools/tesselate_toolpath_orientations.py data/toolpath/every_option_smoothed.npz data/toolpath/every_option_smoothed_tesselated.npz 1.0",
+        "python tools/add_platform.py data/toolpath/every_option_smoothed_tesselated.npz data/toolpath/every_option_platform.npz 0.9 0.44999998807907104",
+        "python tools/toolpath_to_gcode.py data/toolpath/every_option_platform.npz data/gcode/every_option.gcode --bed-temp 60 --nozzle-temp 215",
+        "python tools/ratrig_to_craftware.py data/gcode/every_option.gcode data/gcode/every_option_craftware.gcode"
+      ],
+      "stdout": "# Parameters\n- Solid name: every_option\n- STL input: data/mesh/every_option.stl\n- GCode output: data/gcode/every_option.gcode\n- Log file: data/log/every_option.log\n- Deposition width: 0.90\n- Layer height: 0.45\n- Cell sides length: 0.169\n- Machine max slope angle: 15.0 degrees\n\nStep 1 Starting: Remesh\n\n\nStep 2 Starting: Mesh to Point Normal Cloud\n\n\nStep 3 Starting: Point Normal Cloud to SDF\n\n\nStep 3 Bis Starting: SDF to SDF with Infill\n\n\nStep 4 Starting: Direction Field Computation\n\n\nStep 5 Starting: Implicit Layers Computation\n\n\nStep 6 Starting: Tangents Computation\n\n\nStep 7 Starting: Atoms alignment\n\n\nStep 8 Starting: Implicit to Explicit Atoms\n\n\nStep 9 Starting: Order Atoms\n\n\nStep 10 Starting: Smooth, Tesselate and Add a Platform\n\n\nStep 11 Starting: G-Code Generation\n\n",
+      "log": "# Parameters\n\n- Solid name: every_option\n- STL input: data/mesh/every_option.stl\n- GCode output: data/gcode/every_option.gcode\n- Log file: data/log/every_option.log\n- Deposition width: 0.90\n- Layer height: 0.45\n- Cell sides length: 0.169\n- Machine max slope angle: 15.0 degrees\n\n# Pipeline commands\n\nblender -b -P tools/process_for_atomizer.py -- data/mesh/every_option.stl data/mesh/every_option.obj 0.084375\npython tools/obj_to_bpn.py data/mesh/every_option.obj data/point_normal/every_option.npz\npython tools/bpn_to_sdf.py data/point_normal/every_option.npz data/sdf/every_option.npz 0.90\npython tools/compute_tool_orientations.py data/sdf/every_option.npz data/direction/every_option.npz --maxslope 15.0 --ortho_to_wall --allup --logpath data/log/every_option.log\npython tools/sdf_df_to_layers.py data/sdf/every_option.npz data/direction/every_option.npz data/phasor/every_option.npz --maxslope 15.0 --allup --logpath data/log/every_option.log\npython tools/compute_tangents.py data/sdf/every_option.npz data/direction/every_option.npz data/basis/every_option.npz --maxslope 15.0 --top_lines data/image/0.png --bottom_lines data/image/90.png --logpath data/log/every_option.log\npython tools/align_atoms.py data/sdf/every_option.npz data/phasor/every_option.npz data/basis/every_option.npz data/triphasor/every_option.npz --maxslope 15.0 --logpath data/log/every_option.log\npython tools/extract_explicit_atoms.py data/sdf/every_option.npz data/triphasor/every_option.npz data/frame/every_option.npz --logpath data/log/every_option.log\npython tools/order_atoms.py data/sdf/every_option.npz data/frame/every_option.npz data/toolpath/every_option.npz --logpath data/log/every_option.log\npython tools/smooth_toolpath_point.py data/toolpath/every_option.npz data/toolpath/every_option_smoothed.npz 8\n\n# Visualize commands\n\npython tools/visualize_bpn.py data/point_normal/every_option.npz\npython tools/visualize_bpn_sdf.py data/point_normal/every_option.npz data/sdf/every_option.npz\npython tools/visualize_bpn_df.py data/point_normal/every_option.npz data/direction/every_option.npz\npython tools/visualize_bpn_layers.py data/point_normal/every_option.npz data/phasor/every_option.npz\npython tools/visualize_bases.py data/point_normal/every_option.npz data/basis/every_option.npz\npython tools/visualize_implicit_atoms.py data/point_normal/every_option.npz data/triphasor/every_option.npz\npython tools/visualize_explicit_atoms.py data/frame/every_option.npz 0.450\npython tools/visualize_toolpath.py data/toolpath/every_option_smoothed.npz\n\n# Direction Field Computation\n\n\n# Implicit Layers Computation\n\n\n# Tangents Computation\n\n\n# Atoms alignment\n\n\n# Implicit to Explicit Atoms\n\n\n# Order Atoms\n\n\n# Smooth, Tesselate and Add a Platform\n\n\n# G-Code Generation\n\n",
+      "error": null
+    },
+    "warmup": {
+      "commands": [
+        "blender -b -P tools/process_for_atomizer.py -- data/mesh/calibration_cube.stl data/mesh/calibration_cube.obj 0.084375",
+        "python tools/obj_to_bpn.py data/mesh/calibration_cube.obj data/point_normal/calibration_cube.npz",
+        "python tools/bpn_to_sdf.py data/point_normal/calibration_cube.npz data/sdf/calibration_cube.npz 0.90",
+        "python tools/sdf_to_isdf.py data/point_normal/calibration_cube.npz data/sdf/calibration_cube.npz data/sdf/calibration_cube.npz no_gui=True",
+        "python tools/compute_tool_orientations.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz --maxslope 7.0",
+        "python tools/compute_tool_orientations.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log",
+        "python tools/sdf_df_to_layers.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz data/phasor/calibration_cube.npz --maxslope 7.0",
+        "python tools/sdf_df_to_layers.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz data/phasor/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log",
+        "python tools/compute_tangents.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz data/basis/calibration_cube.npz --maxslope 7.0",
+        "python tools/compute_tangents.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz data/basis/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log",
+        "python tools/align_atoms.py data/sdf/calibration_cube.npz data/phasor/calibration_cube.npz data/basis/calibration_cube.npz data/triphasor/calibration_cube.npz --maxslope 7.0",
+        "python tools/align_atoms.py data/sdf/calibration_cube.npz data/phasor/calibration_cube.npz data/basis/calibration_cube.npz data/triphasor/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log",
+        "python tools/extract_explicit_atoms.py data/sdf/calibration_cube.npz data/triphasor/calibration_cube.npz data/frame/calibration_cube.npz",
+        "python tools/extract_explicit_atoms.py data/sdf/calibration_cube.npz data/triphasor/calibration_cube.npz data/frame/calibration_cube.npz --logpath data/log/calibration_cube.log",
+        "python tools/order_atoms.py data/sdf/calibration_cube.npz data/frame/calibration_cube.npz data/toolpath/calibration_cube.npz",
+        "python tools/order_atoms.py data/sdf/calibration_cube.npz data/frame/calibration_cube.npz data/toolpath/calibration_cube.npz --logpath data/log/calibration_cube.log",
+        "python tools/smooth_toolpath_point.py data/toolpath/calibration_cube.npz data/toolpath/calibration_cube_smoothed.npz 8",
+        "python tools/tesselate_toolpath_orientations.py data/toolpath/calibration_cube_smoothed.npz data/toolpath/calibration_cube_smoothed_tesselated.npz 1.0",
+        "python tools/add_platform.py data/toolpath/calibration_cube_smoothed_tesselated.npz data/toolpath/calibration_cube_platform.npz 0.9 0.44999998807907104",
+        "python tools/toolpath_to_gcode.py data/toolpath/calibration_cube_platform.npz data/gcode/calibration_cube.gcode",
+        "python tools/ratrig_to_craftware.py data/gcode/calibration_cube.gcode data/gcode/calibration_cube_craftware.gcode"
+      ],
+      "stdout": "# Parameters\n- Solid name: calibration_cube\n- STL input: data/mesh/calibration_cube.stl\n- GCode output: data/gcode/calibration_cube.gcode\n- Log file: data/log/calibration_cube.log\n- Deposition width: 0.90\n- Layer height: 0.45\n- Cell sides length: 0.169\n- Machine max slope angle: 7.0 degrees\n\nStep 1 Starting: Remesh\n\n\nStep 2 Starting: Mesh to Point Normal Cloud\n\n\nStep 3 Starting: Point Normal Cloud to SDF\n\n\nStep 3 Bis Starting: SDF to SDF with Infill\n\n\nStep 4 Starting: Direction Field Computation\n\nWarmup\n\nStep 5 Starting: Implicit Layers Computation\n\nWarmup\n\nStep 6 Starting: Tangents Computation\n\nWarmup\n\nStep 7 Starting: Atoms alignment\n\nWarmup\n\nStep 8 Starting: Implicit to Explicit Atoms\n\nWarmup\n\nStep 9 Starting: Order Atoms\n\nWarmup\n\nStep 10 Starting: Smooth, Tesselate and Add a Platform\n\n\nStep 11 Starting: G-Code Generation\n\n",
+      "log": "# Parameters\n\n- Solid name: calibration_cube\n- STL input: data/mesh/calibration_cube.stl\n- GCode output: data/gcode/calibration_cube.gcode\n- Log file: data/log/calibration_cube.log\n- Deposition width: 0.90\n- Layer height: 0.45\n- Cell sides length: 0.169\n- Machine max slope angle: 7.0 degrees\n\n# Pipeline commands\n\nblender -b -P tools/process_for_atomizer.py -- data/mesh/calibration_cube.stl data/mesh/calibration_cube.obj 0.084375\npython tools/obj_to_bpn.py data/mesh/calibration_cube.obj data/point_normal/calibration_cube.npz\npython tools/bpn_to_sdf.py data/point_normal/calibration_cube.npz data/sdf/calibration_cube.npz 0.90\npython tools/compute_tool_orientations.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log\npython tools/sdf_df_to_layers.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz data/phasor/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log\npython tools/compute_tangents.py data/sdf/calibration_cube.npz data/direction/calibration_cube.npz data/basis/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log\npython tools/align_atoms.py data/sdf/calibration_cube.npz data/phasor/calibration_cube.npz data/basis/calibration_cube.npz data/triphasor/calibration_cube.npz --maxslope 7.0 --logpath data/log/calibration_cube.log\npython tools/extract_explicit_atoms.py data/sdf/calibration_cube.npz data/triphasor/calibration_cube.npz data/frame/calibration_cube.npz --logpath data/log/calibration_cube.log\npython tools/order_atoms.py data/sdf/calibration_cube.npz data/frame/calibration_cube.npz data/toolpath/calibration_cube.npz --logpath data/log/calibration_cube.log\npython tools/smooth_toolpath_point.py data/toolpath/calibration_cube.npz data/toolpath/calibration_cube_smoothed.npz 8\n\n# Visualize commands\n\npython tools/visualize_bpn.py data/point_normal/calibration_cube.npz\npython tools/visualize_bpn_sdf.py data/point_normal/calibration_cube.npz data/sdf/calibration_cube.npz\npython tools/visualize_bpn_df.py data/point_normal/calibration_cube.npz data/direction/calibration_cube.npz\npython tools/visualize_bpn_layers.py data/point_normal/calibration_cube.npz data/phasor/calibration_cube.npz\npython tools/visualize_bases.py data/point_normal/calibration_cube.npz data/basis/calibration_cube.npz\npython tools/visualize_implicit_atoms.py data/point_normal/calibration_cube.npz data/triphasor/calibration_cube.npz\npython tools/visualize_explicit_atoms.py data/frame/calibration_cube.npz 0.450\npython tools/visualize_toolpath.py data/toolpath/calibration_cube_smoothed.npz\n\n# Direction Field Computation\n\n\n# Implicit Layers Computation\n\n\n# Tangents Computation\n\n\n# Atoms alignment\n\n\n# Implicit to Explicit Atoms\n\n\n# Order Atoms\n\n\n# Smooth, Tesselate and Add a Platform\n\n\n# G-Code Generation\n\n",
+      "error": null
+    }
+  }
+}

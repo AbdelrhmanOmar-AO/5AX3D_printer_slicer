@@ -331,6 +331,8 @@ Refer to the log file to see all the individual computation and visualization co
 
 Add the `--warmup` option to exclude the compilation time from the computation time reported in the log file. **Caution:** this causes each step of the pipeline to run twice, as Taichi uses just-in-time compilation.
 
+Add `--stop-after STAGE` (this fork) to run the pipeline only up to and including that stage, for example `--stop-after extract_explicit_atoms` to stop before the slow ordering stage (build plan P2.0 uses this). `python tools/atomize.py --help` lists the stage names.
+
 #### Example
 
 ```

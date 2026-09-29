@@ -1,6 +1,8 @@
 import argparse
 import json
 import os
+from dataclasses import dataclass
+from typing import Iterable, List, Optional
 
 import taichi as ti
 
@@ -97,6 +99,265 @@ class Parameters:
         self.degree_angle_max_diff = 1.0
 
 
+# --------------------------------------------------------------------------
+# The stages (build plan P5.1a)
+#
+# Upstream built every stage's command inside `__main__` and ran them one
+# after another. They are built here instead, so a caller can run part of the
+# pipeline: P2.0's field-only evaluation stops after the atoms are extracted,
+# and P5.1's driver resumes from a later stage. The command line behaves
+# exactly as before; `tests/test_atomize_stages.py` checks every command,
+# printed line and log line against a record of the script before this change.
+# --------------------------------------------------------------------------
+
+#: Every stage, in the order it runs, named after the tool that implements it
+#: (`tools/<name>.py`). `sdf_to_isdf` runs only for a part with infill.
+STAGE_NAMES = (
+    "process_for_atomizer",
+    "obj_to_bpn",
+    "bpn_to_sdf",
+    "sdf_to_isdf",
+    "compute_tool_orientations",
+    "sdf_df_to_layers",
+    "compute_tangents",
+    "align_atoms",
+    "extract_explicit_atoms",
+    "order_atoms",
+    "smooth_toolpath_point",
+    "tesselate_toolpath_orientations",
+    "add_platform",
+    "toolpath_to_gcode",
+    "ratrig_to_craftware",
+)
+
+#: The stages the log lists under "Pipeline commands". Upstream never listed
+#: the infill stage or the last four, and the log is kept as it was
+#: (plan_corrections P1-13): do not read it as the list of what ran.
+LOGGED_STAGE_NAMES = (
+    "process_for_atomizer",
+    "obj_to_bpn",
+    "bpn_to_sdf",
+    "compute_tool_orientations",
+    "sdf_df_to_layers",
+    "compute_tangents",
+    "align_atoms",
+    "extract_explicit_atoms",
+    "order_atoms",
+    "smooth_toolpath_point",
+)
+
+
+@dataclass(frozen=True)
+class Stage:
+    """One stage of the pipeline and the shell command that runs it."""
+
+    #: The tool that runs the stage, `tools/<name>.py`; one of `STAGE_NAMES`.
+    name: str
+    command: str
+    #: Printed before the stage. Consecutive stages sharing one step (10 and
+    #: 11 each run several tools) print it once.
+    step: str
+    #: Written to the log as "# <heading>" before the step, or None for the
+    #: steps upstream did not log (1 to 3).
+    log_heading: Optional[str] = None
+    #: Whether `--warmup` runs the stage once beforehand without `--logpath`,
+    #: so Taichi's compilation is not counted in the logged time.
+    warmup: bool = False
+
+
+def pipeline_geometry(deposition_width: float):
+    """``(cell_sides_length, layer_height)`` in mm for a deposition width in mm.
+
+    Computed by Atomizer's own Taichi functions, in 32-bit floats, exactly as
+    upstream did; the layer height reaches `add_platform` as
+    ``0.44999998807907104`` for 0.9 mm beads, not 0.45.
+    """
+    cell_sides_length = atom.fff3.cell_sides_length_from_deposition_width_kernel(
+        deposition_width
+    )
+    layer_height = atom.fff3.layer_height_from_cell_sides_length_kernel(
+        cell_sides_length
+    )
+    return cell_sides_length, layer_height
+
+
+def build_stage_commands(params: Parameters) -> List[Stage]:
+    """Every stage for the part ``params`` describes, in the order they run.
+
+    The commands are upstream's, character for character.
+    """
+    cell_sides_length, layer_height = pipeline_geometry(params.deposition_width)
+
+    process_mesh_command = f"blender -b -P tools/process_for_atomizer.py -- {params.stl_path} {params.obj_path} {cell_sides_length * 0.5:.6f}"
+    obj_to_bpn_cmd = f"python tools/obj_to_bpn.py {params.obj_path} {params.bpn_path}"
+    bpn_to_sdf_cmd = f"python tools/bpn_to_sdf.py {params.bpn_path} {params.sdf_path} {params.deposition_width:.2f}"
+    sdf_to_isdf_cmd = f"python tools/sdf_to_isdf.py {params.bpn_path} {params.sdf_path} {params.sdf_path} no_gui=True{params.infill_arguments}"
+
+    compute_tool_orientations_cmd = f"python tools/compute_tool_orientations.py {params.sdf_path} {params.direction_path} --maxslope {params.max_slope}"
+    if params.ortho_to_wall:
+        compute_tool_orientations_cmd += " --ortho_to_wall"
+    if params.all_up:
+        compute_tool_orientations_cmd += " --allup"
+    compute_tool_orientations_cmd += f" --logpath {params.log_path}"
+
+    sdf_df_to_layers_cmd = f"python tools/sdf_df_to_layers.py {params.sdf_path} {params.direction_path} {params.phasor_path} --maxslope {params.max_slope}"
+    if params.all_up:
+        sdf_df_to_layers_cmd += " --allup"
+    sdf_df_to_layers_cmd += f" --logpath {params.log_path}"
+
+    compute_tangents_cmd = f"python tools/compute_tangents.py {params.sdf_path} {params.direction_path} {params.basis_path} --maxslope {params.max_slope}"
+    if params.top_lines is not None:
+        compute_tangents_cmd += f" --top_lines {params.top_lines}"
+    if params.bottom_lines is not None:
+        compute_tangents_cmd += f" --bottom_lines {params.bottom_lines}"
+    compute_tangents_cmd += f" --logpath {params.log_path}"
+
+    align_atoms_cmd = f"python tools/align_atoms.py {params.sdf_path} {params.phasor_path} {params.basis_path} {params.triphasor_path} --maxslope {params.max_slope} --logpath {params.log_path}"
+    extract_explicit_atoms_cmd = f"python tools/extract_explicit_atoms.py {params.sdf_path} {params.triphasor_path} {params.frame_path} --logpath {params.log_path}"
+    order_atoms_cmd = f"python tools/order_atoms.py {params.sdf_path} {params.frame_path} {params.toolpath_path} --logpath {params.log_path}"
+    smooth_toolpath_point_cmd = f"python tools/smooth_toolpath_point.py {params.toolpath_path} {params.smoothed_toolpath_path} {params.smoothing_iter_count}"
+    tesselate_toolpath_orientations_cmd = f"python tools/tesselate_toolpath_orientations.py {params.smoothed_toolpath_path} {params.smoothed_tesselated_toolpath_path} {params.degree_angle_max_diff}"
+    add_platform_cmd = f"python tools/add_platform.py {params.smoothed_tesselated_toolpath_path} {params.platform_toolpath_path} {params.deposition_width} {layer_height}"
+    toolpath_to_gcode_cmd = f"python tools/toolpath_to_gcode.py {params.platform_toolpath_path} {params.gcode_path}{params.temperature_arguments}"
+    ratrig_to_craftware_cmd = f"python tools/ratrig_to_craftware.py {params.gcode_path} {params.craftware_gcode_path}"
+
+    stages = [
+        Stage("process_for_atomizer", process_mesh_command, "Step 1 Starting: Remesh"),
+        Stage("obj_to_bpn", obj_to_bpn_cmd, "Step 2 Starting: Mesh to Point Normal Cloud"),
+        Stage("bpn_to_sdf", bpn_to_sdf_cmd, "Step 3 Starting: Point Normal Cloud to SDF"),
+    ]
+    if params.infill:
+        stages.append(
+            Stage("sdf_to_isdf", sdf_to_isdf_cmd, "Step 3 Bis Starting: SDF to SDF with Infill")
+        )
+
+    step_10 = "Step 10 Starting: Smooth, Tesselate and Add a Platform"
+    log_10 = "Smooth, Tesselate and Add a Platform"
+    step_11 = "Step 11 Starting: G-Code Generation"
+    log_11 = "G-Code Generation"
+    stages += [
+        Stage(
+            "compute_tool_orientations",
+            compute_tool_orientations_cmd,
+            "Step 4 Starting: Direction Field Computation",
+            "Direction Field Computation",
+            warmup=True,
+        ),
+        Stage(
+            "sdf_df_to_layers",
+            sdf_df_to_layers_cmd,
+            "Step 5 Starting: Implicit Layers Computation",
+            "Implicit Layers Computation",
+            warmup=True,
+        ),
+        Stage(
+            "compute_tangents",
+            compute_tangents_cmd,
+            "Step 6 Starting: Tangents Computation",
+            "Tangents Computation",
+            warmup=True,
+        ),
+        Stage(
+            "align_atoms",
+            align_atoms_cmd,
+            "Step 7 Starting: Atoms alignment",
+            "Atoms alignment",
+            warmup=True,
+        ),
+        Stage(
+            "extract_explicit_atoms",
+            extract_explicit_atoms_cmd,
+            "Step 8 Starting: Implicit to Explicit Atoms",
+            "Implicit to Explicit Atoms",
+            warmup=True,
+        ),
+        Stage(
+            "order_atoms",
+            order_atoms_cmd,
+            "Step 9 Starting: Order Atoms",
+            "Order Atoms",
+            warmup=True,
+        ),
+        Stage("smooth_toolpath_point", smooth_toolpath_point_cmd, step_10, log_10),
+        Stage("tesselate_toolpath_orientations", tesselate_toolpath_orientations_cmd, step_10, log_10),
+        Stage("add_platform", add_platform_cmd, step_10, log_10),
+        Stage("toolpath_to_gcode", toolpath_to_gcode_cmd, step_11, log_11),
+        Stage("ratrig_to_craftware", ratrig_to_craftware_cmd, step_11, log_11),
+    ]
+    return stages
+
+
+def check_stage_names(names: Iterable[str]) -> None:
+    """Raise `ValueError` naming any entry that is not in `STAGE_NAMES`."""
+    unknown = sorted(set(names) - set(STAGE_NAMES))
+    if unknown:
+        raise ValueError(
+            f"Unknown stage name(s): {', '.join(unknown)}. "
+            f"Valid names, in order: {', '.join(STAGE_NAMES)}."
+        )
+
+
+def stages_through(last: str) -> List[str]:
+    """The names of every stage up to and including ``last``, in order."""
+    check_stage_names([last])
+    return list(STAGE_NAMES[: STAGE_NAMES.index(last) + 1])
+
+
+def select_stages(
+    stages: List[Stage],
+    only: Optional[Iterable[str]] = None,
+    skip: Optional[Iterable[str]] = None,
+) -> List[Stage]:
+    """The stages named in ``only`` (all when None), less those in ``skip``.
+
+    The pipeline's order is kept whatever order the names come in. A name in
+    `STAGE_NAMES` that the part does not use (`sdf_to_isdf` without infill) is
+    simply absent; a name that is not a stage at all raises `ValueError`.
+    """
+    only = None if only is None else list(only)
+    skip = [] if skip is None else list(skip)
+    check_stage_names((only or []) + skip)
+    wanted = set(STAGE_NAMES if only is None else only) - set(skip)
+    return [stage for stage in stages if stage.name in wanted]
+
+
+def run_stages(
+    params: Parameters,
+    only: Optional[Iterable[str]] = None,
+    skip: Optional[Iterable[str]] = None,
+    warmup: bool = False,
+    stages: Optional[List[Stage]] = None,
+) -> List[str]:
+    """Run the selected stages for ``params`` in order; return their names.
+
+    ``only`` and ``skip`` take names from `STAGE_NAMES` (see `select_stages`).
+    ``stages`` defaults to `build_stage_commands(params)`.
+
+    Each stage runs through `os.system`, as upstream's did, and **its exit
+    code is not checked** (plan_corrections 4.16): a failed stage is followed
+    by the next one regardless. `tools/overhang_report.py` checks each
+    stage's output afterwards; a caller that runs stages some other way must
+    do the same.
+    """
+    stages = build_stage_commands(params) if stages is None else stages
+    selected = select_stages(stages, only, skip)
+
+    announced = None
+    for stage in selected:
+        if stage.step != announced:
+            announced = stage.step
+            print(f"\n{stage.step}\n")
+            if stage.log_heading is not None:
+                with open(params.log_path, "a", encoding="utf-8") as log_file:
+                    log_file.write(f"\n# {stage.log_heading}\n\n")
+        if warmup and stage.warmup:
+            print("Warmup")
+            os.system(stage.command.partition(" --logpath")[0])
+        os.system(stage.command)
+
+    return [stage.name for stage in selected]
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Atomize and order atoms for fused filament fabrication. The input is a 3D solid and the output is a toolpath composed of 3D positions, each associated with a basis. The 3D solid path and the command parameters (deposition width, maximum tilting angle for the tool) are given with a json file. This command is composed of several sub-commands, first processing the mesh to convert it to a SDF, then atomizing the 3D solid, and finally ordering atoms to create the toolpath. The output toolpath is located in the `data/toolpath` folder, and a log file is generated in the `data/log` folder, giving the list of sub-commands that are runned, and the list of commands to visualize all the generated data. "
@@ -109,6 +370,15 @@ if __name__ == "__main__":
         "--warmup",
         action="store_true",
         help="To avoid including compilation time in the computation time, run each sub-command twice to cache the compilation.",
+    )
+    parser.add_argument(
+        "--stop-after",
+        choices=STAGE_NAMES,
+        default=None,
+        metavar="STAGE",
+        help="Run the pipeline only up to and including this stage, then stop (this fork, build plan P5.1a). Build plan P2.0 stops after extract_explicit_atoms, to measure the orientation field without the slow ordering stage. Stages: "
+        + ", ".join(STAGE_NAMES)
+        + ".",
     )
 
     args = parser.parse_args()
@@ -124,12 +394,7 @@ if __name__ == "__main__":
 
     log_file = open(params.log_path, "w", encoding="utf-8")
 
-    cell_sides_length = atom.fff3.cell_sides_length_from_deposition_width_kernel(
-        params.deposition_width
-    )
-    layer_height = atom.fff3.layer_height_from_cell_sides_length_kernel(
-        cell_sides_length
-    )
+    cell_sides_length, layer_height = pipeline_geometry(params.deposition_width)
 
     str_to_print = "# Parameters"
     print(str_to_print)
@@ -167,38 +432,8 @@ if __name__ == "__main__":
     print(str_to_print)
     log_file.write(str_to_print + "\n")
 
-    process_mesh_command = f"blender -b -P tools/process_for_atomizer.py -- {params.stl_path} {params.obj_path} {cell_sides_length * 0.5:.6f}"
-    obj_to_bpn_cmd = f"python tools/obj_to_bpn.py {params.obj_path} {params.bpn_path}"
-    bpn_to_sdf_cmd = f"python tools/bpn_to_sdf.py {params.bpn_path} {params.sdf_path} {params.deposition_width:.2f}"
-    sdf_to_isdf_cmd = f"python tools/sdf_to_isdf.py {params.bpn_path} {params.sdf_path} {params.sdf_path} no_gui=True{params.infill_arguments}"
-
-    compute_tool_orientations_cmd = f"python tools/compute_tool_orientations.py {params.sdf_path} {params.direction_path} --maxslope {params.max_slope}"
-    if params.ortho_to_wall:
-        compute_tool_orientations_cmd += " --ortho_to_wall"
-    if params.all_up:
-        compute_tool_orientations_cmd += " --allup"
-    compute_tool_orientations_cmd += f" --logpath {params.log_path}"
-
-    sdf_df_to_layers_cmd = f"python tools/sdf_df_to_layers.py {params.sdf_path} {params.direction_path} {params.phasor_path} --maxslope {params.max_slope}"
-    if params.all_up:
-        sdf_df_to_layers_cmd += " --allup"
-    sdf_df_to_layers_cmd += f" --logpath {params.log_path}"
-
-    compute_tangents_cmd = f"python tools/compute_tangents.py {params.sdf_path} {params.direction_path} {params.basis_path} --maxslope {params.max_slope}"
-    if params.top_lines is not None:
-        compute_tangents_cmd += f" --top_lines {params.top_lines}"
-    if params.bottom_lines is not None:
-        compute_tangents_cmd += f" --bottom_lines {params.bottom_lines}"
-    compute_tangents_cmd += f" --logpath {params.log_path}"
-
-    align_atoms_cmd = f"python tools/align_atoms.py {params.sdf_path} {params.phasor_path} {params.basis_path} {params.triphasor_path} --maxslope {params.max_slope} --logpath {params.log_path}"
-    extract_explicit_atoms_cmd = f"python tools/extract_explicit_atoms.py {params.sdf_path} {params.triphasor_path} {params.frame_path} --logpath {params.log_path}"
-    order_atoms_cmd = f"python tools/order_atoms.py {params.sdf_path} {params.frame_path} {params.toolpath_path} --logpath {params.log_path}"
-    smooth_toolpath_point_cmd = f"python tools/smooth_toolpath_point.py {params.toolpath_path} {params.smoothed_toolpath_path} {params.smoothing_iter_count}"
-    tesselate_toolpath_orientations_cmd = f"python tools/tesselate_toolpath_orientations.py {params.smoothed_toolpath_path} {params.smoothed_tesselated_toolpath_path} {params.degree_angle_max_diff}"
-    add_platform_cmd = f"python tools/add_platform.py {params.smoothed_tesselated_toolpath_path} {params.platform_toolpath_path} {params.deposition_width} {layer_height}"
-    toolpath_to_gcode_cmd = f"python tools/toolpath_to_gcode.py {params.platform_toolpath_path} {params.gcode_path}{params.temperature_arguments}"
-    ratrig_to_craftware_cmd = f"python tools/ratrig_to_craftware.py {params.gcode_path} {params.craftware_gcode_path}"
+    stages = build_stage_commands(params)
+    command_of = {stage.name: stage.command for stage in stages}
 
     visualize_bpn_cmd = f"python tools/visualize_bpn.py {params.bpn_path}"
     visualize_bpn_sdf_cmd = (
@@ -220,16 +455,8 @@ if __name__ == "__main__":
     )
 
     log_file.write("\n# Pipeline commands\n\n")
-    log_file.write(process_mesh_command + "\n")
-    log_file.write(obj_to_bpn_cmd + "\n")
-    log_file.write(bpn_to_sdf_cmd + "\n")
-    log_file.write(compute_tool_orientations_cmd + "\n")
-    log_file.write(sdf_df_to_layers_cmd + "\n")
-    log_file.write(compute_tangents_cmd + "\n")
-    log_file.write(align_atoms_cmd + "\n")
-    log_file.write(extract_explicit_atoms_cmd + "\n")
-    log_file.write(order_atoms_cmd + "\n")
-    log_file.write(smooth_toolpath_point_cmd + "\n")
+    for name in LOGGED_STAGE_NAMES:
+        log_file.write(command_of[name] + "\n")
 
     log_file.write("\n# Visualize commands\n\n")
     log_file.write(visualize_bpn_cmd + "\n")
@@ -241,90 +468,16 @@ if __name__ == "__main__":
     log_file.write(visualize_explicit_atoms_cmd + "\n")
     log_file.write(visualize_toolpath_cmd + "\n")
 
-    str_to_print = "\nStep 1 Starting: Remesh\n"
-    print(str_to_print)
     log_file.close()
-    os.system(process_mesh_command)
 
-    str_to_print = "\nStep 2 Starting: Mesh to Point Normal Cloud\n"
-    print(str_to_print)
-    os.system(obj_to_bpn_cmd)
+    only = None if args.stop_after is None else stages_through(args.stop_after)
+    run_stages(params, only=only, warmup=warmup, stages=stages)
 
-    str_to_print = "\nStep 3 Starting: Point Normal Cloud to SDF\n"
-    print(str_to_print)
-    os.system(bpn_to_sdf_cmd)
-
-    if params.infill:
-        str_to_print = "\nStep 3 Bis Starting: SDF to SDF with Infill\n"
+    if args.stop_after is not None:
+        str_to_print = (
+            f"\nStopped after {args.stop_after} (--stop-after); "
+            "the later stages did not run.\n"
+        )
         print(str_to_print)
-        os.system(sdf_to_isdf_cmd)
-
-    log_file = open(params.log_path, "a", encoding="utf-8")
-    print("\nStep 4 Starting: Direction Field Computation\n")
-    log_file.write("\n# Direction Field Computation\n\n")
-    log_file.close()
-    if warmup:
-        print("Warmup")
-        os.system(compute_tool_orientations_cmd.partition(" --logpath")[0])
-    os.system(compute_tool_orientations_cmd)
-    log_file = open(params.log_path, "a", encoding="utf-8")
-
-    print("\nStep 5 Starting: Implicit Layers Computation\n")
-    log_file.write("\n# Implicit Layers Computation\n\n")
-    log_file.close()
-    if warmup:
-        print("Warmup")
-        os.system(sdf_df_to_layers_cmd.partition(" --logpath")[0])
-    os.system(sdf_df_to_layers_cmd)
-    log_file = open(params.log_path, "a", encoding="utf-8")
-
-    print("\nStep 6 Starting: Tangents Computation\n")
-    log_file.write("\n# Tangents Computation\n\n")
-    log_file.close()
-    if warmup:
-        print("Warmup")
-        os.system(compute_tangents_cmd.partition(" --logpath")[0])
-    os.system(compute_tangents_cmd)
-    log_file = open(params.log_path, "a", encoding="utf-8")
-
-    print("\nStep 7 Starting: Atoms alignment\n")
-    log_file.write("\n# Atoms alignment\n\n")
-    log_file.close()
-    if warmup:
-        print("Warmup")
-        os.system(align_atoms_cmd.partition(" --logpath")[0])
-    os.system(align_atoms_cmd)
-    log_file = open(params.log_path, "a", encoding="utf-8")
-
-    print("\nStep 8 Starting: Implicit to Explicit Atoms\n")
-    log_file.write("\n# Implicit to Explicit Atoms\n\n")
-    log_file.close()
-    if warmup:
-        print("Warmup")
-        os.system(extract_explicit_atoms_cmd.partition(" --logpath")[0])
-    os.system(extract_explicit_atoms_cmd)
-    log_file = open(params.log_path, "a", encoding="utf-8")
-
-    print("\nStep 9 Starting: Order Atoms\n")
-    log_file.write("\n# Order Atoms\n\n")
-    log_file.close()
-    if warmup:
-        print("Warmup")
-        os.system(order_atoms_cmd.partition(" --logpath")[0])
-    os.system(order_atoms_cmd)
-    log_file = open(params.log_path, "a", encoding="utf-8")
-
-    print("\nStep 10 Starting: Smooth, Tesselate and Add a Platform\n")
-    log_file.write("\n# Smooth, Tesselate and Add a Platform\n\n")
-    log_file.close()
-    os.system(smooth_toolpath_point_cmd)
-    os.system(tesselate_toolpath_orientations_cmd)
-    os.system(add_platform_cmd)
-    log_file = open(params.log_path, "a", encoding="utf-8")
-
-    print("\nStep 11 Starting: G-Code Generation\n")
-    log_file.write("\n# G-Code Generation\n\n")
-    log_file.close()
-    os.system(toolpath_to_gcode_cmd)
-    os.system(ratrig_to_craftware_cmd)
-    log_file = open(params.log_path, "a", encoding="utf-8")
+        with open(params.log_path, "a", encoding="utf-8") as log_file:
+            log_file.write(str_to_print + "\n")

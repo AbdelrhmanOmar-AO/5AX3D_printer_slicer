@@ -1963,3 +1963,49 @@ analytic ramp SDF on the CPU and looking at which cells are constrained.
 supported by material "within `1.5 x height`". The constant has been 2.5 since
 correction 1.8, and the constant's own comment says why. Fixed with this
 entry; no behaviour changed.
+
+#### P2-5 P5.1a built early, for P2.0, with a `--stop-after` option (deliberate deviation)
+
+*Operator's decision, 2026-09-29.* P2.0 has to run the pipeline up to atom
+extraction and stop. The plan offers `run_stages` (P5.1a) or a local copy of
+the command list; the operator chose P5.1a now, so the commands exist in one
+place and P2.2's new orientation options will be added once.
+
+As built (`tools/atomize.py`, a vendored edit):
+
+* `STAGE_NAMES`: the 15 stages in order, named after their tools
+  (`process_for_atomizer` … `ratrig_to_craftware`). `sdf_to_isdf` exists only
+  for a part with infill.
+* `build_stage_commands(params)` returns `Stage` records (name, command, the
+  step heading it prints, its log heading, whether `--warmup` repeats it).
+  The command strings are upstream's, unchanged.
+* `run_stages(params, only=None, skip=None, warmup=False, stages=None)` runs
+  them in pipeline order, prints each step heading once and writes the log
+  headings as upstream did. Beyond the plan's `(params, only, skip)`: `warmup`
+  (upstream's `--warmup`) and `stages` (to run a list already built). An
+  unknown name raises `ValueError`.
+* **New option:** `atomize.py PARAMS --stop-after STAGE`. It writes the same
+  log header as a full run, runs the stages up to and including `STAGE`, and
+  then prints and logs "Stopped after STAGE (--stop-after); the later stages
+  did not run." Without it the script behaves as before.
+* **Still not checked: stage exit codes** (4.16). `run_stages` runs each
+  command with `os.system` like upstream and carries on after a failure.
+  `overhang_report.first_failed_stage` remains the check; P5.1's driver needs
+  one too.
+
+**How "unchanged" was shown without a laptop.** `tests/_atomize_record.py`
+runs the script with every stage stubbed out and records each command, each
+printed line and the log. `tests/fixtures/atomize/recorded.json` is that record
+taken from the script **before** the change (commit `f5ffcd2`), for four
+parameter sets: the calibration cube, a part without infill, a part using
+every optional key, and `--warmup`. `tests/test_atomize_stages.py` requires the
+refactored script to reproduce it byte for byte, and it does. Breaking one
+heading's capital letter and adding one space to one command made 9 of its
+tests fail. The golden test on the laptop remains the check that counts,
+through the G-code.
+
+**Also found:** a fresh session container needs **Pillow** and **pyvista**
+as well as the packages listed in 3.11: `atom.line` imports Pillow and
+`atom.solid3` imports pyvista, so any test that runs a pipeline stage's
+imports fails without them. Both are runtime dependencies in
+`pyproject.toml`, so CI has them.
