@@ -31,8 +31,9 @@ Unsupported deposition
     A deposition point is supported when the bed, or material deposited earlier
     in the print, lies in the cone beneath it: apex at the point, axis ``-d``,
     half-angle ``SUPPORTING_REGION_CONE_ANGLE / 2`` (65 degrees, from
-    `atom.toolpath3`), within ``1.5 x height``. Otherwise it is printing into
-    air.
+    `atom.toolpath3`), within ``SUPPORT_SEARCH_HEIGHTS x height`` (2.5; the
+    search radius only bounds the neighbour search, and the cone decides).
+    Otherwise it is printing into air.
 
 Units
 -----

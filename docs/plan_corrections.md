@@ -1861,3 +1861,105 @@ margin, not a physical one), and the reports carry the depth, so that P2's
 steeper toolpaths are measured on the same strict check and a real problem
 (depths of tenths of a millimetre or more) stands out against these.
 
+
+### 7c. P2 session (`claude/brave-ramanujan-7xolkm`)
+
+Started 2026-09-29, the only session running. Items are numbered `P2-1`,
+`P2-2`, … as in 7a and 7b.
+
+#### P2-1 `max_slope` is not enforced on the field; P2.1 points at the wrong lines ★ PLAN EDIT
+
+*Factual error.* P2.1 step 1 asks to document "how `MAX_SLOPE_ANGLE` is
+enforced (`fff3.py` ~L138–154)". Those lines are
+`orthogonolize_direction_wall_region`, which runs only with `--ortho_to_wall`,
+an option no benchmark part sets.
+
+On the path every part takes, `max_slope` reaches the orientation field in one
+place only: `CEIL_MAX_ANGLE = MAX_SLOPE_ANGLE` (`tools/compute_tool_orientations.py:58-62`),
+which decides which upward-facing boundary cells count as "ceilings" and are
+fixed to their normal (`src/atom/fff3.py:91`, `:102-104`).
+`MAX_SLOPE_ANGLE` itself is `min(max_slope, (180 - NOZZLE_CONE_ANGLE) / 2)`,
+the 50-degree nozzle cap.
+
+There is no clamp. The field stays inside the budget because every constraint
+does (the first layer at 0 degrees, ceilings below `CEIL_MAX_ANGLE`), and the
+aligner only forms normalised positive-weight averages of unit vectors, which
+cannot leave a cone of half-angle below 90 degrees around +Z. All 48 baseline
+runs agree: none used more tilt than its `max_slope`.
+
+**Consequence for P2.2:** a constraint written beyond the budget would widen
+the field's tilt beyond it, and nothing between the field and the G-code
+stops that except the inverse kinematics, whose NaN makes
+`toolpath_to_gcode` abort the whole file. P2.2's
+`t = min(theta_geo - max_overhang + margin, max_tilt_here)` is therefore the
+only limit, and must be applied where the constraint is written.
+
+#### P2-2 The final 32 smoothing passes also smooth the constrained cells (hazard for P2.2)
+
+*Hazard, found reading the code; not measured.* After the multigrid solve,
+`tools/compute_tool_orientations.py:107-112` runs 32 passes of
+`align_one_level_one_time(0, True)`. The `True` is `smooth_constraints`:
+`src/atom/direction.py:274` keeps a constrained cell's direction only when it
+is false, so in these passes every constrained cell is replaced by the
+average of its 3 x 3 x 3 neighbourhood like any other. Only the first layer is
+put back after each pass (`spherical_field_constrain_fisrt_layer_up`).
+Upstream's comment says this is deliberate ("Smooth everything - including
+constraints - except the first layer", Chermain et al. 2025, Section 6).
+
+The constrained band is thin: `is_boundary_region(sdf, layer_height)` selects
+cells **inside** the part within one layer height of the surface, about 2.7
+cells at 0.9 mm beads (0.169 mm cells). So 32 passes average each constrained
+cell with unconstrained interior cells many times over.
+
+**Why it matters:** P2.2 says to write the overhang direction "as a
+constrained direction, exactly like the ceiling branch". Written that way it
+will be smoothed exactly like the ceiling branch, and how much of the intended
+tilt survives at the overhang is unknown. P2.2 needs to either re-apply the
+overhang constraint after each pass, as the first layer is, or measure the
+loss and compensate. P2.2's planned tiny-SDF unit test and P2.0's field-only
+run can both measure it. Not decided here.
+
+#### P2-3 Where the stock tilt near an overhang comes from is not yet known (open, for P2.1)
+
+*Open question.* The per-surface data in the lab baseline
+(`reports/baseline_overhang/ramp*_s_ms*.json`, `surfaces[0]`) shows the tilt
+near each ramp's underside, which P0.8 summarised as
+`theta_eff = theta_geo + tilt_used`:
+
+| Part | max_slope | Flipped-normal tilt (90 - theta_geo) | Tilt near the underside | Mean theta_eff there |
+|---|---:|---:|---:|---:|
+| `ramp45_s` | 7 / 15 / 30 | 45 | 0.00 / 0.00 / 6.29 | 45.0 / 45.0 / 49.0 |
+| `ramp50_s` | 7 / 15 / 30 | 40 | 0.00 / 0.00 / 17.14 | 50.0 / 50.0 / 63.2 |
+| `ramp60_s` | 7 / 15 / 30 | 30 | 0.00 / 4.82 / 29.65 | 60.0 / 63.3 / 88.5 |
+| `ramp70_s` | 7 / 15 / 30 | 20 | 0.00 / 9.68 / 20.64 | 70.0 / 78.3 / 89.5 |
+| `ramp80_s` | 7 / 15 / 30 | 10 | 3.00 / 10.18 / 13.04 | 82.0 / 89.7 / 89.6 |
+| `ramp90_s` | 7 / 15 / 30 | 0 | 0.69 / 3.49 / 10.14 | 89.9 / 89.7 / 89.2 |
+
+The tilt always leans **away** from the overhang, is zero there at 7 degrees on
+the four shallower ramps, and grows with the budget. In three cells it
+matches the underside's normal flipped upward (`ramp60` at 30, `ramp70` at 30,
+`ramp80` at 15), but it is not tied to that direction: it exceeds it on
+`ramp80` at 30 (13.0 against 10) and `ramp90` at 30 (10.1 against 0).
+
+**The code as read does not explain it.** The only branch that writes a
+non-vertical constraint is the ceiling branch, which excludes cells whose
+normal points down (`fff3.py:84-91`), so no underside cell is constrained. The
+SDF is negative inside and its gradient points outward
+(`solid3.sdf_create_from_bpn`, `sdf_compute_gradient_central`), so the sign is
+as expected. The ramps' only upward faces are the flat top and the edges
+rounded by the Blender remesh. The tool orientation passes unchanged from the
+direction field to the toolpath (basis, triphasor and extraction copy the
+normal; `order_atoms` writes it at `toolpath3.py:2228`), so the tilt is in the
+field itself.
+
+**Why it matters:** if an existing mechanism drives the field away from
+overhangs, P2.2 must override or remove it, not only add a constraint beside
+it. P2.1 should find it, most cheaply by running the field stage on a small
+analytic ramp SDF on the CPU and looking at which cells are constrained.
+
+#### P2-4 A stale figure in `overhang_metrics`'s docstring
+
+*Documentation only, corrected.* The module docstring still said a point is
+supported by material "within `1.5 x height`". The constant has been 2.5 since
+correction 1.8, and the constant's own comment says why. Fixed with this
+entry; no behaviour changed.

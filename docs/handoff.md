@@ -5,7 +5,7 @@ with no prior conversation.
 
 **Keep this file updated as the work progresses.**
 
-Last updated: 2026-09-28.
+Last updated: 2026-09-29.
 
 > **Reference machines (decided by the operator, 2026-09-28):**
 >
@@ -31,13 +31,11 @@ counted 816 passed and 21 skipped on another setup, where more tests skip.
 | **P4** | **Complete**, merged through pull request #17 |
 | **P5.4** | Viewer, bed motion and Qt window built |
 | **P1** | **Complete.** P1.5 was the last task: gate E1 answered (RepRapFirmware, axes X Y Z U V), `docs/firmware.md` written. Only its macro files remain, moved to P6.3 by the operator (section 0a) |
-| **P2** | **Not started. No session. This is the next work.** |
+| **P2** | **In progress** (from 2026-09-29): the P2 session, branch `claude/brave-ramanujan-7xolkm`, section 0d |
 
-All three sessions have closed: the P0.8 follow-on (section 0c), the P4
-session (0b) and, with P1.5 merged, the P1 session (0a). **A new
-session takes over P2**, and section 5's "immediate next step" is written for
-it.
-* **P2**, the actual contribution, has no session.
+All three earlier sessions have closed: the P0.8 follow-on (section 0c), the
+P4 session (0b) and, with P1.5 merged, the P1 session (0a). **The P2 session
+(section 0d) is now the only one running.**
 
 **Three sessions have been running at once, not two.** Read section 0, then 0c,
 which records the one thing that went wrong because of it.
@@ -51,7 +49,7 @@ which records the one thing that went wrong because of it.
 | P1 session | **P1**: kinematics and G-code toolchain | `claude/vibrant-rubin-waln7y` | **Closed** once P1.5's pull request merges: P1 complete (0a). Nothing of it is left on the branch |
 | P4 session | **P4**: motion safety for continuous tilt | `claude/phase-p4-build-fzqw55` | **Closed.** Complete and in `main` (pull request #17) — see 0b |
 | P0.8 follow-on | matrix runner, lab machine, test plumbing | `claude/new-session-l8g46d` | **Closed.** Fully in `main` (#9, #12) — see 0c |
-| **P2 session** | **the overhang-aware field** | not started | **The next work.** Nothing blocks starting; see section 5 |
+| **P2 session** | **the overhang-aware field** | `claude/brave-ramanujan-7xolkm` | **Running** since 2026-09-29; see 0d |
 
 Three sessions ran at once where the plan allows two, and **it cost a day of
 duplicated work** (`plan_corrections.md` 4.14): the P0.8 session built provenance
@@ -74,10 +72,8 @@ branch, not only `main`, for work already in flight.
 > **and read `docs/SLICER_BUILD_PLAN.md` for whether a task already covers it.**
 > Seconds, against a day.
 
-**P2 has no session yet.** It waits for gate D0 (section 8). P2.0 and P2.1 do
-not need D0 (P2.1 is one of its inputs), but the plan allows at most two
-sessions at once, so P2 starts when one of these two finishes, or when the
-operator says otherwise.
+**P2 has a session since 2026-09-29 (section 0d).** P2.0 and P2.1 do not need
+gate D0 (P2.1 is one of its inputs); P2.2 onwards waits for it (section 8).
 
 ### The one dependency between them
 
@@ -300,6 +296,26 @@ session rebuilt provenance on reports from scratch while P1.7, already in
 comparison and the habit that prevents it — fetch every branch and read the
 plan's task list before building anything that sounds like infrastructure.
 Nothing was hidden; nobody looked.
+
+### 0d. P2 session status
+
+*Edited by the P2 session only.*
+
+Branch **`claude/brave-ramanujan-7xolkm`**, started from `main` at `f5ffcd2`
+(pull request #19) on 2026-09-29. Every other branch was fetched first: none
+carries work that is not in `main`, apart from `claude/friendly-planck-2sa02c`,
+a 2026-09-18 scaffold from the pre-v3 pose design.
+
+Corrections found by this session go under its own heading,
+`plan_corrections.md` **7c**, numbered `P2-1`, `P2-2`, ….
+
+| Task | Status |
+|---|---|
+| Review of the repository | Done. Findings that bear on P2.1 and P2.2 are in `plan_corrections.md` 7c (P2-1 to P2-4) |
+| P5.1a `build_stage_commands` / `run_stages` | Pulled forward for P2.0 by the operator (2026-09-29): P2.0's field-only run uses it to stop after atom extraction. See 7c |
+| P2.0 Field-only evaluation | In progress |
+| P2.1 Orientation-field document + tilt bound | Not started |
+| P2.2 onwards | Wait for gate D0 |
 
 ---
 
