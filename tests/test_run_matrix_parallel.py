@@ -927,8 +927,11 @@ def test_a_mixed_table_is_announced_on_screen(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(rmp, "run_job", lambda w, j, l, t=None: (True, 0.01, tmp_path / "l.log"))
     monkeypatch.setattr(rmp, "collect", lambda w, j: _stub_report(j["part"], j["slope"]))
     monkeypatch.setattr(orep, "append_progress", lambda report: None)
-    monkeypatch.setattr(orep, "load_reports", lambda quiet=False: [{"part": "a"}, {"part": "b"}])
-    monkeypatch.setattr(orep, "summarize", lambda reports: "table\n")
+    monkeypatch.setattr(
+        orep, "load_reports",
+        lambda quiet=False, field_only=False: [] if field_only else [{"part": "a"}, {"part": "b"}],
+    )
+    monkeypatch.setattr(orep, "summarize", lambda reports, field_only_reports=(): "table\n")
     monkeypatch.setattr(orep, "SUMMARY_PATH", tmp_path / "summary.md")
     monkeypatch.setattr(orep, "provenance_warning", lambda reports: "WARNING: this table mixes 2 provenance groups")
     monkeypatch.setattr(rmp, "create_worker",

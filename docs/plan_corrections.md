@@ -2009,3 +2009,71 @@ as well as the packages listed in 3.11: `atom.line` imports Pillow and
 `atom.solid3` imports pyvista, so any test that runs a pipeline stage's
 imports fails without them. Both are runtime dependencies in
 `pyproject.toml`, so CI has them.
+
+#### P2-6 P2.0 as built: what a field-only report is, and where it lives
+
+*Definitions and choices within P2.0.*
+
+**Step 1 answered: the frame file is what the plan assumed.**
+`extract_explicit_atoms` writes `data/frame/<part>.npz` through
+`frame3.Field.save_active_frame_set`: `point (M, 3)` float32 mm, `normal
+(M, 2)` float32 spherical `[theta, phi]`, `phi_t (M,)`, one row per atom
+that survived extraction, NaN rows already removed. `normal` is the
+orientation field at the atom's cell, copied unchanged through the basis,
+triphasor and extraction stages; `order_atoms` copies it unchanged into
+`tool_orientation` (`toolpath3.py:2228`), and `smooth_toolpath_point` moves
+positions only. So every deposition point of `_smoothed.npz` carries exactly
+one atom's orientation. `atom.frame_atoms` reads the file and presents it with
+the attributes `atom.overhang_metrics` reads from a toolpath, so both modes are
+measured by the same functions.
+
+Two differences from a full run's measurement, both expected to be small and
+both covered by the plan's 1-degree check: every atom counts, while a full
+run's deposition mask leaves out the first atom of each deposition run
+(reached by a travel move; 30 603 deposition points against 31 630 atoms on
+the golden cube, though that toolpath is also tessellated); and positions are
+the atoms' own, before smoothing moves them along the path.
+
+**What a field-only report says.** `mode: "field_only"` (a report without
+`mode` is a full run's, as all existing ones are); `atoms.count`; both
+unsupported fractions `null` with `unsupported_note` "n/a (field-only) …";
+`atoms_near_overhangs` in place of `deposition_points_near_overhangs`. The
+verdict cannot be "printable": `printable` is **False** when the worst
+effective angle is over the threshold, which rules a part out on its own, and
+**null** otherwise, with `effective_within_threshold` saying which. In the
+summary that is ❌ or ❔, never ✅.
+
+**Where it lives (the plan's "field-only column set", step 3).** Reports in
+`reports/field_only/`, atoms archived to `reports/frames/` (gitignored) for
+`--reanalyse`. `--summarize` adds a separate section and table, "Field-only
+runs (build plan P2.0)", after the conclusion, saying the two are not
+comparable; the main table is byte-identical to before (tested against the
+committed summary). A separate table rather than extra columns in the main
+one, so no cell can be read across. `load_reports` refuses a report of the
+wrong kind in either folder. `--status`, `--check-done` and
+`run_matrix_parallel.py --resume` read only the full-run folder, so a
+field-only report can never count as a completed full run.
+
+**Not written to `reports/matrix_progress.csv`.** That log has no column for
+how a run was made, so a field-only row would read as a full run's.
+
+**Provenance.** A field-only run records the backends of the stages it ran
+only, so it never shares a comparability group with a full run. Consequence
+for P2 iterations: an overhang-aware field-only result must be compared with a
+**stock field-only** result from the same machine, not with the committed
+baseline. No stock field-only set exists yet (open; see handoff 0d).
+
+**The pipeline check** (`tests/test_field_only.py`, laptop): `ramp60_xs` at a
+30-degree budget, where stock Atomizer tilts by about 29 degrees, so the check
+is not met trivially by an untilted field. It runs field-only, then the full
+pipeline, and requires: the atoms of the two runs identical; every orientation
+the full run deposits with to be one of the atoms'; the field-only maximum tilt
+to be at least the full run's (the atoms are a superset); the worst, and each
+surface's maximum and mean, effective angle within 1 degree; and the
+field-only run under half the full run's time. It prints both times, which
+P2.0's "Done when" asks to record.
+
+**Not built:** a `--field-only` option on `tools/run_matrix_parallel.py`.
+Single field-only runs are a few minutes each at size `xs`; whether the P2
+iterations need a parallel field-only matrix on the lab machine is the
+operator's call.

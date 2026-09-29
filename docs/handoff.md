@@ -313,9 +313,11 @@ Corrections found by this session go under its own heading,
 |---|---|
 | Review of the repository | Done. Findings that bear on P2.1 and P2.2 are in `plan_corrections.md` 7c (P2-1 to P2-4) |
 | P5.1a `build_stage_commands` / `run_stages` | Pulled forward for P2.0 by the operator (2026-09-29): P2.0's field-only run uses it to stop after atom extraction. See 7c |
-| P2.0 Field-only evaluation | In progress |
+| P2.0 Field-only evaluation | **Built**, laptop check owed. `python tools/overhang_report.py data/param/<part>.json --max-slope <deg> --field-only` stops after atom extraction and measures the atoms; reports in `reports/field_only/`, their own table in the summary, unsupported deposition `n/a`. `plan_corrections.md` 7c P2-6. **Laptop:** the golden test (P5.1a's vendored edit), then `tests/test_field_only.py`'s pipeline check on `ramp60_xs` at 30 degrees |
 | P2.1 Orientation-field document + tilt bound | Not started |
 | P2.2 onwards | Wait for gate D0 |
+
+**Open for the operator:** (1) a **stock field-only set** to compare P2 iterations against (field-only results form their own provenance group, so they cannot be compared with the full-run baseline): which parts, sizes and slopes, on the lab machine; (2) whether that needs a `--field-only` option on `tools/run_matrix_parallel.py`, or single runs suffice.
 
 ---
 

@@ -16,6 +16,10 @@ run2.stats.json
 # a local concern; the JSON reports are the committed artifact.
 reports/toolpaths/
 
+# The atoms of each field-only run (build plan P2.0), archived for
+# --reanalyse like the toolpaths above. About 1 MB per xs run.
+reports/frames/
+
 # Per-run stdout from tools/run_matrix_parallel.py. One file per run, kept so a
 # failure can be diagnosed after the fact; local diagnostics, not an artifact.
 reports/worker_logs/

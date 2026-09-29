@@ -13,6 +13,7 @@ Usage
 -----
     python tools/overhang_report.py data/param/ramp60_s.json --max-slope 7
     python tools/overhang_report.py data/param/ramp60_s.json --skip-pipeline
+    python tools/overhang_report.py data/param/ramp60_xs.json --max-slope 30 --field-only
     python tools/overhang_report.py --summarize
 
 Which toolpath is measured
@@ -41,6 +42,25 @@ P1.7): the machine, the backend each stage actually ran on, the Taichi
 version, the machine profile and the commit. ``--summarize`` states it above
 the table, and when a table pools runs that are not comparable it warns and
 labels each cell with its group (plan §0 rule 10).
+
+Field-only mode (build plan P2.0)
+---------------------------------
+``--field-only`` runs the pipeline only up to atom extraction
+(`tools/atomize.py --stop-after extract_explicit_atoms`) and measures the
+atoms in ``data/frame/<part>.npz`` instead of a toolpath (`atom.frame_atoms`).
+It skips `order_atoms`, 86 % of a run, so a change to the orientation field
+(P2.2 to P2.4) can be tried in minutes rather than hours.
+
+It measures the effective overhang angles and the tilt used. It **cannot**
+measure unsupported deposition, which needs a print order, and reports it as
+``null`` with "n/a (field-only)". So a field-only run can show a part is *not*
+printable (its effective angle is over the threshold) but never that it *is*.
+
+Field-only reports go to ``reports/field_only/`` and their atoms to
+``reports/frames/`` (gitignored), never beside the full runs, and
+``--summarize`` puts them in a table of their own. Their provenance lists
+fewer stages than a full run's, so they never share a comparability group
+with one either.
 """
 
 # No `from __future__ import annotations`: this module drives Taichi kernels
@@ -65,6 +85,7 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from atom import frame_atoms  # noqa: E402
 from atom import overhang_metrics as om  # noqa: E402
 from atom import provenance as prov  # noqa: E402
 from atom.ti_env import ARCH_LOG_ENV_VAR  # noqa: E402
@@ -75,6 +96,23 @@ REPORT_DIR = REPO_ROOT / "reports" / "baseline_overhang"
 SUMMARY_PATH = REPO_ROOT / "reports" / "baseline_overhang.md"
 #: Each run's toolpath, kept so the metrics can be recomputed without re-slicing.
 TOOLPATH_ARCHIVE = REPO_ROOT / "reports" / "toolpaths"
+#: Field-only reports (build plan P2.0). Kept apart from REPORT_DIR so a
+#: field-only result can never be read as a full run's, by a person or by
+#: `--status`, `--check-done` and `run_matrix_parallel.py --resume`.
+FIELD_ONLY_DIR = REPO_ROOT / "reports" / "field_only"
+#: Each field-only run's atoms (``data/frame/<part>.npz``), for `--reanalyse`.
+FRAME_ARCHIVE = REPO_ROOT / "reports" / "frames"
+#: The ``mode`` a field-only report records. A report without the key is a
+#: full run's, as every report written before P2.0 is.
+MODE_FIELD_ONLY = "field_only"
+MODE_FULL = "full"
+#: Where a field-only run stops (`tools/atomize.py --stop-after`).
+FIELD_ONLY_LAST_STAGE = "extract_explicit_atoms"
+#: What a field-only report says in place of the unsupported fraction.
+FIELD_ONLY_UNSUPPORTED_NOTE = (
+    "n/a (field-only): unsupported deposition needs a print order, which "
+    "only order_atoms produces"
+)
 
 SCHEMA_VERSION = 1
 
@@ -150,20 +188,26 @@ STAGE_ARTIFACTS = (
     ("11 G-code", "data/gcode/{part}.gcode"),
 )
 
+#: The stages a field-only run makes, up to and including the atoms.
+FIELD_ONLY_ARTIFACTS = STAGE_ARTIFACTS[
+    : [label for label, _ in STAGE_ARTIFACTS].index("8 explicit atoms") + 1
+]
+
 #: Slack on the freshness comparison, for filesystem timestamp granularity and
 #: any clock adjustment during a long run.
 FRESHNESS_TOLERANCE_S = 5.0
 
 
-def first_failed_stage(part, started_wall_s, root=None):
+def first_failed_stage(part, started_wall_s, root=None, artifacts=STAGE_ARTIFACTS):
     """The first stage whose artifact is missing or older than this run.
 
     Returns (label, path, reason) or None if every stage delivered. "Older than
     this run" is the case that matters most: the file exists, so nothing looks
-    wrong, but it belongs to a previous run of the same part.
+    wrong, but it belongs to a previous run of the same part. ``artifacts`` is
+    the stages to check, `FIELD_ONLY_ARTIFACTS` for a field-only run.
     """
     root = REPO_ROOT if root is None else Path(root)
-    for label, template in STAGE_ARTIFACTS:
+    for label, template in artifacts:
         path = root / template.format(part=part)
         if not path.is_file():
             return label, path, "produced nothing"
@@ -174,7 +218,7 @@ def first_failed_stage(part, started_wall_s, root=None):
     return None
 
 
-def run_pipeline(param_path, max_slope_deg, verify_stages=True):
+def run_pipeline(param_path, max_slope_deg, verify_stages=True, field_only=False):
     """Run `tools/atomize.py`, optionally overriding ``max_slope``.
 
     The override is applied through a temporary copy of the parameter file, so
@@ -188,6 +232,9 @@ def run_pipeline(param_path, max_slope_deg, verify_stages=True):
     (see `first_failed_stage`). Only a unit test that stubs `subprocess.run`
     should turn it off: such a test never runs the pipeline, so of course no
     artifact appears, and the check would fire on a test about something else.
+
+    ``field_only`` stops the pipeline after atom extraction (build plan P2.0)
+    and checks only the stages that ran.
     """
     params = json.loads(Path(param_path).read_text(encoding="utf-8"))
     if max_slope_deg is not None:
@@ -199,11 +246,13 @@ def run_pipeline(param_path, max_slope_deg, verify_stages=True):
         arch_log = Path(tmp) / "stage_arches.jsonl"
         env = dict(os.environ, **{ARCH_LOG_ENV_VAR: str(arch_log)})
 
+        command = [sys.executable, "tools/atomize.py", str(temporary)]
+        if field_only:
+            command += ["--stop-after", FIELD_ONLY_LAST_STAGE]
+
         started = time.perf_counter()
         started_wall = time.time()
-        result = subprocess.run(
-            [sys.executable, "tools/atomize.py", str(temporary)], cwd=REPO_ROOT, env=env
-        )
+        result = subprocess.run(command, cwd=REPO_ROOT, env=env)
         elapsed = time.perf_counter() - started
         stage_arches = prov.read_arch_log(arch_log)
 
@@ -216,7 +265,11 @@ def run_pipeline(param_path, max_slope_deg, verify_stages=True):
     # atomize.py exits 0 even when a stage failed, so its exit code proves
     # nothing. Find the first stage that did not deliver and say so.
     failure = (
-        first_failed_stage(params["solid_name"], started_wall)
+        first_failed_stage(
+            params["solid_name"],
+            started_wall,
+            artifacts=FIELD_ONLY_ARTIFACTS if field_only else STAGE_ARTIFACTS,
+        )
         if verify_stages else None
     )
     if failure is not None:
@@ -340,12 +393,7 @@ def measure(
         "max_slope_deg": max_slope_deg,
         "overhang_aware": False,
         "deposition_width_mm": deposition_width,
-        "mesh": {
-            "volume_mm3": float(mesh.volume),
-            "face_count": int(len(mesh.faces)),
-            "sampled_face_count": int(len(areas)),
-            "extents_mm": [float(v) for v in mesh.extents],
-        },
+        "mesh": _mesh_block(mesh, areas),
         "toolpath": {
             "point_count": int(np.asarray(toolpath.point_count).item()),
             "deposition_count": int(np.count_nonzero(om.deposition_mask(toolpath))),
@@ -356,28 +404,146 @@ def measure(
             "unsupported_fraction_overall": overall.fraction,
             "unsupported_fraction_near_overhangs": near_fraction,
             "deposition_points_near_overhangs": near_count,
-            "surfaces": [
-                {
-                    "geometric_angle_deg": s.geometric_angle_deg,
-                    "area_mm2": s.area_mm2,
-                    "face_count": s.face_count,
-                    "sample_count": s.sample_count,
-                    "max_effective_deg": s.max_effective_deg,
-                    "mean_effective_deg": s.mean_effective_deg,
-                    "max_tilt_used_deg": s.max_tilt_used_deg,
-                }
-                for s in surfaces
-            ],
+            "surfaces": _surfaces_block(surfaces),
         },
         "verdict": {
             "printable": printable,
             "assessable": assessable,
             "worst_effective_deg": worst_effective,
-            "thresholds": {
-                "max_effective_overhang_deg": MAX_EFFECTIVE_OVERHANG_DEG,
-                "max_unsupported_fraction": MAX_UNSUPPORTED_FRACTION,
-                "_gate": "D0: placeholders, team decision pending",
-            },
+            "thresholds": _thresholds_block(),
+        },
+        "provenance": provenance,
+    }
+
+
+def _mesh_block(mesh, areas):
+    """A report's ``mesh`` entry: the part as modelled, and how densely sampled."""
+    return {
+        "volume_mm3": float(mesh.volume),
+        "face_count": int(len(mesh.faces)),
+        "sampled_face_count": int(len(areas)),
+        "extents_mm": [float(v) for v in mesh.extents],
+    }
+
+
+def _surfaces_block(surfaces):
+    """A report's ``surfaces`` list, one entry per group of equally sloped faces."""
+    return [
+        {
+            "geometric_angle_deg": s.geometric_angle_deg,
+            "area_mm2": s.area_mm2,
+            "face_count": s.face_count,
+            "sample_count": s.sample_count,
+            "max_effective_deg": s.max_effective_deg,
+            "mean_effective_deg": s.mean_effective_deg,
+            "max_tilt_used_deg": s.max_tilt_used_deg,
+        }
+        for s in surfaces
+    ]
+
+
+def _thresholds_block():
+    return {
+        "max_effective_overhang_deg": MAX_EFFECTIVE_OVERHANG_DEG,
+        "max_unsupported_fraction": MAX_UNSUPPORTED_FRACTION,
+        "_gate": "D0: placeholders, team decision pending",
+    }
+
+
+def report_mode(report):
+    """``"field_only"`` or ``"full"``; a report without ``mode`` is a full run's."""
+    return report.get("mode", MODE_FULL)
+
+
+def measure_field_only(
+    part,
+    max_slope_deg,
+    deposition_width,
+    runtime_s=0.0,
+    stage_times=None,
+    frame_path=None,
+    stl_path=None,
+    provenance=None,
+):
+    """The field-only report: the metrics measured on the atoms (build plan P2.0).
+
+    Measures what `measure` does, on ``data/frame/<part>.npz`` instead of a
+    toolpath (`atom.frame_atoms` says why the two agree), except unsupported
+    deposition, which needs a print order and is reported as ``None``.
+
+    The verdict follows from that: ``printable`` is False when the worst
+    effective angle is over the threshold, since that alone rules a part out,
+    and None otherwise, because the unsupported half of the test is unknown.
+    A field-only run never reports a part as printable.
+    """
+    stage_times = {} if stage_times is None else stage_times
+    frame_path = Path(frame_path or REPO_ROOT / "data" / "frame" / f"{part}.npz")
+    if not frame_path.is_file():
+        raise SystemExit(
+            f"No atoms at {frame_path}. Run without --skip-pipeline first."
+        )
+    stl_path = Path(stl_path or REPO_ROOT / "data" / "mesh" / f"{part}.stl")
+    if not stl_path.is_file():
+        raise SystemExit(f"No mesh at {stl_path}.")
+
+    try:
+        atoms = frame_atoms.load_frame_atoms(frame_path)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    mesh, normals, centres, areas = load_mesh_arrays(
+        stl_path, max_edge=deposition_width
+    )
+    surfaces = om.effective_overhang_angles(
+        normals,
+        centres,
+        areas,
+        atoms,
+        search_radius=SURFACE_SEARCH_WIDTHS * deposition_width,
+    )
+    near = om.points_near_overhangs(
+        np.asarray(atoms.point, dtype=np.float64),
+        normals,
+        centres,
+        radius=NEAR_OVERHANG_WIDTHS * deposition_width,
+    )
+    max_tilt = om.max_tool_tilt_deg(atoms)
+
+    measured = [s for s in surfaces if s.measured]
+    worst_effective = max((s.max_effective_deg for s in measured), default=float("nan"))
+    assessable = bool(measured)
+    within = (
+        bool(worst_effective <= MAX_EFFECTIVE_OVERHANG_DEG) if assessable else None
+    )
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "metrics_version": METRICS_VERSION,
+        "mode": MODE_FIELD_ONLY,
+        "part": part,
+        "max_slope_deg": max_slope_deg,
+        "overhang_aware": False,
+        "deposition_width_mm": deposition_width,
+        "mesh": _mesh_block(mesh, areas),
+        "atoms": {
+            "count": atoms.point_count,
+            "dropped_non_finite": atoms.dropped_non_finite,
+        },
+        "runtime": {"total_s": runtime_s, "stages": stage_times},
+        "metrics": {
+            "max_tool_tilt_deg": max_tilt,
+            "unsupported_fraction_overall": None,
+            "unsupported_fraction_near_overhangs": None,
+            "unsupported_note": FIELD_ONLY_UNSUPPORTED_NOTE,
+            "atoms_near_overhangs": int(np.count_nonzero(near)),
+            "surfaces": _surfaces_block(surfaces),
+        },
+        "verdict": {
+            "printable": False if within is False else None,
+            "assessable": assessable,
+            "worst_effective_deg": worst_effective,
+            "effective_within_threshold": within,
+            "thresholds": _thresholds_block(),
         },
         "provenance": provenance,
     }
@@ -477,6 +643,25 @@ def archive_toolpath(part, max_slope_deg):
     return destination
 
 
+def field_only_report_path(part, max_slope_deg):
+    return FIELD_ONLY_DIR / f"{part}_ms{max_slope_deg:g}.json"
+
+
+def frame_archive_path(part, max_slope_deg):
+    return FRAME_ARCHIVE / f"{part}_ms{max_slope_deg:g}.npz"
+
+
+def archive_frame(part, max_slope_deg):
+    """Keep a field-only run's atoms, so its metrics can be recomputed later."""
+    source = REPO_ROOT / "data" / "frame" / f"{part}.npz"
+    if not source.is_file():
+        return None
+    FRAME_ARCHIVE.mkdir(parents=True, exist_ok=True)
+    destination = frame_archive_path(part, max_slope_deg)
+    shutil.copy2(source, destination)
+    return destination
+
+
 def reanalyse(reports):
     """Re-score every archived run against the current metrics.
 
@@ -509,6 +694,41 @@ def reanalyse(reports):
             ),
         )
         report_path(part, slope).write_text(
+            json.dumps(fresh, indent=2) + "\n", encoding="utf-8"
+        )
+        rewritten.append(fresh)
+
+    return rewritten, skipped
+
+
+def reanalyse_field_only(reports):
+    """Re-score every field-only run whose atoms were archived.
+
+    Returns (rewritten, skipped), as `reanalyse` does for full runs.
+    """
+    rewritten, skipped = [], []
+
+    for old in reports:
+        part, slope = old["part"], old["max_slope_deg"]
+        archived = frame_archive_path(part, slope)
+        if not archived.is_file():
+            skipped.append(f"{part} @ {slope:g} field-only (no archived atoms)")
+            continue
+
+        old_provenance = old.get("provenance")
+        fresh = measure_field_only(
+            part,
+            slope,
+            old.get("deposition_width_mm", 0.9),
+            runtime_s=old.get("runtime", {}).get("total_s", 0.0),
+            stage_times=old.get("runtime", {}).get("stages", {}),
+            frame_path=archived,
+            provenance=(
+                prov.rescored(old_provenance, REPO_ROOT, METRICS_VERSION)
+                if isinstance(old_provenance, dict) else None
+            ),
+        )
+        field_only_report_path(part, slope).write_text(
             json.dumps(fresh, indent=2) + "\n", encoding="utf-8"
         )
         rewritten.append(fresh)
@@ -603,11 +823,77 @@ def _format_cell(report):
     return f"{mark} {worst_text} / {near_text} / {tilt_text}"
 
 
-def summarize(reports):
-    """Build the comparison table and the plain-language conclusion."""
+def _format_field_only_cell(report):
+    """One field-only cell: worst effective angle / n/a / max tilt used.
+
+    ❌ when the effective angle alone rules the part out; ❔ when it is within
+    the threshold, since the unsupported half of the test is unknown.
+    """
+    metrics, verdict = report["metrics"], report["verdict"]
+    tilt_text = f"{metrics['max_tool_tilt_deg']:.1f}°"
+    if not verdict.get("assessable", True):
+        return f"– no overhang / tilt {tilt_text}"
+    mark = "❌" if verdict.get("printable") is False else "❔"
+    return f"{mark} {verdict['worst_effective_deg']:.0f}° / n/a / {tilt_text}"
+
+
+def _table(reports, format_cell):
+    """Parts down, slopes across, one cell per report; group labels if mixed."""
     parts = sorted({r["part"] for r in reports})
     slopes = sorted({r["max_slope_deg"] for r in reports})
     by_key = {(r["part"], r["max_slope_deg"]): r for r in reports}
+
+    label_of = {}
+    groups = provenance_groups(reports)
+    if len(groups) > 1:
+        for label, _, members in groups:
+            for member in members:
+                label_of[id(member)] = f" [{label}]"
+
+    header = "| Part | " + " | ".join(f"max_slope {s:g}°" for s in slopes) + " |"
+    lines = [header, "|" + "---|" * (len(slopes) + 1)]
+    for part in parts:
+        cells = [
+            format_cell(by_key[(part, s)]) + label_of.get(id(by_key[(part, s)]), "")
+            if (part, s) in by_key else "—"
+            for s in slopes
+        ]
+        lines.append(f"| `{part}` | " + " | ".join(cells) + " |")
+    return lines
+
+
+def _field_only_section(reports):
+    """The field-only runs, in a table of their own (build plan P2.0 step 3)."""
+    lines = [
+        "## Field-only runs (build plan P2.0)",
+        "",
+        "Measured on the extracted atoms, before `order_atoms` "
+        "(`overhang_report.py --field-only`). Each cell is **worst effective "
+        "overhang angle / unsupported deposition / maximum tilt used**.",
+        "",
+        "Unsupported deposition needs a print order, so it is `n/a` here. A cell "
+        "can therefore show that a part fails (❌: its effective angle is over "
+        f"{MAX_EFFECTIVE_OVERHANG_DEG:g}°) but never that it prints (❔: the "
+        "angle is within the threshold, the rest is unknown).",
+        "",
+        "**Not comparable with the table above.** These runs stop after atom "
+        "extraction, so they form their own provenance group, and they count "
+        "every atom where a full run counts the deposition points of its "
+        "toolpath.",
+        "",
+    ]
+    lines += _provenance_section(reports)
+    lines += _table(reports, _format_field_only_cell)
+    return lines
+
+
+def summarize(reports, field_only_reports=()):
+    """Build the comparison table and the plain-language conclusion.
+
+    ``field_only_reports`` (build plan P2.0) get a section and a table of
+    their own, after the conclusion; they never enter the main table.
+    """
+    slopes = sorted({r["max_slope_deg"] for r in reports})
 
     lines = [
         "# Overhang baseline: stock Atomizer",
@@ -626,25 +912,11 @@ def summarize(reports):
         "",
     ]
     lines += _provenance_section(reports)
-
-    groups = provenance_groups(reports)
-    label_of = {}
-    if len(groups) > 1:
-        for label, _, members in groups:
-            for member in members:
-                label_of[id(member)] = f" [{label}]"
-
-    header = "| Part | " + " | ".join(f"max_slope {s:g}°" for s in slopes) + " |"
-    lines += [header, "|" + "---|" * (len(slopes) + 1)]
-    for part in parts:
-        cells = [
-            _format_cell(by_key[(part, s)]) + label_of.get(id(by_key[(part, s)]), "")
-            if (part, s) in by_key else "—"
-            for s in slopes
-        ]
-        lines.append(f"| `{part}` | " + " | ".join(cells) + " |")
+    lines += _table(reports, _format_cell)
 
     lines += ["", "## Conclusion", ""] + _conclusion(reports, slopes)
+    if field_only_reports:
+        lines += [""] + _field_only_section(list(field_only_reports))
     lines += [""] + _timing_section(reports)
     return "\n".join(lines) + "\n"
 
@@ -807,17 +1079,22 @@ def _conclusion(reports, slopes):
     return [" ".join(sentences)]
 
 
-def load_reports(quiet=False):
-    """Every valid report on disk.
+def load_reports(quiet=False, field_only=False):
+    """Every valid report on disk: the full runs, or with ``field_only`` the
+    field-only ones (build plan P2.0).
 
     A report truncated mid-write, which a power loss can do, is reported and
-    skipped rather than taking the whole summary down with it.
+    skipped rather than taking the whole summary down with it. So is a report
+    of the other kind found in the wrong folder: pooling a field-only result
+    with full runs is the confusion P2.0 exists to prevent.
     """
-    if not REPORT_DIR.is_dir():
+    directory = FIELD_ONLY_DIR if field_only else REPORT_DIR
+    expected_mode = MODE_FIELD_ONLY if field_only else MODE_FULL
+    if not directory.is_dir():
         return []
 
     reports = []
-    for path in sorted(REPORT_DIR.glob("*.json")):
+    for path in sorted(directory.glob("*.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -829,6 +1106,12 @@ def load_reports(quiet=False):
                     f"  Skipping {path.name}: schema version "
                     f"{data.get('schema_version')}, expected {SCHEMA_VERSION}"
                 )
+            continue
+        if report_mode(data) != expected_mode:
+            print(
+                f"  Skipping {path.name}: a {report_mode(data)} report in "
+                f"{directory}, which holds {expected_mode} reports only. Move it."
+            )
             continue
         reports.append(data)
     return reports
@@ -883,6 +1166,16 @@ def main(argv=None):
     parser.add_argument(
         "--skip-pipeline", action="store_true",
         help="Measure the toolpath already in data/ instead of re-running.",
+    )
+    parser.add_argument(
+        "--field-only", action="store_true",
+        help=(
+            "Build plan P2.0: run the pipeline only up to atom extraction and "
+            "measure the atoms, skipping order_atoms (86%% of a run). "
+            "Unsupported deposition cannot be measured and is reported as n/a. "
+            "Writes to reports/field_only/, never beside the full runs. With "
+            "--skip-pipeline, measures the atoms already in data/frame/."
+        ),
     )
     parser.add_argument(
         "--summarize", action="store_true",
@@ -953,34 +1246,48 @@ def main(argv=None):
 
     if args.reanalyse:
         existing = load_reports()
-        if not existing:
-            raise SystemExit(f"No reports in {REPORT_DIR} to re-score.")
+        field_existing = load_reports(field_only=True)
+        if not existing and not field_existing:
+            raise SystemExit(f"No reports in {REPORT_DIR} or {FIELD_ONLY_DIR} to re-score.")
         rewritten, skipped = reanalyse(existing)
-        for note in skipped:
+        field_rewritten, field_skipped = reanalyse_field_only(field_existing)
+        for note in skipped + field_skipped:
             print(f"  skipped: {note}")
-        if not rewritten:
+        if not rewritten and not field_rewritten:
             raise SystemExit(
-                "Nothing could be re-scored: no archived toolpaths. Runs made "
-                "before archiving was added must be repeated."
+                "Nothing could be re-scored: no archived toolpaths or atoms. Runs "
+                "made before archiving was added must be repeated."
             )
+        if field_rewritten:
+            print(f"Re-scored {len(field_rewritten)} field-only run(s) in {FIELD_ONLY_DIR}.")
+        if not rewritten:
+            print(
+                f"The summary was not rewritten: no full run could be re-scored, "
+                f"and {SUMMARY_PATH.name} is built around the full runs."
+            )
+            return 0
         SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SUMMARY_PATH.write_text(summarize(rewritten), encoding="utf-8")
+        SUMMARY_PATH.write_text(summarize(rewritten, field_rewritten), encoding="utf-8")
         print(f"Re-scored {len(rewritten)} run(s); wrote {SUMMARY_PATH}.")
-        warning = provenance_warning(rewritten)
-        if warning:
-            print("\n" + warning)
+        for label, group in (("", rewritten), ("Field-only runs: ", field_rewritten)):
+            warning = provenance_warning(group) if group else None
+            if warning:
+                print("\n" + label + warning)
         return 0
 
     if args.summarize:
         reports = load_reports()
+        field_reports = load_reports(field_only=True)
         if not reports:
             raise SystemExit(f"No reports in {REPORT_DIR}. Run some parts first.")
         SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SUMMARY_PATH.write_text(summarize(reports), encoding="utf-8")
-        print(f"Wrote {SUMMARY_PATH} from {len(reports)} report(s).")
-        warning = provenance_warning(reports)
-        if warning:
-            print("\n" + warning)
+        SUMMARY_PATH.write_text(summarize(reports, field_reports), encoding="utf-8")
+        extra = f" and {len(field_reports)} field-only" if field_reports else ""
+        print(f"Wrote {SUMMARY_PATH} from {len(reports)}{extra} report(s).")
+        for label, group in (("", reports), ("Field-only runs: ", field_reports)):
+            warning = provenance_warning(group) if group else None
+            if warning:
+                print("\n" + label + warning)
         return 0
 
     if args.param_path is None:
@@ -994,8 +1301,11 @@ def main(argv=None):
 
     runtime_s, stage_times, stage_arches = 0.0, {}, {}
     if not args.skip_pipeline:
-        print(f"Running the pipeline: {part} at max_slope {max_slope:g}°")
-        runtime_s, _, stage_arches = run_pipeline(args.param_path, args.max_slope)
+        kind = "up to atom extraction (field-only)" if args.field_only else "the pipeline"
+        print(f"Running {kind}: {part} at max_slope {max_slope:g}°")
+        runtime_s, _, stage_arches = run_pipeline(
+            args.param_path, args.max_slope, field_only=args.field_only
+        )
 
     log_path = REPO_ROOT / "data" / "log" / f"{part}.log"
     if log_path.is_file():
@@ -1009,34 +1319,60 @@ def main(argv=None):
     )
 
     init_taichi("cpu")
-    report = measure(
-        part, max_slope, float(params["deposition_width"]), runtime_s, stage_times,
-        provenance=provenance,
-    )
+    if args.field_only:
+        report = measure_field_only(
+            part, max_slope, float(params["deposition_width"]), runtime_s, stage_times,
+            provenance=provenance,
+        )
+        if not args.skip_pipeline:
+            archived = archive_frame(part, max_slope)
+            if archived is not None:
+                print(f"Archived the atoms to {archived}")
+        destination = field_only_report_path(part, max_slope)
+    else:
+        report = measure(
+            part, max_slope, float(params["deposition_width"]), runtime_s, stage_times,
+            provenance=provenance,
+        )
+        if not args.skip_pipeline:
+            archived = archive_toolpath(part, max_slope)
+            if archived is not None:
+                print(f"Archived the toolpath to {archived}")
+        destination = report_path(part, max_slope)
 
-    if not args.skip_pipeline:
-        archived = archive_toolpath(part, max_slope)
-        if archived is not None:
-            print(f"Archived the toolpath to {archived}")
-
-    destination = report_path(part, max_slope)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    append_progress(report)
+    # The progress log has no column saying how a run was made, so a
+    # field-only row would read as a full run's. It records full runs only.
+    if not args.field_only:
+        append_progress(report)
 
     verdict = report["verdict"]
     worst = verdict["worst_effective_deg"]
-    print(f"\n{part} at max_slope {max_slope:g}°")
+    near = report["metrics"]["unsupported_fraction_near_overhangs"]
+    heading = f"{part} at max_slope {max_slope:g}°"
+    if args.field_only:
+        heading += f" (field-only: {report['atoms']['count']} atoms, no print order)"
+    print(f"\n{heading}")
     print(f"  worst effective overhang : {worst:.1f}°" if not math.isnan(worst)
           else "  worst effective overhang : not measured")
-    print(f"  unsupported near overhang: "
-          f"{report['metrics']['unsupported_fraction_near_overhangs'] * 100:.2f}%")
+    print("  unsupported near overhang: "
+          + ("n/a (field-only)" if near is None else f"{near * 100:.2f}%"))
     print(f"  max tilt used            : {report['metrics']['max_tool_tilt_deg']:.2f}°")
-    print(f"  printable                : {verdict['printable']}")
+    if args.field_only:
+        printable = {False: "False (effective angle over the threshold)",
+                     None: "unknown without a print order"}[verdict["printable"]]
+    else:
+        printable = verdict["printable"]
+    print(f"  printable                : {printable}")
+    if args.field_only and report["atoms"]["dropped_non_finite"]:
+        print(f"  WARNING: {report['atoms']['dropped_non_finite']} atom(s) without a "
+              "finite position or orientation were left out.")
     print(f"  measured on              : {prov.describe(provenance)}")
+    if runtime_s:
+        print(f"  runtime                  : {runtime_s:.0f} s")
     print(f"\nWrote {destination}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
