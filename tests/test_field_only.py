@@ -449,30 +449,42 @@ PIPELINE_SLOPE = 30.0
 AGREEMENT_DEG = 1.0
 
 
+def _atoms(path):
+    with np.load(path) as data:
+        return {key: np.array(data[key]) for key in data.files}
+
+
 @pytest.mark.pipeline
 def test_field_only_measures_what_the_full_run_measures(repo_root, capsys):
-    """Field-only then full, on the same part and budget, on this machine.
+    """Field-only, full, then field-only again, on one part and budget.
 
-    Run with ``-s`` to see the timings the plan asks to record. About 2 min
-    for the field-only run and 7 to 12 min for the full one on the laptop.
+    The first field-only run can pay Taichi's kernel compilation: on its first
+    laptop run (2026-09-30) the direction and layer stages took 46 and 45 s
+    against 10 and 12 s one run later, and the timing check failed on that
+    alone. So only the **third** run is timed against the full one; by then
+    every kernel it uses has been compiled twice. About 20 minutes on the
+    laptop. The report is printed whatever happens.
     """
     param = repo_root / "data" / "param" / f"{PIPELINE_PART}.json"
     frame_path = repo_root / "data" / "frame" / f"{PIPELINE_PART}.npz"
+    toolpath_path = repo_root / "data" / "toolpath" / f"{PIPELINE_PART}.npz"
     width = json.loads(param.read_text(encoding="utf-8"))["deposition_width"]
 
-    field_s, _, _ = orep.run_pipeline(param, PIPELINE_SLOPE, field_only=True)
-    field = orep.measure_field_only(PIPELINE_PART, PIPELINE_SLOPE, width, field_s)
-    with np.load(frame_path) as data:
-        field_atoms = {key: np.array(data[key]) for key in data.files}
+    first_s, _, _ = orep.run_pipeline(param, PIPELINE_SLOPE, field_only=True)
+    first_atoms = _atoms(frame_path)
 
     full_s, _, _ = orep.run_pipeline(param, PIPELINE_SLOPE)
     full = orep.measure(PIPELINE_PART, PIPELINE_SLOPE, width, full_s)
-    with np.load(frame_path) as data:
-        full_atoms = {key: np.array(data[key]) for key in data.files}
+    full_atoms = _atoms(frame_path)
     with np.load(repo_root / "data" / "toolpath" / f"{PIPELINE_PART}_smoothed.npz") as data:
         count = int(data["point_count"])
         deposits = data["travel_type"][:count] == om.TRAVEL_TYPE_DEPOSITION
         deposited_orientations = np.array(data["tool_orientation"][:count][deposits])
+    toolpath_written = toolpath_path.stat().st_mtime
+
+    field_s, _, _ = orep.run_pipeline(param, PIPELINE_SLOPE, field_only=True)
+    field = orep.measure_field_only(PIPELINE_PART, PIPELINE_SLOPE, width, field_s)
+    field_atoms = _atoms(frame_path)
 
     field_surfaces = [s for s in field["metrics"]["surfaces"] if s["sample_count"]]
     full_surfaces = [s for s in full["metrics"]["surfaces"] if s["sample_count"]]
@@ -481,18 +493,23 @@ def test_field_only_measures_what_the_full_run_measures(repo_root, capsys):
     with capsys.disabled():
         print(
             f"\n\nP2.0 check, {PIPELINE_PART} at max_slope {PIPELINE_SLOPE:g}:\n"
-            f"  field-only run: {field_s:7.1f} s, {field['atoms']['count']} atoms\n"
-            f"  full run      : {full_s:7.1f} s, {int(np.count_nonzero(deposits))} deposition points\n"
-            f"  time ratio    : {field_s / full_s:.3f}\n"
+            f"  field-only run, first : {first_s:7.1f} s (may include kernel compilation)\n"
+            f"  full run              : {full_s:7.1f} s, {int(np.count_nonzero(deposits))} deposition points\n"
+            f"  field-only run, warm  : {field_s:7.1f} s, {field['atoms']['count']} atoms\n"
+            f"  time ratio (warm/full): {field_s / full_s:.3f}\n"
             f"  worst effective overhang: field-only {field_worst:.3f}, full {full_worst:.3f}\n"
             f"  max tilt used           : field-only {field['metrics']['max_tool_tilt_deg']:.3f}, "
             f"full {full['metrics']['max_tool_tilt_deg']:.3f}\n"
         )
 
-    # The field-only stages are the same computation in both runs.
-    assert set(field_atoms) == set(full_atoms)
-    for key in field_atoms:
-        np.testing.assert_array_equal(field_atoms[key], full_atoms[key], err_msg=key)
+    # A field-only run stops before ordering: it leaves the toolpath alone.
+    assert toolpath_path.stat().st_mtime == toolpath_written
+
+    # The field-only stages are the same computation in all three runs.
+    for atoms in (full_atoms, field_atoms):
+        assert set(atoms) == set(first_atoms)
+        for key in first_atoms:
+            np.testing.assert_array_equal(atoms[key], first_atoms[key], err_msg=key)
 
     # Every orientation the full run deposits with is one of the atoms' own:
     # ordering copies it and smoothing moves positions only (atom.frame_atoms).

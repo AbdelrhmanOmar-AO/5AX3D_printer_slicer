@@ -2099,6 +2099,19 @@ surface's maximum and mean, effective angle within 1 degree; and the
 field-only run under half the full run's time. It prints both times, which
 P2.0's "Done when" asks to record.
 
+**Laptop result (2026-09-30).** Every correctness check passed on
+`ramp60_xs` at 30 degrees: the atoms of the two runs identical, every deposited
+orientation an atom's own, worst effective overhang **89.097 field-only against
+89.097 full**, maximum tilt 29.097 both, surfaces within the 1-degree criterion.
+The timing check alone failed: field-only 303.3 s against 585.0 s, ratio
+0.518 against the test's 0.5. **The test was wrong, not the feature**: the
+field-only run went first and paid Taichi's kernel compilation, its direction
+and layer stages taking 46.1 and 45.4 s against 10.0 and 12.4 s in the full run
+straight after, on identical input. The test now runs field-only, full, then
+field-only again, times only the third, and also checks that a field-only run
+leaves the toolpath file untouched, which catches a broken `--stop-after`
+without relying on time. A warm field-only time is still to be recorded.
+
 **Not built:** a `--field-only` option on `tools/run_matrix_parallel.py`.
 Single field-only runs are a few minutes each at size `xs`; whether the P2
 iterations need a parallel field-only matrix on the lab machine is the
@@ -2148,6 +2161,10 @@ section 5):
 acting as ceilings, so P2.5's top-surface check should cover it. Both are
 behind the `overhang_aware` flag, so the golden output is untouched.
 
+**Decided by the operator, 2026-09-30: option (a).** When `overhang_aware` is
+on, the orientation field is computed on the SDF before infill; the later
+stages keep the infilled SDF. To be built as part of P2.2.
+
 A related question for the team: stock **without** infill is exactly vertical
 on the ramps (`theta_eff = theta_geo`), a fairer 3-axis-like reference than
 stock with infill, which tilts away. Whether to add it to the comparison is
@@ -2173,3 +2190,32 @@ open; it is cheap in the field-only tier.
   stages read, the mechanism of P2-3 and what it means for P2.2.
 * **`experiment/experiment_orientation_field_ramp.py`**: the P2-3 experiment,
   kept so the finding can be re-checked. Development numbers only.
+
+#### P2-10 Gate D0: the mechanical target is 60 degrees per axis, not yet a value
+
+*Input from the operator, 2026-09-30; not a decision.* The mechanical team is
+still drawing the machine; their **goal is 60 degrees of tilt on each axis**.
+So D0 has no value yet, and the operator asked whether the slicer can take the
+tilt limit as a variable that everything else follows.
+
+What was checked before answering (reference geometry, the tilt check in the
+inverse kinematics lifted to 89 degrees, a throwaway profile, CPU): the
+reference machine's screws can reach 60 degrees, but only with the part raised
+off the bed, because the bed's corners swing into the gantry. The lift the
+kinematics ask for:
+
+| Where the nozzle is | First tilt needing lift | Lift at 30 deg | Lift at 60 deg |
+|---|---|---|---|
+| bed centre, 2 mm up | 20 deg | 46 mm | 139 mm |
+| bed centre, 30 mm up | 25 deg | 22 mm | 125 mm |
+| bed centre, 80 mm up | 40 deg | none | 100 mm |
+| 50 mm off centre, 2 mm up | 20 deg | 64 mm | 168 mm |
+
+(Worst of 16 tilt directions; the IK's lift is a first estimate, P1-9, and
+`add_platform` would print a platform at least that tall. At 80 mm up, 5 of
+the 16 directions are unreachable outright from 55 degrees, a screw running
+out of travel.) So how much of a 60-degree bed is usable depends on the bed's size and
+the nozzle's length below the gantry (gates M1, M3), not only on the tilt
+mechanism. Separately, Atomizer caps the field at 50 degrees for its 80-degree
+nozzle cone whatever the bed allows (P2-9); using 60 needs a nozzle cone of 60
+degrees or narrower.

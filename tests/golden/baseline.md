@@ -135,6 +135,7 @@ be chosen with this in mind — see the note in that task.
 | 2026-09-23 | P1.2, header/footer from templates; temperatures (vendored: `kinematics3z.py`, `atomize.py`, `toolpath_to_gcode.py`) | Pass, 5 passed, 1 skipped in 522 s. G-code byte-identical. |
 | 2026-09-27 | P1.3, infill parameters (vendored: `sdf_to_isdf.py`, `atomize.py`) | Pass, 5 passed, 1 skipped in 674 s. G-code byte-identical. |
 | 2026-09-27 | P1.6, `order_atoms` kernel profiler off by default (vendored: `order_atoms.py`) | Pass, 5 passed, 1 skipped in 518 s. G-code byte-identical, so the profiler never affected the output. |
+| 2026-09-30 | P5.1a, stage commands as `build_stage_commands` / `run_stages`, `--stop-after` (vendored: `atomize.py`) | Pass, 5 passed, 1 skipped in 685 s. G-code byte-identical. |
 
 ### `order_atoms` with and without the kernel profiler (P1.6)
 
