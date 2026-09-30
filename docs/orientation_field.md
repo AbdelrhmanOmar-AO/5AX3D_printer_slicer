@@ -442,6 +442,6 @@ What it shows:
 | Whether a stock-without-infill reference joins the comparison | the team, with D0 |
 | ~~How much of an overhang constraint survives the 32 final passes~~ | measured: 0.3-1.9 degrees lost, none with hold (section 7.2) |
 | Whether `hold_overhang` should be on by default | the operator, with P2.2's field-only runs |
-| `max_overhang_deg` and the margin: is 2 degrees enough, should it fade in | gate D1, with P2.5's numbers (section 7.2, 7.3) |
+| `max_overhang_deg` and the margin: is 2 degrees enough, should it fade in | kept as they are for now (operator, 2026-09-30); gate D1 can revisit with P2.5's numbers |
 | The azimuth of a flat or nearly flat underside on a remeshed part | P2.2 follow-up, after a T-shape run (section 7.3) |
 | Whether the ceiling threshold should stay tied to `max_slope` once overhangs are constrained too | gate D1 |

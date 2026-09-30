@@ -2331,7 +2331,8 @@ not yet a value (D0 stays open). The operator asked for:
   by rounding, harmless on the analytic ramps, untested on a remeshed part;
   and even with hold the worst cell next to the underside is 0.6-3.4 degrees
   above 45 on `ramp70` to `ramp90`, so the 2-degree margin covers the mean,
-  not the worst cell.
+  not the worst cell. **The operator's answer, 2026-09-30: keep it** (the
+  2-degree margin, and the rule switching on at 45 with no fade-in).
 * **Still owed:** the plan's sign check on real output (a field-only
   overhang-aware run of `ramp60_xs`, laptop), and the golden test after the
   vendored edits to `atomize.py` and `compute_tool_orientations.py`.

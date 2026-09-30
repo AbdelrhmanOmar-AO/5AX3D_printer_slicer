@@ -321,7 +321,7 @@ Corrections found by this session go under its own heading,
 
 **Laptop, for P2.2 (one at a time):** (i) `pytest --run-pipeline tests/test_golden.py` (vendored edits to `toolpath3.py`, `atomize.py`, `compute_tool_orientations.py`; the output must be unchanged); (ii) the plan's sign check, `python tools/overhang_report.py data/param/ramp60_xs.json --max-slope 30 --field-only --overhang-aware`, against the stock field-only report of the same part (`reports/field_only/ramp60_xs_ms30.json`, worst 89.1).
 
-**Open for the operator:** (P2.2) whether `hold_overhang` should be on by default (it removes the 0.1-1.8 degrees the final smoothing takes off the constraint; 7c P2-12); the margin and threshold for D1 (the worst cell next to the underside stays 0.6-3.4 degrees above 45 on `ramp70`-`ramp90` even with hold). (0) **gate D0**, with `python tools/tilt_bound.py --tilt 30 40 45 50` and the P0.8 baseline (`docs/orientation_field.md` section 6); (0b) P2-8: **option (a) decided** (field on the pre-infill SDF when overhang-aware, built in P2.2); still open whether stock *without* infill joins the comparison. D0 input: the mechanical goal is 60 degrees per axis, CAD in progress (7c P2-10); (1) a **stock field-only set** to compare P2 iterations against (field-only results form their own provenance group, so they cannot be compared with the full-run baseline): which parts, sizes and slopes, on the lab machine; (2) whether that needs a `--field-only` option on `tools/run_matrix_parallel.py`, or single runs suffice.
+**Open for the operator:** (P2.2) whether `hold_overhang` should be on by default (it removes the 0.1-1.8 degrees the final smoothing takes off the constraint; 7c P2-12); ~~the margin and threshold~~ **kept as they are** (operator, 2026-09-30: 2 degrees, and the rule starts at 45 with no fade-in; 7c P2-12). (0) **gate D0**, with `python tools/tilt_bound.py --tilt 30 40 45 50` and the P0.8 baseline (`docs/orientation_field.md` section 6); (0b) P2-8: **option (a) decided** (field on the pre-infill SDF when overhang-aware, built in P2.2); still open whether stock *without* infill joins the comparison. D0 input: the mechanical goal is 60 degrees per axis, CAD in progress (7c P2-10); (1) a **stock field-only set** to compare P2 iterations against (field-only results form their own provenance group, so they cannot be compared with the full-run baseline): which parts, sizes and slopes, on the lab machine; (2) whether that needs a `--field-only` option on `tools/run_matrix_parallel.py`, or single runs suffice.
 
 ---
 
@@ -362,6 +362,10 @@ on any specific fact.**
   or the printer. They are a mechanical engineer, **new to git and to coding** —
   explain git concepts in plain language and give exact PowerShell commands.
   Their stated preference: *never make assumptions, always ask when unsure.*
+  **Added by the operator, 2026-09-30:** *"I'm not an expert, this is an
+  undergraduate project: explain in simple terms, don't overcomplicate
+  stuff."* So: short answers, everyday words, an example before a formula,
+  jargon explained or left out, and one question at a time where possible.
 
 ---
 
