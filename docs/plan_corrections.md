@@ -2392,8 +2392,48 @@ metric. Results in `docs/orientation_field.md` sections 7.4 and 7.5.*
   worst is unchanged there). Counting only atoms with air below them would
   change the P0.8 metric, so the baseline would be re-scored with it
   (`overhang_report.py --reanalyse`, on the machine holding the archived
-  toolpaths). **For the operator.**
+  toolpaths). **The operator chose to change it: P2-14.**
 * **The plan's pipeline test** ("the tilt at the first overhang layer >= t -
   2", 15 on `ramp60_xs`): over the first 0.5 mm of overhang the tilt is 16.1
   on average and 13.6 at least (CPU). Not written yet; it waits for the
   laptop's numbers on the remeshed part.
+
+#### P2-14 The effective overhang angle counts only points out over the air (metrics version 3) ★ METRIC CHANGE
+
+*The operator's decision, 2026-09-30, answering P2-13.* The P0.8 effective
+overhang angle took every deposition point within one bead width of an
+overhang face. From now on a point counts only if it is **out over the air**:
+the spot one layer height (half the deposition width) back along its build
+direction `-d`, where the layer below it would be, is outside the part and
+above the bed. Points printed onto material (the wall below a corner, the
+deeper layers above the outermost one) or onto the bed are skipped, and
+counted per surface in the report as `supported_samples_skipped`.
+
+* **Code:** `overhang_metrics.points_over_air` (inside test: the mesh's
+  generalised winding number, `winding_number`, numpy only; `rtree` is not
+  installed, so trimesh's own test is unavailable) and new optional arguments
+  of `effective_overhang_angles`; `overhang_report.py` passes the part's mesh
+  and layer height for full and field-only reports. `METRICS_VERSION` 2 -> 3.
+  The unsupported-deposition metric is unchanged.
+* **Effect, CPU runs of `ramp60_xs` at 30 (exact SDF):** stock 89.3 before and
+  after; overhang-aware 52.1 -> **43.2**, with the ramp-in 48.8 -> **43.3**.
+  Only the outer layer's edge now counts: about 180 atoms along the underside
+  instead of about 650.
+* **The committed baseline must be re-scored.** All 48 reports in
+  `reports/baseline_overhang/` are the lab machine's (`cad-p07-2065-9`),
+  version 2. Until they are re-scored they count as stale:
+  `run_matrix_parallel.py --resume` would re-run them. On the lab machine,
+  which holds their archived toolpaths: `git pull`, then
+  `python tools/overhang_report.py --reanalyse`, then commit and push
+  `reports/baseline_overhang/` and `reports/baseline_overhang.md`.
+* **A guard found on the way:** archives are looked up by part and slope
+  only, and the laptop holds its own older toolpaths under the same names.
+  `--reanalyse` there would have scored the lab's reports on the laptop's
+  toolpaths. It now skips any report whose provenance names another
+  machine ("measured on ...; re-score it there").
+* Two runner tests that impersonate the committed reports' machine now also
+  take the committed reports' metrics version, so they keep testing the
+  machine logic whether or not the re-score has happened.
+* **`tools/overhang_where.py`** (new, diagnostic): for each overhang surface,
+  the points over air and on material, and the worst points with position and
+  tilt. For finding where a part's worst value comes from.

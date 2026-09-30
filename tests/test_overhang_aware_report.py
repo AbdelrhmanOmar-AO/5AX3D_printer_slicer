@@ -226,3 +226,29 @@ def test_without_the_option_the_command_line_is_stock(tiny_repo):
     written = json.loads((root / "reports" / "baseline_overhang" / "ramp60_t_ms7.json").read_text(encoding="utf-8"))
     assert written["overhang_aware"] is False
     assert (root / "reports" / "matrix_progress.csv").is_file()
+
+
+# --------------------------------------------------------------------------
+# Re-scoring stays on the machine that measured (plan_corrections P2-14)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("field_only", [False, True])
+def test_reanalyse_skips_reports_from_another_machine(tmp_path, monkeypatch, field_only):
+    """Archives are found by part and slope only; another machine's report must not meet this one's files."""
+    import platform
+
+    monkeypatch.setattr(orep, "TOOLPATH_ARCHIVE", tmp_path / "toolpaths")
+    monkeypatch.setattr(orep, "FRAME_ARCHIVE", tmp_path / "frames")
+    monkeypatch.setattr(orep, "init_taichi", lambda arch: None)
+    theirs = _report("ramp60_xs", 30.0, False, orep.MODE_FIELD_ONLY if field_only else orep.MODE_FULL)
+    theirs["provenance"] = {"machine": "some-other-machine"}
+    ours = dict(theirs, provenance={"machine": platform.node()})
+
+    rescore = orep.reanalyse_field_only if field_only else orep.reanalyse
+    rewritten, skipped = rescore([theirs, ours])
+
+    assert rewritten == []
+    assert "measured on some-other-machine; re-score it there" in skipped[0]
+    assert "no archived" in skipped[1]  # this machine's report is looked up as before
+    assert orep.measured_elsewhere({"provenance": None}) is None

@@ -511,7 +511,13 @@ Measured on `ramp60_xs` at 30, CPU, exact SDF, stages 4-8 (as 7.4):
 So the ramp-in does what it is for, in the material below the corner, and
 lowers the reported worst by 3.3 degrees; it does not change the atoms that
 really overhang, which the held constraints already give nearly the full
-tilt. What is left there (46.4, 46.0) is at the edges of the constrained
+tilt. On the laptop's remeshed part the reported worst stayed where it was
+(56.1 without, 56.6 with the ramp-in, metrics version 2), so the remeshed
+part's worst points are elsewhere; `tools/overhang_where.py` shows where.
+
+**With the metric counting only points over the air** (version 3, the
+operator's decision, plan_corrections P2-14), the same CPU runs read: stock
+89.3, overhang-aware **43.2**, with the ramp-in **43.3**. What is left there (46.4, 46.0) is at the edges of the constrained
 band, the first half-millimetre and the tip. The field-level tests pin the
 column's gain (`tests/test_orientation_field.py`).
 
@@ -526,6 +532,6 @@ column's gain (`tests/test_orientation_field.py`).
 | `max_overhang_deg` and the margin: is 2 degrees enough, should it fade in | kept as they are for now (operator, 2026-09-30); gate D1 can revisit with P2.5's numbers |
 | The azimuth of a flat or nearly flat underside on a remeshed part | P2.2 follow-up, after a T-shape run (section 7.3) |
 | ~~The corner where a wall turns into an overhang prints before the tilt is complete~~ | mostly the metric counting supported atoms (7.4); the ramp-in (7.5) lowers the reported worst from 52.1 to 48.8 |
-| Should the effective-overhang metric count only atoms that are out over the air? | the operator (plan_corrections P2-13); it changes the P0.8 baseline's numbers too, so they would be re-scored |
+| ~~Should the effective-overhang metric count only atoms that are out over the air?~~ | yes (operator, 2026-09-30): metrics version 3, P2-14. The lab machine re-scores the baseline |
 | The last 1.4 degrees at the edges of the constrained band (46.4 at the corner, 46.0 at the tip) | open |
 | Whether the ceiling threshold should stay tied to `max_slope` once overhangs are constrained too | gate D1 |

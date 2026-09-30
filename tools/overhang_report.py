@@ -71,6 +71,7 @@ import csv
 import json
 import math
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -129,7 +130,11 @@ SCHEMA_VERSION = 1
 #: 2 - bed contact anchored to the part's lowest point (plan_corrections 4.5);
 #:     surfaces sampled densely rather than by face centroid (4.6);
 #:     support radius 2.5x height so the 65-degree cone governs (1.8).
-METRICS_VERSION = 2
+#: 3 - the effective overhang angle counts only points out over the air (one
+#:     layer back along the build direction is outside the part and above the
+#:     bed); points printed onto the wall below a corner no longer count
+#:     (the operator's decision, 2026-09-30, plan_corrections P2-14).
+METRICS_VERSION = 3
 
 #: An append-only record of every run, written as each finishes. Survives a
 #: crash and gives a human-readable trail beside the per-run JSON.
@@ -374,6 +379,8 @@ def measure(
         areas,
         toolpath,
         search_radius=SURFACE_SEARCH_WIDTHS * deposition_width,
+        part_triangles=mesh.triangles,
+        layer_height=deposition_width / 2.0,
     )
     overall, near_fraction, near_count = om.unsupported_near_overhangs(
         toolpath,
@@ -448,6 +455,7 @@ def _surfaces_block(surfaces):
             "max_effective_deg": s.max_effective_deg,
             "mean_effective_deg": s.mean_effective_deg,
             "max_tilt_used_deg": s.max_tilt_used_deg,
+            "supported_samples_skipped": s.supported_samples_skipped,
         }
         for s in surfaces
     ]
@@ -512,6 +520,8 @@ def measure_field_only(
         areas,
         atoms,
         search_radius=SURFACE_SEARCH_WIDTHS * deposition_width,
+        part_triangles=mesh.triangles,
+        layer_height=deposition_width / 2.0,
     )
     near = om.points_near_overhangs(
         np.asarray(atoms.point, dtype=np.float64),
@@ -694,6 +704,22 @@ def overhang_aware_slope():
     return float(machine_profile.load_profile().max_tilt_angle_deg)
 
 
+def measured_elsewhere(report):
+    """The machine a report was measured on, when it is not this one; else None.
+
+    A report's archived toolpath or atoms are looked up by part and slope
+    only, and a machine that ran the same parts itself has its own files under
+    those names: re-scoring another machine's report here would pair it with
+    this machine's output. None too when the report does not say.
+    """
+    block = report.get("provenance")
+    machine = block.get("machine") if isinstance(block, dict) else None
+    here = platform.node() or None
+    if isinstance(machine, str) and isinstance(here, str) and machine.lower() != here.lower():
+        return machine
+    return None
+
+
 def reanalyse(reports):
     """Re-score every archived run against the current metrics.
 
@@ -706,6 +732,12 @@ def reanalyse(reports):
     for old in reports:
         part, slope = old["part"], old["max_slope_deg"]
         aware = bool(old.get("overhang_aware", False))
+        elsewhere = measured_elsewhere(old)
+        if elsewhere:
+            skipped.append(
+                f"{part} @ {slope:g}{' aware' if aware else ''} (measured on {elsewhere}; re-score it there)"
+            )
+            continue
         archived = archive_path(part, slope, aware)
         if not archived.is_file():
             skipped.append(f"{part} @ {slope:g}{' aware' if aware else ''} (no archived toolpath)")
@@ -745,6 +777,13 @@ def reanalyse_field_only(reports):
     for old in reports:
         part, slope = old["part"], old["max_slope_deg"]
         aware = bool(old.get("overhang_aware", False))
+        elsewhere = measured_elsewhere(old)
+        if elsewhere:
+            skipped.append(
+                f"{part} @ {slope:g} field-only{' aware' if aware else ''} "
+                f"(measured on {elsewhere}; re-score it there)"
+            )
+            continue
         archived = frame_archive_path(part, slope, aware)
         if not archived.is_file():
             skipped.append(

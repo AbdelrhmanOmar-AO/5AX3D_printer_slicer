@@ -69,6 +69,9 @@ def test_resume_drops_what_is_already_current(monkeypatch):
     theirs = rmp.report_machine_key(reports[0])
     assert theirs is not None, "the committed reports should carry provenance"
     monkeypatch.setattr(rmp, "this_machine_key", lambda: theirs)
+    # ...and the metrics version they were scored with, which a metrics change
+    # moves ahead of them until they are re-scored on that machine.
+    monkeypatch.setattr(orep, "METRICS_VERSION", reports[0]["metrics_version"])
 
     everything = rmp.build_jobs(["xs"])
     resumed = rmp.build_jobs(["xs"], resume=True)
@@ -851,6 +854,7 @@ def test_nothing_to_do_is_reported_rather_than_run(tmp_path, capsys, monkeypatch
     assert reports, "the committed baseline reports are missing"
     monkeypatch.setattr(rmp, "this_machine_key",
                         lambda: rmp.report_machine_key(reports[0]))
+    monkeypatch.setattr(orep, "METRICS_VERSION", reports[0]["metrics_version"])
 
     code = rmp.main(["--sizes", "xs", "--resume", "--dry-run",
                      "--root", str(tmp_path / "w")])

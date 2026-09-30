@@ -476,3 +476,62 @@ def test_the_radius_no_longer_binds_before_the_cone():
         f"the search radius stops reaching at {reach_deg:.1f} degrees, inside "
         f"the {om.SUPPORT_CONE_HALF_ANGLE_DEG} degree cone, so it overrides it"
     )
+
+
+# --------------------------------------------------------------------------
+# Only points out over the air (metrics version 3, plan_corrections P2-14)
+# --------------------------------------------------------------------------
+
+
+def _cube_triangles(size=2.0):
+    """A closed cube, 0..size on each axis, faces wound outward."""
+    v = np.array([[x, y, z] for x in (0, size) for y in (0, size) for z in (0, size)], dtype=float)
+    quads = [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)]
+    tris = []
+    for a, b, c, d in quads:
+        tris += [(a, b, c), (a, c, d)]
+    return v[np.array(tris)]
+
+
+def test_the_winding_number_tells_inside_from_outside():
+    triangles = _cube_triangles()
+    w = om.winding_number(np.array([[1.0, 1.0, 1.0], [3.0, 1.0, 1.0], [1.0, 1.0, -0.5]]), triangles)
+    np.testing.assert_allclose(w, [1.0, 0.0, 0.0], atol=1e-9)
+
+
+def test_a_point_is_over_air_when_the_layer_below_it_would_be_outside():
+    triangles = _cube_triangles()
+    up = np.array([[0.0, 0.0, 1.0]] * 3)
+    points = np.array([
+        [1.0, 1.0, 1.0],   # the layer below is inside the cube: printed onto it
+        [1.0, 1.0, 0.2],   # the layer below is under the cube's floor: the bed
+        [1.9, 1.0, 1.0],   # tilted out through the side wall: over air
+    ])
+    tilted = up.copy()
+    tilted[2] = [-0.9, 0.0, 0.436]
+    assert om.points_over_air(points, tilted, triangles, 0.45).tolist() == [False, False, True]
+
+
+def test_points_printed_onto_the_wall_below_a_corner_do_not_count():
+    """The case that made the metric change: a ramp where its column turns into the overhang."""
+    trimesh = pytest.importorskip("trimesh", reason="trimesh is a dev dependency")
+    from atom import benchmark_meshes as bm
+
+    mesh = bm.make_ramp(60, length=30.0, depth=13.5, height=18.0)
+    vertices, faces = trimesh.remesh.subdivide_to_size(mesh.vertices, mesh.faces, max_edge=0.9)
+    sampled = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+    # The ramp's column is 21 mm wide and 4.5 mm high; the underside rises from
+    # (21, 4.5) at 30 degrees from horizontal.
+    over_air = [25.0, 6.0, 4.5 + 4.0 / math.tan(math.radians(60)) + 0.2]
+    on_the_wall = [20.7, 6.0, 4.2]
+    toolpath = FakeToolpath([over_air, on_the_wall], [0.0, 0.0, 1.0])
+    arrays = (sampled.face_normals, sampled.triangles_center, sampled.area_faces)
+
+    old = om.effective_overhang_angles(*arrays, toolpath, 0.9)
+    new = om.effective_overhang_angles(*arrays, toolpath, 0.9, part_triangles=mesh.triangles, layer_height=0.45)
+
+    assert old[0].sample_count > new[0].sample_count > 0
+    assert new[0].supported_samples_skipped > 0
+    assert old[0].supported_samples_skipped == 0
+    # With a vertical tool the point over air keeps the geometric angle.
+    assert new[0].max_effective_deg == pytest.approx(60.0, abs=0.1)

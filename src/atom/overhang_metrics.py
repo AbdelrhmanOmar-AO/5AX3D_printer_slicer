@@ -27,6 +27,14 @@ Effective overhang angle
     it one-for-one. That is exactly what the overhang-aware field is meant to
     do.
 
+    Measured on the deposition points near each overhang face that are
+    **out over the air**: the spot one layer height back along ``-d`` from the
+    point is outside the part and above the bed (`points_over_air`). A point
+    with material or the bed there is printed onto something, not over the
+    overhang; where a wall turns into an overhang such points sit within the
+    search radius and used to be counted (metrics version 3, plan_corrections
+    P2-14).
+
 Unsupported deposition
     A deposition point is supported when the bed, or material deposited earlier
     in the print, lies in the cone beneath it: apex at the point, axis ``-d``,
@@ -267,10 +275,65 @@ class FaceGroupMetrics:
     max_effective_deg: float
     mean_effective_deg: float
     max_tilt_used_deg: float
+    #: Samples left out because they are printed onto material or the bed
+    #: (``part_triangles`` given); 0 otherwise.
+    supported_samples_skipped: int = 0
 
     @property
     def measured(self) -> bool:
         return self.sample_count > 0
+
+
+def winding_number(points: np.ndarray, triangles: np.ndarray, chunk_elements: int = 2_000_000) -> np.ndarray:
+    """The generalised winding number of a closed triangle mesh at each point.
+
+    About 1 inside, 0 outside, whatever the point's position relative to edges
+    and vertices (van Oosterom and Strackee's solid angle, summed). ``points``
+    ``(P, 3)``, ``triangles`` ``(T, 3, 3)`` with outward-facing winding. Costs
+    ``P x T``; the points are processed in chunks of ``chunk_elements``.
+    """
+    points = np.asarray(points, dtype=np.float64)
+    triangles = np.asarray(triangles, dtype=np.float64)
+    result = np.zeros(len(points))
+    if len(points) == 0 or len(triangles) == 0:
+        return result
+    step = max(1, chunk_elements // len(triangles))
+    for start in range(0, len(points), step):
+        p = points[start:start + step, None, :]
+        a = triangles[None, :, 0, :] - p
+        b = triangles[None, :, 1, :] - p
+        c = triangles[None, :, 2, :] - p
+        la, lb, lc = (np.linalg.norm(v, axis=2) for v in (a, b, c))
+        det = np.einsum("ptk,ptk->pt", a, np.cross(b, c))
+        denominator = (
+            la * lb * lc
+            + np.einsum("ptk,ptk->pt", a, b) * lc
+            + np.einsum("ptk,ptk->pt", b, c) * la
+            + np.einsum("ptk,ptk->pt", c, a) * lb
+        )
+        result[start:start + step] = np.arctan2(det, denominator).sum(axis=1) / (2.0 * np.pi)
+    return result
+
+
+def points_over_air(
+    points: np.ndarray,
+    directions: np.ndarray,
+    part_triangles: np.ndarray,
+    layer_height: float,
+) -> np.ndarray:
+    """Which deposition points are printed over air rather than onto something.
+
+    The spot one ``layer_height`` back along ``-d`` from each point is where
+    the layer below it would be. The point is over air when that spot is
+    outside the part (winding number below one half) and above the part's
+    lowest point, the bed.
+    """
+    points = np.asarray(points, dtype=np.float64)
+    below = points - layer_height * np.asarray(directions, dtype=np.float64)
+    triangles = np.asarray(part_triangles, dtype=np.float64)
+    bed = triangles[:, :, 2].min()
+    inside = winding_number(below, triangles) > 0.5
+    return ~inside & (below[:, 2] > bed)
 
 
 def effective_overhang_angles(
@@ -281,6 +344,8 @@ def effective_overhang_angles(
     search_radius: float,
     bed_contact_height: float = 0.5,
     angle_decimals: int = 1,
+    part_triangles: np.ndarray | None = None,
+    layer_height: float | None = None,
 ) -> list[FaceGroupMetrics]:
     """Per overhang surface, the effective angle the toolpath actually achieved.
 
@@ -300,6 +365,11 @@ def effective_overhang_angles(
     bed_contact_height
         Faces whose centre sits below this are resting on the bed. They are
         downward-facing but supported, so they are not overhangs.
+    part_triangles, layer_height
+        The part's closed mesh ``(T, 3, 3)`` and the layer height. Given, only
+        points over air count (`points_over_air`); the others are skipped and
+        counted in ``supported_samples_skipped``. Omitted, every point near a
+        face counts (metrics version 2 and earlier).
     """
     face_normals = np.asarray(face_normals, dtype=np.float64)
     face_centres = np.asarray(face_centres, dtype=np.float64)
@@ -321,6 +391,21 @@ def effective_overhang_angles(
 
     tree = cKDTree(points) if len(points) else None
 
+    # Which of the points near any overhang face are over air, tested once.
+    over_air = None
+    if tree is not None and part_triangles is not None and layer_height is not None:
+        near = sorted({
+            i
+            for face_index in np.flatnonzero(is_overhang)
+            for i in tree.query_ball_point(face_centres[face_index], search_radius)
+        })
+        over_air = np.zeros(len(points), dtype=bool)
+        if near:
+            near = np.asarray(near)
+            over_air[near] = points_over_air(
+                points[near], directions[near], part_triangles, layer_height
+            )
+
     results: list[FaceGroupMetrics] = []
     rounded = np.round(geometric, angle_decimals)
     for angle in sorted(set(rounded[is_overhang]), reverse=True):
@@ -329,9 +414,14 @@ def effective_overhang_angles(
 
         effective: list[float] = []
         tilts: list[float] = []
+        skipped = 0
         if tree is not None:
             for face_index in indices:
                 nearby = tree.query_ball_point(face_centres[face_index], search_radius)
+                if over_air is not None and nearby:
+                    kept = [i for i in nearby if over_air[i]]
+                    skipped += len(nearby) - len(kept)
+                    nearby = kept
                 if not nearby:
                     continue
                 nearby_directions = directions[nearby]
@@ -350,6 +440,7 @@ def effective_overhang_angles(
                 max_effective_deg=float(np.max(effective)) if effective else float("nan"),
                 mean_effective_deg=float(np.mean(effective)) if effective else float("nan"),
                 max_tilt_used_deg=float(np.max(tilts)) if tilts else float("nan"),
+                supported_samples_skipped=skipped,
             )
         )
 
