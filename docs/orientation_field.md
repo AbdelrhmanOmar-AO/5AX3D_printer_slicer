@@ -463,9 +463,12 @@ corner's 21, with 8-10 degrees of tilt instead of 17: the field turns from
 the column's vertical direction to the overhang's 17 degrees over about a
 millimetre, and the first strip of overhang is printed before it has turned.
 This is the case build plan **P2.4** (tilt ramp-in) exists for: start the
-tilt below the overhang so it is complete where the overhang begins. The
-laptop's 56 against 52 here is the remeshed SDF against the exact one; the
-laptop's per-position numbers have not been measured.
+tilt below the overhang so it is complete where the overhang begins.
+
+The CPU reproduction is trustworthy for this: run the same way with the stock
+field, it gives a worst of **89.3 and a max tilt of 29.3, against the laptop's
+89.1 and 29.1**. The laptop's 56 against 52 here is the remeshed SDF against
+the exact one; the laptop's per-position numbers have not been measured.
 
 ## 8. Open
 
