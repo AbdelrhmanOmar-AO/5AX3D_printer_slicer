@@ -2350,3 +2350,50 @@ not yet a value (D0 stays open). The operator asked for:
   the middle of the underside; `docs/orientation_field.md` 7.4). That is
   P2.4's case (tilt ramp-in). The plan's fitted relation
   (`theta_eff = theta_geo - tilt_used` over the ramps) needs the P2.5 runs.
+
+#### P2-13 P2.4 as built: the ramp-in steepens instead of capping; the metric counts supported atoms at a corner
+
+*Definitions within P2.4, one operator decision, and a finding about the P0.8
+metric. Results in `docs/orientation_field.md` sections 7.4 and 7.5.*
+
+* **The ramp-in** (`src/atom/ramp_in.py`, numpy, applied in
+  `atom.orientation_field` between the initialisation and the solve). "Below
+  each constrained overhang cell, along the build direction" is read as:
+  step back from the cell along its own direction `-d`, half a cell at a
+  time, through the material printed before it. Ramp cells get the cell's
+  azimuth and `t - rate * s`; they never replace an existing constraint, and
+  where walks cross the largest tilt wins. A walk ends at air (under most of
+  an overhang, immediately) or at the first layer.
+* **Too little room: steepen, not cap (operator's decision, 2026-09-30).**
+  The plan says to cap `t` when the base is too close. On `ramp60_xs` (the
+  corner 4.5 mm above the bed, 5.7 mm needed at 3 degrees per mm) that
+  would give the corner 13 degrees instead of 17. Asked, the operator chose
+  to keep the full tilt and build it up faster in the room there is; the
+  stage logs how many walks were steepened and the steepest rate (3.7
+  degrees per mm on `ramp60_xs`). Not the plan's per-overhang shortfall log:
+  one line per run.
+* **"Softly constrained"** is read as: constrained for the multigrid solve,
+  smoothed in the 32 final passes like upstream's own constraints; hold
+  restores only the overhang cells.
+* **Keys:** `ramp_in` (default true; not in the plan's P2.6 list, added so
+  the ramp can be switched off for comparisons) and
+  `max_tilt_rate_deg_per_mm` (P2.6's name, default 3, gate D3). Stage
+  options `--ramp_in` / `--no_ramp_in`, `--max_tilt_rate`.
+* **Measured** (CPU, exact SDF, `ramp60_xs` at 30): the reported worst
+  effective overhang goes from 52.1 to 48.8; the atoms really out over the air
+  are unchanged (worst 46.4, mean 43.5).
+* **Finding: the effective-overhang metric counts supported atoms at a
+  corner.** `overhang_metrics.effective_overhang_angles` takes every atom
+  within one bead width of an overhang face. Where a wall turns into an
+  overhang, that includes atoms printed on top of the wall, which are
+  supported: on `ramp60_xs` they, not the overhang, give the worst value
+  (52.1 against 46.4 for the atoms over the air). The same applies to the
+  stock baseline (its column atoms: 82.5 against 89.3 over the air, so its
+  worst is unchanged there). Counting only atoms with air below them would
+  change the P0.8 metric, so the baseline would be re-scored with it
+  (`overhang_report.py --reanalyse`, on the machine holding the archived
+  toolpaths). **For the operator.**
+* **The plan's pipeline test** ("the tilt at the first overhang layer >= t -
+  2", 15 on `ramp60_xs`): over the first 0.5 mm of overhang the tilt is 16.1
+  on average and 13.6 at least (CPU). Not written yet; it waits for the
+  laptop's numbers on the remeshed part.

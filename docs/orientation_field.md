@@ -470,6 +470,51 @@ field, it gives a worst of **89.3 and a max tilt of 29.3, against the laptop's
 89.1 and 29.1**. The laptop's 56 against 52 here is the remeshed SDF against
 the exact one; the laptop's per-position numbers have not been measured.
 
+**Update: most of those 52 degrees are not overhang.** Splitting the
+samples by whether the atom is out over the air (`x` > 21) or over the
+column's solid material (`x` <= 21): the 85 atoms over the column give the
+52.1 (mean 48.4), the 557 over the air a worst of **46.4** and a mean of
+43.5. The metric takes every atom within one bead width of an overhang face,
+and at a corner that includes atoms printed on top of the wall below it,
+which are supported. The atoms really overhanging are within 1.4 degrees of
+45: 46.4 in the first 0.5 mm (tilt 16.1 on average, 13.6 at least) and 46.0
+at the tip.
+
+### 7.5 The tilt ramp-in (build plan P2.4)
+
+`atom.ramp_in`, on by default with the overhang-aware field. From each
+overhang cell it steps back along the cell's own build direction, through the
+material printed before it, and constrains each cell passed to the same
+azimuth with a tilt falling by `max_tilt_rate_deg_per_mm` (3, a gate D3
+placeholder) per mm. A walk ends where the part ends (under most of an
+overhang that is at once: there is only air below) or at the first layer.
+Where the first layer comes before the tilt has fallen to 0, the ramp is
+**steepened to fit** and the overhang keeps its full tilt (the operator's
+decision of 2026-09-30; the plan capped the tilt instead, which would give
+`ramp60_xs`'s corner 13 degrees instead of 17). The ramp cells are "soft":
+constrained for the solve, smoothed in the final passes (hold restores only
+the overhang cells). The stage logs, for example:
+
+```
+Ramp-in: 3182 cells below 222 overhang cells (max tilt rate 3 degrees per mm); 148 of them had too little room above the first layer and were steepened, up to 3.7 degrees per mm
+```
+
+Measured on `ramp60_xs` at 30, CPU, exact SDF, stages 4-8 (as 7.4):
+
+| | Without ramp-in | With ramp-in |
+|---|---|---|
+| Worst effective overhang, as the report measures it | 52.1 | **48.8** |
+| Atoms over the column at the corner: worst / mean, mean tilt | 52.1 / 48.4, 11.6 | 48.8 / 47.3, 12.7 |
+| Atoms out over the air: worst / mean | 46.4 / 43.5 | 46.4 / 43.5 |
+| First 0.5 mm over the air: mean / least tilt | 16.1 / 13.6 | 16.1 / 13.6 |
+
+So the ramp-in does what it is for, in the material below the corner, and
+lowers the reported worst by 3.3 degrees; it does not change the atoms that
+really overhang, which the held constraints already give nearly the full
+tilt. What is left there (46.4, 46.0) is at the edges of the constrained
+band, the first half-millimetre and the tip. The field-level tests pin the
+column's gain (`tests/test_orientation_field.py`).
+
 ## 8. Open
 
 | Question | Where it is decided |
@@ -480,5 +525,7 @@ the exact one; the laptop's per-position numbers have not been measured.
 | ~~Whether `hold_overhang` should be on by default~~ | decided: on (operator, 2026-09-30). Not yet checked: whether it makes the nozzle turn less smoothly near overhangs (P2.5) |
 | `max_overhang_deg` and the margin: is 2 degrees enough, should it fade in | kept as they are for now (operator, 2026-09-30); gate D1 can revisit with P2.5's numbers |
 | The azimuth of a flat or nearly flat underside on a remeshed part | P2.2 follow-up, after a T-shape run (section 7.3) |
-| The corner where a wall turns into an overhang prints before the tilt is complete (worst 52-56 on `ramp60_xs`) | build plan P2.4, tilt ramp-in (section 7.4) |
+| ~~The corner where a wall turns into an overhang prints before the tilt is complete~~ | mostly the metric counting supported atoms (7.4); the ramp-in (7.5) lowers the reported worst from 52.1 to 48.8 |
+| Should the effective-overhang metric count only atoms that are out over the air? | the operator (plan_corrections P2-13); it changes the P0.8 baseline's numbers too, so they would be re-scored |
+| The last 1.4 degrees at the edges of the constrained band (46.4 at the corner, 46.0 at the tip) | open |
 | Whether the ceiling threshold should stay tied to `max_slope` once overhangs are constrained too | gate D1 |
