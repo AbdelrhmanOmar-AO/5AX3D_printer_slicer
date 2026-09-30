@@ -25,6 +25,11 @@ commit that adds this file.
 5. So P2.2's overhang constraint, 1.8 mm below, would contradict a stock
    constraint pointing the other way. P2.2 has to deal with the infill's
    inner surfaces, not only add a constraint (section 5).
+6. **P2.2 is built** (section 7): behind `overhang_aware`, the field is
+   computed on the part before infill (the operator's option (a)) with the
+   overhang constraint added, and it leans toward the overhang. On the `xs`
+   ramps, CPU, the mean effective overhang next to the underside comes down
+   to 43-46 degrees wherever the budget allows the tilt the rule asks for.
 
 ---
 
@@ -59,7 +64,7 @@ orientation on the atoms before `order_atoms` (`atom.frame_atoms`).
 | Global in `fff3` | Value | Used for |
 |---|---|---|
 | `MACHINE_MAX_SLOPE_ANGLE` | `max_slope` | only to compute the next one |
-| `MAX_SLOPE_ANGLE` | `min(max_slope, (180 - NOZZLE_CONE_ANGLE) / 2)` = `min(max_slope, 50)` | the ceiling threshold; the opt-in ortho-to-wall branch |
+| `MAX_SLOPE_ANGLE` | `min(max_slope, (180 - NOZZLE_CONE_ANGLE) / 2)` = `min(max_slope, 50)` for the 80-degree reference nozzle (the cone is the profile's `nozzle_cone_angle_deg` since plan_corrections P2-11: 60 for `dev60`) | the ceiling threshold; the opt-in ortho-to-wall branch |
 | `CEIL_MAX_ANGLE` | `MAX_SLOPE_ANGLE` | **which surfaces are ceilings** |
 | `FLOOR_MAX_ANGLE` | 1 degree | **not read by this stage** (the floor branch is commented out); read by stages 5 and 6 (section 3) |
 
@@ -292,7 +297,8 @@ Two more consequences:
 
 Tilting by `t` toward the overhang lowers the effective angle by `t`, so the
 steepest printable overhang is `max_overhang + usable tilt`, where the usable
-tilt is the machine's limit capped at 50 degrees by the nozzle (section 2.1).
+tilt is the machine's limit capped by the nozzle at `90 - cone / 2`: 50
+degrees for the reference nozzle, 60 for `dev60`'s (section 2.1).
 P2.5 counts a part only up to that minus the 2-degree margin.
 
 ```
@@ -311,11 +317,131 @@ usable tilt, 47 with the margin. The bound is an upper limit: it assumes the
 full tilt is available where the overhang is (gate M2) and reached before the
 overhang starts (P2.4). These are the numbers for gate D0.
 
-## 7. Open
+## 7. The overhang-aware field (build plan P2.2)
+
+### 7.1 What was built
+
+Switched on by `"overhang_aware": true` in the parameter file (or
+`overhang_report.py --overhang-aware`). Without it the pipeline runs
+upstream's code and commands exactly (`tests/test_atomize_stages.py`).
+
+* **The rule** (`init_overhang_aware` in `src/atom/orientation_field.py`;
+  the same rule in numpy in `src/atom/overhang_field.py`): upstream's
+  initialisation of section 2.2, plus one branch. A boundary cell whose
+  closest normal points down, with curvature below the threshold and not in
+  the first layer, and whose surface is steeper than `max_overhang_deg`, is
+  constrained to `[t, atan2(n_y, n_x)]`, with
+  `t = min(theta_geo - max_overhang_deg + overhang_margin_deg, budget)`.
+  The budget is section 2.1's `MAX_SLOPE_ANGLE`, and `max_slope` is the
+  machine profile's limit when the parameter file does not give one (the
+  operator's decision b, plan_corrections P2-11). `max_overhang_deg` 45 and
+  `overhang_margin_deg` 2 are gate D1 placeholders. P2.3's reachability map
+  will give a budget per position; until then it is one number.
+* **The field on the part before infill** (option (a), plan_corrections
+  P2-8). `atomize.py` has `bpn_to_sdf` write `data/sdf/<part>_solid.npz`,
+  `sdf_to_isdf` read it and write the usual `data/sdf/<part>.npz`, and stage
+  4 get `--solid_sdf`. The field is computed on the solid SDF and then set to
+  NaN wherever the infilled SDF is outside: exactly the cells upstream
+  masks, so no later stage sees a difference in which cells have a
+  direction. Without infill there is one SDF and nothing to route.
+* **Holding the overhang constraints** (`"hold_overhang": true`, off by
+  default): after each of the 32 final passes the overhang cells are put back
+  to their constraint, as upstream does for the first layer (P2-2).
+* Stage 4 runs all this through `atom.orientation_field.compute_direction_field`
+  when it is given `--overhang_aware` or `--solid_sdf`, and upstream's own
+  code otherwise. With every option off, `compute_direction_field` gives
+  upstream's field **bit for bit** (tested on the ramp, with and without
+  infill), so the new path is upstream's steps plus the additions, nothing
+  else. `fff3.py` is not edited (the plan placed a module flag there,
+  plan_corrections P2-12).
+
+### 7.2 Measured on the `xs` ramps
+
+`experiment/experiment_orientation_field_ramp.py` with `--infill
+--overhang-aware --solid [--hold]`: the exact SDF, Atomizer's infill kernel,
+CPU. Cells inside the part within 0.9 mm of the underside, away from its ends
+(as section 4.2). Development numbers, not comparable with the lab baseline.
+Budget 30 is the reference machine's; 60 is `dev60`'s (60-degree nozzle).
+
+| Ramp | Budget | Field on | Hold | Overhang constraints (capped) | Constraint above the underside | Tilt there, after the multigrid -> after the 32 passes | theta_eff mean / max | Lean toward |
+|---|---|---|---|---|---|---|---|---|
+| `ramp45` | 30 | solid | no | 11 678 (0) | 2.0 @ azimuth 0 | 2.0 -> 1.9 | 43.1 / 43.4 | +0.03 |
+| `ramp50` | 30 | solid | no | 13 686 (0) | 7.0 @ 0 | 6.9 -> 6.6 | 43.4 / 44.1 | +0.11 |
+| `ramp50` | 30 | solid | yes | 13 686 (0) | 7.0 @ 0 | 6.9 -> 6.9 | 43.1 / 43.8 | +0.12 |
+| `ramp60` | 30 | solid | no | 12 163 (0) | 17.0 @ 0 | 16.7 -> 16.0 | 44.0 / 45.3 | +0.27 |
+| `ramp60` | 30 | solid | yes | 12 163 (0) | 17.0 @ 0 | 16.7 -> 16.7 | 43.3 / 44.8 | +0.29 |
+| `ramp60` | 30 | **infilled** | no | 29 341 (**17 178**) | 19.3 @ 32 | 11.8 -> 3.4 | **57.3 / 64.6** | +0.05 |
+| `ramp70` | 30 | solid | no | 11 086 (0) | 27.0 @ 0 | 26.5 -> 25.4 | 44.6 / 46.5 | +0.43 |
+| `ramp70` | 30 | solid | yes | 11 086 (0) | 27.0 @ 0 | 26.5 -> 26.5 | 43.5 / 45.6 | +0.45 |
+| `ramp80` | 60 | stock (infilled, no rule) | no | 0 | 10.2 @ 178 (the inner surface) | 10.6 -> 10.6 | 89.3 / 90.0 | -0.18 |
+| `ramp80` | 60 | solid | no | 10 653 (0) | 37.0 @ 0 | 36.3 -> 34.9 | 45.1 / 48.2 | +0.57 |
+| `ramp80` | 60 | solid | yes | 10 653 (0) | 37.0 @ 0 | 36.3 -> 36.3 | 43.7 / 46.5 | +0.59 |
+| `ramp90` | 60 | solid | no | 7 724 (0) | 47.0 @ 0 | 45.9 -> 44.1 | 45.9 / 50.9 | 0 (flat) |
+| `ramp90` | 60 | solid | yes | 7 724 (0) | 47.0 @ 0 | 45.9 -> 45.9 | 44.1 / 48.4 | 0 (flat) |
+
+`ramp70` at 60 is identical to `ramp70` at 30: the rule asks for 27 degrees,
+inside both budgets. Stock with infill at 30 (section 4.2) was 88.2 on
+`ramp60` and 89.6 on `ramp70`.
+
+What it shows:
+
+* **The sign is right.** Every overhang-aware row leans toward the overhang
+  (stock: away), and the mean effective overhang next to the underside is
+  43-46 degrees on every ramp whose rule fits the budget, from `ramp45` to
+  the flat `ramp90` at 60. `tests/test_orientation_field.py` pins this on
+  `ramp70` at 30.
+* **Option (a) is necessary, not a refinement.** On the infilled SDF the rule
+  also fires on the hollow's and the gyroid's downward-facing surfaces:
+  17 178 more constraints than on the solid part, and 17 178 capped, so
+  surfaces facing nearly straight down, all through the interior. The field
+  next to the underside ends at 3.4 degrees of tilt and 57 degrees effective.
+* **The 32 final passes cost 0.1 to 1.8 degrees of tilt** (P2-2, now
+  measured), growing with the tilt the rule asks for. **Holding removes the
+  loss entirely**: the tilt after the passes equals the tilt after the
+  multigrid, and the worst effective angle drops by 0.3 to 2.5 degrees.
+* **The worst cell is still above 45 on `ramp70` to `ramp90`**, even with hold
+  (45.6 on `ramp70`, 46.5 on `ramp80`, 48.4 on `ramp90`). With hold, a
+  constrained cell sits at `theta_geo - t`, about 43, so these are cells of
+  the 0.9 mm band that carry no constraint (the constraints are 0.22 mm deep
+  on average), where the aligner blends toward the interior's direction. The 2-degree margin (gate D1) is about what these ramps
+  need on the mean, and not enough for the worst cell. Whether the metric on
+  atoms and toolpaths (P2.0, P2.5) sees the same is the next measurement.
+
+### 7.3 Behaviours to know
+
+* **A threshold, not a ramp.** A surface at `max_overhang_deg` gets nothing,
+  one just above it gets the whole margin: at 45.1 degrees the rule asks for
+  2.1. `ramp45`'s underside measures a little above 45 on the grid, so the
+  rule fires there with 2 degrees (harmless: its effective angle goes from 45
+  to 43). Whether the margin should fade in is for D1.
+* **A flat underside has no azimuth.** For `n = (0, 0, -1)` any lean lowers
+  the effective angle by the same amount, and `atan2(n_y, n_x)` is decided by
+  rounding. On the analytic ramp `n_y` is exactly 0 and the azimuth comes out
+  0 everywhere, so the constraints agree and the smoothing keeps them
+  (`ramp90` above). On a remeshed part the noise could point neighbouring
+  cells in different directions and the smoothing would average them toward
+  vertical. Not seen yet, because no remeshed flat underside has been run;
+  the T-shape part is the test, and a rule for it (a common azimuth per
+  underside, for example) would be P2.2 follow-up work.
+* **`overhang_priority` has nothing to decide cell by cell.** A cell has one
+  closest normal, so it is a ceiling (pointing up) or an overhang (pointing
+  down), never both; the "conflict" the plan describes happens between
+  neighbouring cells, through the smoothing, which is what the solid SDF and
+  hold address. No count of conflicting cells is logged because there are
+  none to count (plan_corrections P2-12).
+* **The cost** should be the stock stage's: the same multigrid solve and
+  passes, plus one copy per pass with hold. Not timed against stock yet; the
+  stage logs `Direction computation took` as upstream does, so the first
+  field-only run on the laptop will show it.
+
+## 8. Open
 
 | Question | Where it is decided |
 |---|---|
-| How P2.2 handles the infill's inner surfaces: (a), (b) or other | P2.2 design, with the operator (plan_corrections P2-8) |
+| ~~How P2.2 handles the infill's inner surfaces~~ | decided: option (a), built (section 7.1) |
 | Whether a stock-without-infill reference joins the comparison | the team, with D0 |
-| How much of an overhang constraint survives the 32 final passes | measured in P2.2's tiny-SDF test (P2-2) |
-| Whether the ceiling threshold should stay tied to `max_slope` once overhangs are constrained too | gate D1 (`overhang_priority`) |
+| ~~How much of an overhang constraint survives the 32 final passes~~ | measured: 0.3-1.9 degrees lost, none with hold (section 7.2) |
+| Whether `hold_overhang` should be on by default | the operator, with P2.2's field-only runs |
+| `max_overhang_deg` and the margin: is 2 degrees enough, should it fade in | gate D1, with P2.5's numbers (section 7.2, 7.3) |
+| The azimuth of a flat or nearly flat underside on a remeshed part | P2.2 follow-up, after a T-shape run (section 7.3) |
+| Whether the ceiling threshold should stay tied to `max_slope` once overhangs are constrained too | gate D1 |

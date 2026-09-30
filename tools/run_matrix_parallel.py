@@ -877,9 +877,10 @@ def main(argv=None):
     if reports:
         # Field-only runs (P2.0) keep their own section in the summary; a
         # matrix run rewriting the file must not drop it.
-        field_reports = orep.load_reports(quiet=True, field_only=True)
+        field_reports = orep.load_reports(quiet=True, field_only=True, overhang_aware=None)
+        aware_reports = orep.load_reports(quiet=True, overhang_aware=True)
         orep.SUMMARY_PATH.write_text(
-            orep.summarize(reports, field_reports), encoding="utf-8"
+            orep.summarize(reports, field_reports, aware_reports), encoding="utf-8"
         )
         print(f"\nWrote {orep.SUMMARY_PATH} from {len(reports)} report(s)")
         # The same warning `--summarize` prints. It is also inside the file, but

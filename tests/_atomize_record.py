@@ -17,9 +17,11 @@ Usage::
     python tests/_atomize_record.py CASES.json OUT.json WORKDIR
 
 ``CASES.json`` is a list of cases, each
-``{"name", "params": {...}, "argv": [...], "mode": "main" | "api", "only", "skip"}``.
+``{"name", "params": {...}, "argv": [...], "mode": "main" | "api", "only", "skip", "env"}``.
 "main" runs the command line with ``argv`` after the parameter file; "api"
 imports the module and calls ``run_stages(params, only=..., skip=...)``.
+``env`` sets environment variables for that case alone (``ATOM_MACHINE``, for
+a parameter file without ``max_slope``).
 """
 
 import contextlib
@@ -59,6 +61,8 @@ def run_case(case, workdir):
     previous_dir = os.getcwd()
     previous_system = os.system
     previous_argv = sys.argv
+    previous_env = {name: os.environ.get(name) for name in case.get("env", {})}
+    os.environ.update(case.get("env", {}))
     os.chdir(case_dir)
     os.system = record
     try:
@@ -84,6 +88,11 @@ def run_case(case, workdir):
         os.system = previous_system
         sys.argv = previous_argv
         os.chdir(previous_dir)
+        for name, value in previous_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
     log_path = case_dir / "data" / "log" / f"{case['params']['solid_name']}.log"
     return {

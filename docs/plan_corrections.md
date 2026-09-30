@@ -1929,6 +1929,11 @@ and uniform, so averaging it with itself changes little. A thin band of
 overhang constraints facing an opposite constraint 1.8 mm away (P2-8) is the
 case that matters, and it is still unmeasured.
 
+**Update (P2.2): measured.** Overhang constraints on the `xs` ramps lose 0.1
+to 1.8 degrees of tilt in the 32 passes, more the more tilt they ask for; an
+option `hold_overhang` puts them back after each pass and removes the loss
+(P2-12, `docs/orientation_field.md` section 7.2).
+
 #### P2-3 Where the stock tilt near an overhang comes from (found in P2.1: the infill, see the update)
 
 *Open question.* The per-surface data in the lab baseline
@@ -2259,3 +2264,74 @@ not yet a value (D0 stays open). The operator asked for:
    work (P2.0) does not use the kinematics at all.
 3. **Overhang-aware runs take their tilt budget from the profile**: built with
    P2.2 (P2-12).
+
+#### P2-12 P2.2 as built: a separate kernel, the field on the solid part, hold, and the budget from the profile
+
+*Definitions and deviations within P2.2; the results are in
+`docs/orientation_field.md` section 7.*
+
+* **No `fff3.py` flag.** The plan puts the overhang branch in `fff3.py` behind
+  a module flag `OVERHANG_AWARE`. Built instead: a new kernel,
+  `init_overhang_aware` in `src/atom/orientation_field.py`, which is
+  upstream's initialisation line for line plus the overhang branch, and
+  `compute_direction_field`, upstream's stage-4 steps plus P2.2's options.
+  `tools/compute_tool_orientations.py` (vendored) takes the new path only when
+  given `--overhang_aware` or `--solid_sdf`, before any of its own code runs;
+  otherwise it runs upstream's code, untouched. Reasons: `fff3.py` stays
+  byte-identical, and a module flag is baked in at compile time (hazard 12),
+  which makes flag-off identity harder to prove than a separate path. The
+  plan's flag-off test is met twice: the kernel with the rule off equals
+  upstream's initialisation, and `compute_direction_field` with its options
+  off equals the stage's output bit for bit (`tests/test_orientation_field.py`).
+* **Option (a) routing** (P2-8). With `overhang_aware` and `infill`,
+  `atomize.py` has `bpn_to_sdf` write `data/sdf/<part>_solid.npz`,
+  `sdf_to_isdf` read it and write `data/sdf/<part>.npz`, and stage 4 get
+  `--solid_sdf data/sdf/<part>_solid.npz`. The field is computed on the solid
+  SDF, then NaN where the infilled SDF is outside, the cells upstream masks.
+  Measured: without it the rule fires all through the hollow and the field
+  next to `ramp60`'s underside is 57 degrees effective, with it 44.
+* **`hold_overhang`** (new, not in the plan; P2-2's first option). Re-applies
+  the overhang constraints after each final pass. Measured: the passes cost
+  0.1-1.8 degrees of tilt without it, none with it. **Off by default until the
+  operator decides.**
+* **The budget.** `max_tilt_here` waits for P2.3's map; until then the cap is
+  `fff3.MAX_SLOPE_ANGLE`, `min(max_slope, 90 - cone / 2)`, which is also the
+  ceiling threshold. By the operator's decision (b) of 2026-09-30,
+  `max_slope` comes from the machine profile when the parameter file has none
+  (`atomize.py`; a vendored edit), and `overhang_report.py --overhang-aware`
+  uses the profile's limit unless `--max-slope` is given, because the part
+  files' `max_slope` (7) is stock Atomizer's.
+* **`overhang_priority` is not built.** The plan's conflict ("a cell also
+  qualifies as a ceiling") cannot happen: a cell has one closest normal,
+  pointing up (ceiling) or down (overhang). The real conflict is between
+  neighbouring cells through the smoothing, which the solid SDF and hold
+  address. No count is logged; there is nothing to count. P2.6's key list
+  still names it: whether it should mean something else is for D1.
+* **Parameter keys built now** (P2.6 in part): `overhang_aware`,
+  `max_overhang_deg`, `overhang_margin_deg`, `hold_overhang`. The rule's keys
+  without `overhang_aware`, and `overhang_aware` with `ortho_to_wall` or
+  `all_up` (not supported on the new path), are refused when the file is
+  read, before any stage. `config/schema/params.schema.json` does not exist
+  in this repository, so there is no schema to extend. The stage refuses the
+  same combinations on its own command line.
+* **The report tool.** `overhang_report.py --overhang-aware` writes
+  `<part>_ms<deg>_aware.json` (and archives) beside the stock ones, records
+  `"overhang_aware": true`, is kept out of `matrix_progress.csv` (it has no
+  column for it; P2.5 adds one), and gets its own section of the summary; the
+  field-only section splits stock from overhang-aware. Without the option
+  nothing changes, and the committed summary is reproduced exactly.
+* **The tests' ramp is not 16³.** The plan's tiny SDF has no room for the
+  infill's 1.8 mm shell to leave a hollow, which is the case that matters. The
+  tests use a 12 x 5.4 x 7.2 mm ramp (72 x 33 x 43 cells); on the CPU a field
+  costs about 20 s whatever the size, because Taichi compiles the aligner's
+  kernels for every new field, so the file shares three fields and takes
+  about 3 minutes.
+* **Found while measuring, for D1:** the rule is a threshold (at 45.1 degrees
+  it asks for 2.1, at 45 for nothing); a flat underside's azimuth is decided
+  by rounding, harmless on the analytic ramps, untested on a remeshed part;
+  and even with hold the worst cell next to the underside is 0.6-3.4 degrees
+  above 45 on `ramp70` to `ramp90`, so the 2-degree margin covers the mean,
+  not the worst cell.
+* **Still owed:** the plan's sign check on real output (a field-only
+  overhang-aware run of `ramp60_xs`, laptop), and the golden test after the
+  vendored edits to `atomize.py` and `compute_tool_orientations.py`.

@@ -9,8 +9,10 @@ import taichi as ti
 from atom.ti_env import init_taichi
 
 import atom.fff3
+from atom import machine_profile
 from atom.gcode_templates import temperature_arguments
 from atom.infill_options import infill_arguments
+from atom.overhang_field import overhang_arguments
 
 init_taichi("cpu", offline_cache_cleaning_policy="never")
 
@@ -46,7 +48,12 @@ class Parameters:
 
         self.deposition_width = param_dict["deposition_width"]
         self.solid_name = param_dict["solid_name"]
-        self.max_slope = param_dict["max_slope"]
+        # This fork (operator, 2026-09-30): without "max_slope", the tilt
+        # budget is the active machine profile's limit (ATOM_MACHINE). Every
+        # upstream parameter file gives it, and then nothing changes.
+        self.max_slope = param_dict.get("max_slope")
+        if self.max_slope is None:
+            self.max_slope = machine_profile.load_profile().max_tilt_angle_deg
 
         self.ortho_to_wall = param_dict.get("ortho_to_wall")
         if self.ortho_to_wall is None:
@@ -76,11 +83,26 @@ class Parameters:
         self.shell_thickness = param_dict.get("shell_thickness")
         self.infill_arguments = infill_arguments(self.infill_period, self.shell_thickness)
 
+        # Build plan P2.2: the optional overhang-aware field. Absent keys keep
+        # upstream's field and upstream's commands.
+        self.overhang_aware = param_dict.get("overhang_aware") is True
+        self.overhang_arguments = overhang_arguments(
+            param_dict.get("overhang_aware"),
+            param_dict.get("max_overhang_deg"),
+            param_dict.get("overhang_margin_deg"),
+            param_dict.get("hold_overhang"),
+        )
+        if self.overhang_aware and (self.ortho_to_wall or self.all_up):
+            raise ValueError('"overhang_aware" cannot be combined with "ortho_to_wall" or "all_up"')
+
         self.log_path = f"data/log/{self.solid_name}.log"
         self.stl_path = f"data/mesh/{self.solid_name}.stl"
         self.obj_path = f"data/mesh/{self.solid_name}.obj"
         self.bpn_path = f"data/point_normal/{self.solid_name}.npz"
         self.sdf_path = f"data/sdf/{self.solid_name}.npz"
+        # Build plan P2.2, plan_corrections P2-8 (a): an overhang-aware part
+        # with infill keeps its SDF from before infill here.
+        self.solid_sdf_path = f"data/sdf/{self.solid_name}_solid.npz"
         self.direction_path = f"data/direction/{self.solid_name}.npz"
         self.basis_path = f"data/basis/{self.solid_name}.npz"
         self.phasor_path = f"data/phasor/{self.solid_name}.npz"
@@ -188,16 +210,26 @@ def build_stage_commands(params: Parameters) -> List[Stage]:
     """
     cell_sides_length, layer_height = pipeline_geometry(params.deposition_width)
 
+    # Build plan P2.2, plan_corrections P2-8 (a): an overhang-aware part with
+    # infill writes its SDF from before infill to its own file, the infill
+    # stage reads it from there, and the field is computed on it. Otherwise
+    # upstream's single file, and upstream's commands exactly.
+    keep_solid_sdf = params.overhang_aware and params.infill
+    bpn_sdf_path = params.solid_sdf_path if keep_solid_sdf else params.sdf_path
+
     process_mesh_command = f"blender -b -P tools/process_for_atomizer.py -- {params.stl_path} {params.obj_path} {cell_sides_length * 0.5:.6f}"
     obj_to_bpn_cmd = f"python tools/obj_to_bpn.py {params.obj_path} {params.bpn_path}"
-    bpn_to_sdf_cmd = f"python tools/bpn_to_sdf.py {params.bpn_path} {params.sdf_path} {params.deposition_width:.2f}"
-    sdf_to_isdf_cmd = f"python tools/sdf_to_isdf.py {params.bpn_path} {params.sdf_path} {params.sdf_path} no_gui=True{params.infill_arguments}"
+    bpn_to_sdf_cmd = f"python tools/bpn_to_sdf.py {params.bpn_path} {bpn_sdf_path} {params.deposition_width:.2f}"
+    sdf_to_isdf_cmd = f"python tools/sdf_to_isdf.py {params.bpn_path} {bpn_sdf_path} {params.sdf_path} no_gui=True{params.infill_arguments}"
 
     compute_tool_orientations_cmd = f"python tools/compute_tool_orientations.py {params.sdf_path} {params.direction_path} --maxslope {params.max_slope}"
     if params.ortho_to_wall:
         compute_tool_orientations_cmd += " --ortho_to_wall"
     if params.all_up:
         compute_tool_orientations_cmd += " --allup"
+    compute_tool_orientations_cmd += params.overhang_arguments
+    if keep_solid_sdf:
+        compute_tool_orientations_cmd += f" --solid_sdf {params.solid_sdf_path}"
     compute_tool_orientations_cmd += f" --logpath {params.log_path}"
 
     sdf_df_to_layers_cmd = f"python tools/sdf_df_to_layers.py {params.sdf_path} {params.direction_path} {params.phasor_path} --maxslope {params.max_slope}"

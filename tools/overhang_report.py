@@ -218,7 +218,8 @@ def first_failed_stage(part, started_wall_s, root=None, artifacts=STAGE_ARTIFACT
     return None
 
 
-def run_pipeline(param_path, max_slope_deg, verify_stages=True, field_only=False):
+def run_pipeline(param_path, max_slope_deg, verify_stages=True, field_only=False,
+                 overhang_aware=False):
     """Run `tools/atomize.py`, optionally overriding ``max_slope``.
 
     The override is applied through a temporary copy of the parameter file, so
@@ -235,8 +236,17 @@ def run_pipeline(param_path, max_slope_deg, verify_stages=True, field_only=False
 
     ``field_only`` stops the pipeline after atom extraction (build plan P2.0)
     and checks only the stages that ran.
+
+    ``overhang_aware`` (build plan P2.2) runs the overhang-aware field. Its
+    tilt budget, unless ``max_slope_deg`` is given, is the active machine
+    profile's limit rather than the part file's ``max_slope``, which is
+    written for stock Atomizer (`overhang_aware_slope`).
     """
     params = json.loads(Path(param_path).read_text(encoding="utf-8"))
+    if overhang_aware:
+        params["overhang_aware"] = True
+        if max_slope_deg is None:
+            max_slope_deg = overhang_aware_slope()
     if max_slope_deg is not None:
         params["max_slope"] = float(max_slope_deg)
 
@@ -329,6 +339,7 @@ def measure(
     toolpath_path=None,
     stl_path=None,
     provenance=None,
+    overhang_aware=False,
 ):
     """Apply the three metrics and assemble the report.
 
@@ -391,7 +402,7 @@ def measure(
         "metrics_version": METRICS_VERSION,
         "part": part,
         "max_slope_deg": max_slope_deg,
-        "overhang_aware": False,
+        "overhang_aware": bool(overhang_aware),
         "deposition_width_mm": deposition_width,
         "mesh": _mesh_block(mesh, areas),
         "toolpath": {
@@ -464,6 +475,7 @@ def measure_field_only(
     frame_path=None,
     stl_path=None,
     provenance=None,
+    overhang_aware=False,
 ):
     """The field-only report: the metrics measured on the atoms (build plan P2.0).
 
@@ -522,7 +534,7 @@ def measure_field_only(
         "mode": MODE_FIELD_ONLY,
         "part": part,
         "max_slope_deg": max_slope_deg,
-        "overhang_aware": False,
+        "overhang_aware": bool(overhang_aware),
         "deposition_width_mm": deposition_width,
         "mesh": _mesh_block(mesh, areas),
         "atoms": {
@@ -624,42 +636,62 @@ def append_progress(report):
         os.fsync(handle.fileno())
 
 
-def report_path(part, max_slope_deg):
-    return REPORT_DIR / f"{part}_ms{max_slope_deg:g}.json"
+#: Appended to an overhang-aware run's file names (build plan P2.2), so stock
+#: and overhang-aware results of one part and slope never overwrite each other.
+AWARE_SUFFIX = "_aware"
 
 
-def archive_path(part, max_slope_deg):
-    return TOOLPATH_ARCHIVE / f"{part}_ms{max_slope_deg:g}.npz"
+def _stem(part, max_slope_deg, overhang_aware=False):
+    return f"{part}_ms{max_slope_deg:g}{AWARE_SUFFIX if overhang_aware else ''}"
 
 
-def archive_toolpath(part, max_slope_deg):
+def report_path(part, max_slope_deg, overhang_aware=False):
+    return REPORT_DIR / f"{_stem(part, max_slope_deg, overhang_aware)}.json"
+
+
+def archive_path(part, max_slope_deg, overhang_aware=False):
+    return TOOLPATH_ARCHIVE / f"{_stem(part, max_slope_deg, overhang_aware)}.npz"
+
+
+def archive_toolpath(part, max_slope_deg, overhang_aware=False):
     """Keep this run's toolpath, so its metrics can be recomputed later."""
     source = REPO_ROOT / "data" / "toolpath" / f"{part}_smoothed.npz"
     if not source.is_file():
         return None
     TOOLPATH_ARCHIVE.mkdir(parents=True, exist_ok=True)
-    destination = archive_path(part, max_slope_deg)
+    destination = archive_path(part, max_slope_deg, overhang_aware)
     shutil.copy2(source, destination)
     return destination
 
 
-def field_only_report_path(part, max_slope_deg):
-    return FIELD_ONLY_DIR / f"{part}_ms{max_slope_deg:g}.json"
+def field_only_report_path(part, max_slope_deg, overhang_aware=False):
+    return FIELD_ONLY_DIR / f"{_stem(part, max_slope_deg, overhang_aware)}.json"
 
 
-def frame_archive_path(part, max_slope_deg):
-    return FRAME_ARCHIVE / f"{part}_ms{max_slope_deg:g}.npz"
+def frame_archive_path(part, max_slope_deg, overhang_aware=False):
+    return FRAME_ARCHIVE / f"{_stem(part, max_slope_deg, overhang_aware)}.npz"
 
 
-def archive_frame(part, max_slope_deg):
+def archive_frame(part, max_slope_deg, overhang_aware=False):
     """Keep a field-only run's atoms, so its metrics can be recomputed later."""
     source = REPO_ROOT / "data" / "frame" / f"{part}.npz"
     if not source.is_file():
         return None
     FRAME_ARCHIVE.mkdir(parents=True, exist_ok=True)
-    destination = frame_archive_path(part, max_slope_deg)
+    destination = frame_archive_path(part, max_slope_deg, overhang_aware)
     shutil.copy2(source, destination)
     return destination
+
+
+def overhang_aware_slope():
+    """The tilt budget of an overhang-aware run: the active machine profile's limit.
+
+    The operator's decision of 2026-09-30 (plan_corrections 7c P2-11): the
+    part files' ``max_slope`` values (7 degrees) are stock Atomizer's.
+    """
+    from atom import machine_profile
+
+    return float(machine_profile.load_profile().max_tilt_angle_deg)
 
 
 def reanalyse(reports):
@@ -673,9 +705,10 @@ def reanalyse(reports):
 
     for old in reports:
         part, slope = old["part"], old["max_slope_deg"]
-        archived = archive_path(part, slope)
+        aware = bool(old.get("overhang_aware", False))
+        archived = archive_path(part, slope, aware)
         if not archived.is_file():
-            skipped.append(f"{part} @ {slope:g} (no archived toolpath)")
+            skipped.append(f"{part} @ {slope:g}{' aware' if aware else ''} (no archived toolpath)")
             continue
 
         # The toolpath still comes from the original run, so its provenance is
@@ -692,8 +725,9 @@ def reanalyse(reports):
                 prov.rescored(old_provenance, REPO_ROOT, METRICS_VERSION)
                 if isinstance(old_provenance, dict) else None
             ),
+            overhang_aware=aware,
         )
-        report_path(part, slope).write_text(
+        report_path(part, slope, aware).write_text(
             json.dumps(fresh, indent=2) + "\n", encoding="utf-8"
         )
         rewritten.append(fresh)
@@ -710,9 +744,12 @@ def reanalyse_field_only(reports):
 
     for old in reports:
         part, slope = old["part"], old["max_slope_deg"]
-        archived = frame_archive_path(part, slope)
+        aware = bool(old.get("overhang_aware", False))
+        archived = frame_archive_path(part, slope, aware)
         if not archived.is_file():
-            skipped.append(f"{part} @ {slope:g} field-only (no archived atoms)")
+            skipped.append(
+                f"{part} @ {slope:g} field-only{' aware' if aware else ''} (no archived atoms)"
+            )
             continue
 
         old_provenance = old.get("provenance")
@@ -727,8 +764,9 @@ def reanalyse_field_only(reports):
                 prov.rescored(old_provenance, REPO_ROOT, METRICS_VERSION)
                 if isinstance(old_provenance, dict) else None
             ),
+            overhang_aware=aware,
         )
-        field_only_report_path(part, slope).write_text(
+        field_only_report_path(part, slope, aware).write_text(
             json.dumps(fresh, indent=2) + "\n", encoding="utf-8"
         )
         rewritten.append(fresh)
@@ -882,16 +920,44 @@ def _field_only_section(reports):
         "toolpath.",
         "",
     ]
+    stock = [r for r in reports if not r.get("overhang_aware", False)]
+    aware = [r for r in reports if r.get("overhang_aware", False)]
+    for title, group in (("Stock", stock), ("Overhang-aware (build plan P2.2)", aware)):
+        if not group:
+            continue
+        if stock and aware:
+            lines += [f"### {title}", ""]
+        elif aware:
+            lines += ["All overhang-aware (build plan P2.2).", ""]
+        lines += _provenance_section(group)
+        lines += _table(group, _format_field_only_cell) + [""]
+    return lines[:-1]
+
+
+def _aware_section(reports):
+    """Full overhang-aware runs (build plan P2.2), in a table of their own."""
+    lines = [
+        "## Overhang-aware runs (build plan P2.2)",
+        "",
+        "Full runs with the overhang-aware field (`overhang_report.py "
+        "--overhang-aware`), cells as in the table above. Their tilt budget is "
+        "the machine profile's limit unless a run set it. P2.5 puts the "
+        "comparison side by side; until then compare a cell only with a stock "
+        "run from the same provenance group.",
+        "",
+    ]
     lines += _provenance_section(reports)
-    lines += _table(reports, _format_field_only_cell)
+    lines += _table(reports, _format_cell)
     return lines
 
 
-def summarize(reports, field_only_reports=()):
+def summarize(reports, field_only_reports=(), aware_reports=()):
     """Build the comparison table and the plain-language conclusion.
 
-    ``field_only_reports`` (build plan P2.0) get a section and a table of
-    their own, after the conclusion; they never enter the main table.
+    ``reports`` are the stock full runs, the baseline. ``aware_reports``
+    (build plan P2.2, full overhang-aware runs) and ``field_only_reports``
+    (P2.0, stock and overhang-aware) get sections and tables of their own,
+    after the conclusion; they never enter the main table.
     """
     slopes = sorted({r["max_slope_deg"] for r in reports})
 
@@ -915,6 +981,8 @@ def summarize(reports, field_only_reports=()):
     lines += _table(reports, _format_cell)
 
     lines += ["", "## Conclusion", ""] + _conclusion(reports, slopes)
+    if aware_reports:
+        lines += [""] + _aware_section(list(aware_reports))
     if field_only_reports:
         lines += [""] + _field_only_section(list(field_only_reports))
     lines += [""] + _timing_section(reports)
@@ -1079,9 +1147,14 @@ def _conclusion(reports, slopes):
     return [" ".join(sentences)]
 
 
-def load_reports(quiet=False, field_only=False):
+def load_reports(quiet=False, field_only=False, overhang_aware=False):
     """Every valid report on disk: the full runs, or with ``field_only`` the
     field-only ones (build plan P2.0).
+
+    ``overhang_aware`` (build plan P2.2) picks stock runs (False, the
+    default), overhang-aware ones (True) or both (None). The default keeps
+    every older caller (`--status`, `--check-done`, the parallel runner's
+    `--resume`, the baseline table) on stock runs only.
 
     A report truncated mid-write, which a power loss can do, is reported and
     skipped rather than taking the whole summary down with it. So is a report
@@ -1112,6 +1185,8 @@ def load_reports(quiet=False, field_only=False):
                 f"  Skipping {path.name}: a {report_mode(data)} report in "
                 f"{directory}, which holds {expected_mode} reports only. Move it."
             )
+            continue
+        if overhang_aware is not None and bool(data.get("overhang_aware", False)) != overhang_aware:
             continue
         reports.append(data)
     return reports
@@ -1166,6 +1241,14 @@ def main(argv=None):
     parser.add_argument(
         "--skip-pipeline", action="store_true",
         help="Measure the toolpath already in data/ instead of re-running.",
+    )
+    parser.add_argument(
+        "--overhang-aware", action="store_true",
+        help=(
+            "Build plan P2.2: run the overhang-aware field. Its tilt budget is "
+            "the machine profile's limit (ATOM_MACHINE) unless --max-slope is "
+            "given. Reports are named <part>_ms<deg>_aware, beside the stock ones."
+        ),
     )
     parser.add_argument(
         "--field-only", action="store_true",
@@ -1245,8 +1328,8 @@ def main(argv=None):
         return 0
 
     if args.reanalyse:
-        existing = load_reports()
-        field_existing = load_reports(field_only=True)
+        existing = load_reports(overhang_aware=None)
+        field_existing = load_reports(field_only=True, overhang_aware=None)
         if not existing and not field_existing:
             raise SystemExit(f"No reports in {REPORT_DIR} or {FIELD_ONLY_DIR} to re-score.")
         rewritten, skipped = reanalyse(existing)
@@ -1260,16 +1343,24 @@ def main(argv=None):
             )
         if field_rewritten:
             print(f"Re-scored {len(field_rewritten)} field-only run(s) in {FIELD_ONLY_DIR}.")
-        if not rewritten:
+        stock_rewritten = [r for r in rewritten if not r.get("overhang_aware", False)]
+        aware_rewritten = [r for r in rewritten if r.get("overhang_aware", False)]
+        if not stock_rewritten:
             print(
-                f"The summary was not rewritten: no full run could be re-scored, "
-                f"and {SUMMARY_PATH.name} is built around the full runs."
+                f"The summary was not rewritten: no stock full run could be re-scored, "
+                f"and {SUMMARY_PATH.name} is built around them."
             )
             return 0
         SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SUMMARY_PATH.write_text(summarize(rewritten, field_rewritten), encoding="utf-8")
+        SUMMARY_PATH.write_text(
+            summarize(stock_rewritten, field_rewritten, aware_rewritten), encoding="utf-8"
+        )
         print(f"Re-scored {len(rewritten)} run(s); wrote {SUMMARY_PATH}.")
-        for label, group in (("", rewritten), ("Field-only runs: ", field_rewritten)):
+        for label, group in (
+            ("", stock_rewritten),
+            ("Overhang-aware runs: ", aware_rewritten),
+            ("Field-only runs: ", field_rewritten),
+        ):
             warning = provenance_warning(group) if group else None
             if warning:
                 print("\n" + label + warning)
@@ -1277,14 +1368,23 @@ def main(argv=None):
 
     if args.summarize:
         reports = load_reports()
-        field_reports = load_reports(field_only=True)
+        aware_reports = load_reports(overhang_aware=True)
+        field_reports = load_reports(field_only=True, overhang_aware=None)
         if not reports:
             raise SystemExit(f"No reports in {REPORT_DIR}. Run some parts first.")
         SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SUMMARY_PATH.write_text(summarize(reports, field_reports), encoding="utf-8")
-        extra = f" and {len(field_reports)} field-only" if field_reports else ""
+        SUMMARY_PATH.write_text(summarize(reports, field_reports, aware_reports), encoding="utf-8")
+        extra = "".join(
+            f" + {len(group)} {name}"
+            for name, group in (("overhang-aware", aware_reports), ("field-only", field_reports))
+            if group
+        )
         print(f"Wrote {SUMMARY_PATH} from {len(reports)}{extra} report(s).")
-        for label, group in (("", reports), ("Field-only runs: ", field_reports)):
+        for label, group in (
+            ("", reports),
+            ("Overhang-aware runs: ", aware_reports),
+            ("Field-only runs: ", field_reports),
+        ):
             warning = provenance_warning(group) if group else None
             if warning:
                 print("\n" + label + warning)
@@ -1297,14 +1397,24 @@ def main(argv=None):
 
     params = json.loads(args.param_path.read_text(encoding="utf-8"))
     part = params["solid_name"]
-    max_slope = args.max_slope if args.max_slope is not None else params["max_slope"]
+    aware = args.overhang_aware
+    if args.max_slope is not None:
+        max_slope = args.max_slope
+    elif aware:
+        max_slope = overhang_aware_slope()
+    else:
+        max_slope = params["max_slope"]
 
     runtime_s, stage_times, stage_arches = 0.0, {}, {}
     if not args.skip_pipeline:
         kind = "up to atom extraction (field-only)" if args.field_only else "the pipeline"
-        print(f"Running {kind}: {part} at max_slope {max_slope:g}°")
+        field = "overhang-aware" if aware else "stock"
+        print(f"Running {kind}: {part}, {field} field, at max_slope {max_slope:g}°")
+        # args.max_slope, not max_slope: without --max-slope a stock run uses
+        # the part file untouched, and run_pipeline gives an overhang-aware
+        # one the profile's limit, as above.
         runtime_s, _, stage_arches = run_pipeline(
-            args.param_path, args.max_slope, field_only=args.field_only
+            args.param_path, args.max_slope, field_only=args.field_only, overhang_aware=aware
         )
 
     log_path = REPO_ROOT / "data" / "log" / f"{part}.log"
@@ -1322,35 +1432,36 @@ def main(argv=None):
     if args.field_only:
         report = measure_field_only(
             part, max_slope, float(params["deposition_width"]), runtime_s, stage_times,
-            provenance=provenance,
+            provenance=provenance, overhang_aware=aware,
         )
         if not args.skip_pipeline:
-            archived = archive_frame(part, max_slope)
+            archived = archive_frame(part, max_slope, aware)
             if archived is not None:
                 print(f"Archived the atoms to {archived}")
-        destination = field_only_report_path(part, max_slope)
+        destination = field_only_report_path(part, max_slope, aware)
     else:
         report = measure(
             part, max_slope, float(params["deposition_width"]), runtime_s, stage_times,
-            provenance=provenance,
+            provenance=provenance, overhang_aware=aware,
         )
         if not args.skip_pipeline:
-            archived = archive_toolpath(part, max_slope)
+            archived = archive_toolpath(part, max_slope, aware)
             if archived is not None:
                 print(f"Archived the toolpath to {archived}")
-        destination = report_path(part, max_slope)
+        destination = report_path(part, max_slope, aware)
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     # The progress log has no column saying how a run was made, so a
-    # field-only row would read as a full run's. It records full runs only.
-    if not args.field_only:
+    # field-only or overhang-aware row would read as a stock full run's. It
+    # records stock full runs only, until P2.5 gives it that column.
+    if not args.field_only and not aware:
         append_progress(report)
 
     verdict = report["verdict"]
     worst = verdict["worst_effective_deg"]
     near = report["metrics"]["unsupported_fraction_near_overhangs"]
-    heading = f"{part} at max_slope {max_slope:g}°"
+    heading = f"{part} at max_slope {max_slope:g}°{', overhang-aware' if aware else ''}"
     if args.field_only:
         heading += f" (field-only: {report['atoms']['count']} atoms, no print order)"
     print(f"\n{heading}")

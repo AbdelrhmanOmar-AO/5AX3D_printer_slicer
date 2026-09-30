@@ -319,12 +319,14 @@ The parameters in the JSON file are:
 
 * `solid_name`: the filename of the STL representing the 3D solid, without the extension. The STL file must be located in the `data/mesh/` folder and have the `.stl` extension.
 * `deposition_width`: the deposition width in millimeters. The layer height is half the deposition width in our implementation.
-* `max_slope`: the maximum tilting angle of the tool, in degrees.
+* `max_slope`: the maximum tilting angle of the tool, in degrees. Optional in this fork: without it, the active machine profile's `max_tilt_angle_deg` is used (`ATOM_MACHINE`, see above).
 * `top_lines` and `bottom_lines` (optional): paths to single-channel, 8-bit-per-pixel PNG files representing the target tangent directions for the top and bottom surfaces, respectively. The mapping is $\[0, 255] \leftarrow \[−\pi/2, \pi/2]\$. The orientation defines a 2D line in the xy-plane. The 2D line field is defined on the upper face of the solid’s bounding box and is planarly projected onto the top and bottom surfaces along the z-axis.
 * `ortho_to_wall` (optional): if true, forces the tool orientation to be parallel to the boundary. By default, this is false, as enabling this feature causes many tool orientation changes that are detrimental to surface quality.
 * `infill` (optional): if true, a gyroid pattern infills the solid.
 * `infill_period` and `shell_thickness` (optional, this fork, used when `infill` is true): the gyroid's period and the solid shell under the surface, both in deposition widths. Defaults 8 and 2, the upstream values. `tools/sdf_to_isdf.py` takes the same as `--infill-period` and `--shell-thickness`.
 * `bed_temp` and `nozzle_temp` (optional, this fork): the bed and nozzle temperatures in °C written into the G-code header. Defaults 55 and 210, the upstream values; leaving them out gives exactly the upstream header. `tools/toolpath_to_gcode.py` takes the same as `--bed-temp` and `--nozzle-temp`.
+* `overhang_aware` (optional, this fork, build plan P2.2): if true, downward-facing surfaces steeper than `max_overhang_deg` get a constrained tool direction leaning toward the overhang by `theta_geo - max_overhang_deg + overhang_margin_deg`, capped by the tilt budget; with `infill`, the field is computed on the part before infill. See [`docs/orientation_field.md`](docs/orientation_field.md) section 7. Absent or false gives exactly the upstream pipeline. Cannot be combined with `ortho_to_wall` or `all_up`.
+* `max_overhang_deg`, `overhang_margin_deg` and `hold_overhang` (optional, this fork, need `overhang_aware`): the steepest overhang left alone (default 45), the extra tilt (default 2), both gate D1 placeholders; and whether to re-apply the overhang constraints after each of the field's final smoothing passes (default false).
 
 The inputs and outputs are:
 

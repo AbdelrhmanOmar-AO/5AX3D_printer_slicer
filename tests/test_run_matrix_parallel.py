@@ -929,9 +929,13 @@ def test_a_mixed_table_is_announced_on_screen(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(orep, "append_progress", lambda report: None)
     monkeypatch.setattr(
         orep, "load_reports",
-        lambda quiet=False, field_only=False: [] if field_only else [{"part": "a"}, {"part": "b"}],
+        lambda quiet=False, field_only=False, overhang_aware=False: (
+            [] if field_only or overhang_aware is not False else [{"part": "a"}, {"part": "b"}]
+        ),
     )
-    monkeypatch.setattr(orep, "summarize", lambda reports, field_only_reports=(): "table\n")
+    monkeypatch.setattr(
+        orep, "summarize", lambda reports, field_only_reports=(), aware_reports=(): "table\n"
+    )
     monkeypatch.setattr(orep, "SUMMARY_PATH", tmp_path / "summary.md")
     monkeypatch.setattr(orep, "provenance_warning", lambda reports: "WARNING: this table mixes 2 provenance groups")
     monkeypatch.setattr(rmp, "create_worker",

@@ -82,6 +82,29 @@ def _new_cases():
         },
         {"name": "api_absent_stage", "params": plain, "mode": "api", "only": ["sdf_to_isdf"]},
         {"name": "api_unknown", "params": cube, "mode": "api", "only": ["remesh"]},
+        *_overhang_cases(),
+    ]
+
+
+def _overhang_cases():
+    """Cases for build plan P2.2's parameter-file keys."""
+    cube = CASE_PARAMS["calibration_cube"]
+    plain = CASE_PARAMS["no_infill"]
+    no_slope = {key: value for key, value in cube.items() if key != "max_slope"}
+    return [
+        {"name": "aware_infill", "params": {**cube, "overhang_aware": True}},
+        {
+            "name": "aware_no_infill",
+            "params": {
+                **plain, "overhang_aware": True, "max_overhang_deg": 50,
+                "overhang_margin_deg": 1.5, "hold_overhang": True,
+            },
+        },
+        {"name": "aware_off", "params": {**cube, "overhang_aware": False}},
+        {"name": "slope_reference", "params": no_slope, "env": {"ATOM_MACHINE": "reference"}},
+        {"name": "slope_dev60", "params": no_slope, "env": {"ATOM_MACHINE": "dev60"}},
+        {"name": "aware_rule_key_alone", "params": {**cube, "max_overhang_deg": 50}},
+        {"name": "aware_with_ortho", "params": {**cube, "overhang_aware": True, "ortho_to_wall": True}},
     ]
 
 
@@ -245,4 +268,92 @@ def test_a_stage_the_part_does_not_use_is_simply_absent(recorded_now):
 def test_an_unknown_stage_name_is_refused(recorded_now):
     run = recorded_now["api_unknown"]
     assert run["error"].startswith("ValueError: Unknown stage name(s): remesh.")
+    assert run["commands"] == []
+
+
+# --------------------------------------------------------------------------
+# Build plan P2.2: the overhang-aware keys
+# --------------------------------------------------------------------------
+
+
+def _replaced(commands, replacements):
+    """``commands`` with each ``{prefix: command}`` swapped in where it starts one."""
+    out = []
+    for command in commands:
+        prefix = next((p for p in replacements if command.startswith(p)), None)
+        out.append(replacements[prefix] if prefix else command)
+    return out
+
+
+def test_an_overhang_aware_part_with_infill_keeps_its_solid_sdf(recorded_now):
+    """plan_corrections P2-8 (a): the SDF from before infill goes to its own file.
+
+    `bpn_to_sdf` writes it, `sdf_to_isdf` reads it and writes the usual file,
+    and stage 4 gets the rule and the solid SDF. Every other command is
+    upstream's.
+    """
+    run = recorded_now["aware_infill"]
+    assert run["error"] is None
+    solid = "data/sdf/calibration_cube_solid.npz"
+    expected = _replaced(
+        RECORDED["results"]["calibration_cube"]["commands"],
+        {
+            "python tools/bpn_to_sdf.py": f"python tools/bpn_to_sdf.py data/point_normal/calibration_cube.npz {solid} 0.90",
+            "python tools/sdf_to_isdf.py": f"python tools/sdf_to_isdf.py data/point_normal/calibration_cube.npz {solid} data/sdf/calibration_cube.npz no_gui=True",
+            "python tools/compute_tool_orientations.py": (
+                "python tools/compute_tool_orientations.py data/sdf/calibration_cube.npz "
+                "data/direction/calibration_cube.npz --maxslope 7.0 --overhang_aware "
+                f"--max_overhang 45 --overhang_margin 2 --solid_sdf {solid} "
+                "--logpath data/log/calibration_cube.log"
+            ),
+        },
+    )
+    assert run["commands"] == expected
+
+
+def test_an_overhang_aware_part_without_infill_has_one_sdf(recorded_now):
+    run = recorded_now["aware_no_infill"]
+    assert run["error"] is None
+    expected = _replaced(
+        RECORDED["results"]["no_infill"]["commands"],
+        {
+            "python tools/compute_tool_orientations.py": (
+                "python tools/compute_tool_orientations.py data/sdf/plain.npz "
+                "data/direction/plain.npz --maxslope 30.0 --overhang_aware --max_overhang 50 "
+                "--overhang_margin 1.5 --hold_overhang --logpath data/log/plain.log"
+            ),
+        },
+    )
+    assert run["commands"] == expected
+    assert "--solid_sdf" not in " ".join(run["commands"])
+
+
+def test_overhang_aware_false_is_upstreams_run(recorded_now):
+    for field in ("commands", "stdout", "log"):
+        assert recorded_now["aware_off"][field] == RECORDED["results"]["calibration_cube"][field]
+
+
+@pytest.mark.parametrize("case,slope", [("slope_reference", "30.0"), ("slope_dev60", "60.0")])
+def test_without_max_slope_the_budget_is_the_machine_profiles(recorded_now, case, slope):
+    """Operator, 2026-09-30: the tilt budget follows ``ATOM_MACHINE``'s profile."""
+    run = recorded_now[case]
+    assert run["error"] is None
+    expected = [
+        command.replace("--maxslope 7.0", f"--maxslope {slope}")
+        for command in RECORDED["results"]["calibration_cube"]["commands"]
+    ]
+    assert run["commands"] == expected
+    assert f"- Machine max slope angle: {slope} degrees" in run["log"]
+
+
+@pytest.mark.parametrize(
+    "case,message",
+    [
+        ("aware_rule_key_alone", "need"),
+        ("aware_with_ortho", "cannot be combined"),
+    ],
+)
+def test_bad_overhang_keys_stop_before_any_stage(recorded_now, case, message):
+    run = recorded_now[case]
+    assert run["error"].startswith("ValueError: ") and message in run["error"]
     assert run["commands"] == []
