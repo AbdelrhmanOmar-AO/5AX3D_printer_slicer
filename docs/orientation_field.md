@@ -435,6 +435,38 @@ What it shows:
   stage logs `Direction computation took` as upstream does, so the first
   field-only run on the laptop will show it.
 
+### 7.4 The first run on real output (laptop, 2026-09-30)
+
+`python tools/overhang_report.py data/param/ramp60_xs.json --max-slope 30
+--field-only --overhang-aware`, the laptop, stock backend mix, `reference`
+profile, hold on (commit `0c7bad9`):
+
+| | Stock (P2.0 run) | Overhang-aware |
+|---|---|---|
+| Worst effective overhang | 89.1 | **56.1** |
+| Max tilt used | 29.1 | 21.6 |
+| Overhang constraints | – | 12 099 cells, none capped |
+| Direction computation | – | 36.3 s |
+
+**Where the 56 comes from.** The same stages 4-8 run here on the CPU from the
+exact SDF (no Blender) give a worst of 52.1 and a mean of 43.6 over the 6 671
+atom samples next to the underside. By position along the underside:
+
+| Part of the underside | Mean | Worst | Samples over 45 | Mean tilt |
+|---|---|---|---|---|
+| First 5 %, where the column's vertical wall turns into the overhang | 46.1 | **52.1** | 58 % | 13.9 |
+| 5-95 % | 43.2-43.6 | 46.4 | 0-24 % | 16.4-16.8 |
+| Last 5 %, at the tip | 44.0 | 46.0 | 47 % | 16.0 |
+
+The worst atoms sit just below the corner, at `x` = 20.5 mm against the
+corner's 21, with 8-10 degrees of tilt instead of 17: the field turns from
+the column's vertical direction to the overhang's 17 degrees over about a
+millimetre, and the first strip of overhang is printed before it has turned.
+This is the case build plan **P2.4** (tilt ramp-in) exists for: start the
+tilt below the overhang so it is complete where the overhang begins. The
+laptop's 56 against 52 here is the remeshed SDF against the exact one; the
+laptop's per-position numbers have not been measured.
+
 ## 8. Open
 
 | Question | Where it is decided |
@@ -445,4 +477,5 @@ What it shows:
 | ~~Whether `hold_overhang` should be on by default~~ | decided: on (operator, 2026-09-30). Not yet checked: whether it makes the nozzle turn less smoothly near overhangs (P2.5) |
 | `max_overhang_deg` and the margin: is 2 degrees enough, should it fade in | kept as they are for now (operator, 2026-09-30); gate D1 can revisit with P2.5's numbers |
 | The azimuth of a flat or nearly flat underside on a remeshed part | P2.2 follow-up, after a T-shape run (section 7.3) |
+| The corner where a wall turns into an overhang prints before the tilt is complete (worst 52-56 on `ramp60_xs`) | build plan P2.4, tilt ramp-in (section 7.4) |
 | Whether the ceiling threshold should stay tied to `max_slope` once overhangs are constrained too | gate D1 |

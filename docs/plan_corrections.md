@@ -2340,6 +2340,13 @@ not yet a value (D0 stays open). The operator asked for:
   above 45 on `ramp70` to `ramp90`, so the 2-degree margin covers the mean,
   not the worst cell. **The operator's answer, 2026-09-30: keep it** (the
   2-degree margin, and the rule switching on at 45 with no fade-in).
-* **Still owed:** the plan's sign check on real output (a field-only
-  overhang-aware run of `ramp60_xs`, laptop), and the golden test after the
-  vendored edits to `atomize.py` and `compute_tool_orientations.py`.
+* **Laptop, 2026-09-30, on `0c7bad9`:** golden test 5 passed, 1 skipped
+  (460 s), so the output with the option off is unchanged after the vendored
+  edits. The sign check on real output: field-only `ramp60_xs` at 30,
+  overhang-aware, **worst effective overhang 56.1 against stock's 89.1**, max
+  tilt 21.6. The field leans the right way; the remaining excess sits where
+  the column's wall turns into the overhang, which the tilt has not finished
+  turning to reach (reproduced on the CPU: worst 52.1 there, mean 43.2 over
+  the middle of the underside; `docs/orientation_field.md` 7.4). That is
+  P2.4's case (tilt ramp-in). The plan's fitted relation
+  (`theta_eff = theta_geo - tilt_used` over the ramps) needs the P2.5 runs.
