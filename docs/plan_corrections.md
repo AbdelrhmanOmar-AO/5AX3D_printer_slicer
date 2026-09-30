@@ -2110,7 +2110,19 @@ and layer stages taking 46.1 and 45.4 s against 10.0 and 12.4 s in the full run
 straight after, on identical input. The test now runs field-only, full, then
 field-only again, times only the third, and also checks that a field-only run
 leaves the toolpath file untouched, which catches a broken `--stop-after`
-without relying on time. A warm field-only time is still to be recorded.
+without relying on time.
+
+**Warm timing, recorded (laptop, 2026-09-30, P2.0's "Done when").**
+`python tools/overhang_report.py data/param/ramp60_xs.json --max-slope 30
+--field-only`, straight after the runs above: **126 s**, against **585 s** for
+the full run the same day on the same laptop, a ratio of **0.22**. Its stages
+took 10.9 (direction), 13.3 (layers), 20.0 (tangents), 40.7 (alignment) and
+1.3 s (extraction); the full run's planner alone took 425.1 s. Against the
+laptop's archived full run of the same part (411 s, 2026-09-22, when its
+planner took 298.6 s) the ratio is 0.31. The same run measured 25 862 atoms,
+worst effective overhang 89.1 degrees, max tilt 29.10 degrees, "not
+printable", as the full run did. It was the first use of the command line on
+the laptop: stop, archive, report and verdict all worked.
 
 **Not built:** a `--field-only` option on `tools/run_matrix_parallel.py`.
 Single field-only runs are a few minutes each at size `xs`; whether the P2
