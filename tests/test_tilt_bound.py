@@ -105,3 +105,26 @@ def test_several_tilts_give_a_column_each(capsys):
 def test_an_impossible_angle_is_refused():
     with pytest.raises(SystemExit):
         tb.main(["--tilt", "120"])
+
+
+def test_the_nozzle_cap_follows_the_profile(capsys, monkeypatch):
+    import warnings
+
+    from atom import machine_profile
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", machine_profile.PlaceholderProfileWarning)
+        dev60 = machine_profile.load_profile("dev60")
+    assert tb.nozzle_tilt_cap_deg(dev60) == 60
+    assert tb.nozzle_tilt_cap_deg(machine_profile.load_profile("reference")) == 50
+    assert tb.usable_tilt_deg(60, nozzle_cap_deg=60) == 60
+    assert tb.classify(90, 45, 60, margin_deg=2, nozzle_cap_deg=60) == tb.INSIDE
+
+    monkeypatch.setenv("ATOM_MACHINE", "dev60")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", machine_profile.PlaceholderProfileWarning)
+        assert tb.main([]) == 0
+    out = capsys.readouterr().out
+    assert "60 deg cone, capping the field at 60 deg" in out
+    tshape = next(line for line in out.splitlines() if line.startswith("  tshape"))
+    assert tshape.rstrip().endswith("inside")

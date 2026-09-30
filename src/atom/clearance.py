@@ -39,8 +39,9 @@ Models
 `ReferenceClearance`
     The proxy the build plan prescribes until gate M3 supplies the real
     envelope: the nozzle as a cone opening upward from the tip, half-angle
-    ``NOZZLE_HALF_ANGLE_DEG`` (Atomizer's own ``toolpath3.NOZZLE_CONE_ANGLE /
-    2``), up to ``nozzle_to_gantry``; and the gantry as the whole half-space
+    half the profile's ``nozzle_cone_angle_deg`` (the same cone
+    ``toolpath3.NOZZLE_CONE_ANGLE`` plans with; 40 on the reference machine),
+    up to ``nozzle_to_gantry``; and the gantry as the whole half-space
     above that height. The gantry half-space is the same one
     `kinematics3z.inverse` tests the bed corners against.
 `BoxesClearance`
@@ -67,10 +68,17 @@ import numpy as np
 
 from . import machine_profile
 
-#: Half-angle of the nozzle cone, degrees: `toolpath3.NOZZLE_CONE_ANGLE / 2`
-#: (80 / 2). Repeated here because `toolpath3` imports Taichi at module level;
-#: `tests/test_clearance.py` checks the two agree.
+#: Half-angle of the reference machine's nozzle cone, degrees: upstream's
+#: `toolpath3.NOZZLE_CONE_ANGLE / 2` (80 / 2). Since 2026-09-30 every machine
+#: profile declares its own cone (``nozzle_cone_angle_deg``); use
+#: `nozzle_half_angle_deg` for the active machine's. Kept for callers that want
+#: upstream's value explicitly; `tests/test_clearance.py` checks it.
 NOZZLE_HALF_ANGLE_DEG = 40.0
+
+
+def nozzle_half_angle_deg(profile) -> float:
+    """Half-angle of a machine's nozzle cone, degrees, from its profile."""
+    return float(profile.nozzle_cone_angle_deg) / 2.0
 
 #: Suffix of a profile's clearance file under `machine_profile.CONFIG_DIR`.
 CLEARANCE_SUFFIX = ".clearance.json"
@@ -242,11 +250,13 @@ class ReferenceClearance(_BodyModel):
     Parameters
     ----------
     profile
-        A `machine_profile.MachineProfile`. Only ``nozzle_to_gantry`` (mm) is
-        read: the cone's height and the gantry's level above the nozzle tip.
+        A `machine_profile.MachineProfile`. ``nozzle_to_gantry`` (mm) sets the
+        cone's height and the gantry's level above the nozzle tip, and
+        ``nozzle_cone_angle_deg`` the cone's angle.
     half_angle_deg
-        The nozzle cone's half-angle. Defaults to Atomizer's own value, the
-        one `order_atoms` plans its nozzle-collision avoidance with.
+        The nozzle cone's half-angle. Defaults to half the profile's
+        ``nozzle_cone_angle_deg``, the cone `order_atoms` plans its
+        nozzle-collision avoidance with.
 
     Bodies
     ------
@@ -259,7 +269,9 @@ class ReferenceClearance(_BodyModel):
 
     bodies = ("nozzle", "gantry")
 
-    def __init__(self, profile, half_angle_deg: float = NOZZLE_HALF_ANGLE_DEG):
+    def __init__(self, profile, half_angle_deg: float | None = None):
+        if half_angle_deg is None:
+            half_angle_deg = nozzle_half_angle_deg(profile)
         if not 0.0 < half_angle_deg < 90.0:
             raise ValueError(f"half_angle_deg must be in (0, 90), got {half_angle_deg}")
         height = float(profile.nozzle_to_gantry)

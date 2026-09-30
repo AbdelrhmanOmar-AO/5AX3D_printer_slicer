@@ -228,9 +228,14 @@ $env:ATOM_MACHINE = "reference"   # the default
 |---|---|---|
 | `reference` | verified | The upstream Atomizer machine. Values copied exactly from the original constants block; the golden test runs against it, and it stays in the test matrix permanently. |
 | `ours` | **PLACEHOLDER** | Our printer. Every number is copied from `reference` and none has been measured. Loading it warns on stderr and raises `PlaceholderProfileWarning`. |
+| `dev60` | **PLACEHOLDER** | A development profile, not a machine: `reference`'s geometry with the mechanical team's goal of 60 degrees of tilt (a cone) and a 60-degree nozzle cone, narrow enough for the field to use it. For developing the slicer against the target tilt; G-code from it is for inspection only (large tilts need the part lifted on this geometry). |
 
 Fill in `ours.json` only once the mechanical team supplies real measurements
 (gates M1 and M2), then set its `status` to `verified`.
+
+Each profile also declares its nozzle, `nozzle_cone_angle_deg` (80 on the
+reference machine, upstream's). The nozzle caps how far the orientation field
+tilts, at `90 - cone / 2`: 50 degrees for the reference nozzle, 60 for `dev60`'s.
 
 #### Noise during a pipeline run
 

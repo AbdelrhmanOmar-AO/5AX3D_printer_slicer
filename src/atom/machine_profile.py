@@ -16,6 +16,10 @@ The ``ATOM_MACHINE`` environment variable names it; the default is
 * ``ours`` - our printer. **Every number in it is a placeholder copied from the
   reference machine** until the mechanical design is finished (gates M1 and M2).
   Loading it warns loudly.
+* ``dev60`` - a development profile (2026-09-30): the reference machine's
+  geometry with the mechanical team's goal of 60 degrees of tilt (a cone) and a
+  nozzle cone narrow enough to use it (60 degrees). Not a machine; it lets the
+  slicer be developed against the target tilt. Loading it warns as well.
 
 Units
 -----
@@ -105,6 +109,11 @@ class MachineProfile:
     max_z_axis: float
     ball_to_corner: float
     nozzle_to_gantry: float
+    #: Full apex angle of the nozzle cone, degrees (this fork, 2026-09-30).
+    #: Upstream's `toolpath3.NOZZLE_CONE_ANGLE`, 80 on the reference machine.
+    #: It sets the planner's collision cone and caps the orientation field's
+    #: tilt at ``(180 - nozzle_cone_angle_deg) / 2`` (`fff3.MAX_SLOPE_ANGLE`).
+    nozzle_cone_angle_deg: float
 
     # --- Extrusion and motion ---
     filament_diameter: float
@@ -158,6 +167,13 @@ def _validate(data: dict[str, Any], source: str) -> None:
         value = data[key]
         if not isinstance(value, list) or len(value) != 2:
             raise ValueError(f"{source}: {key} must be a list of two numbers")
+
+    cone = data["nozzle_cone_angle_deg"]
+    if isinstance(cone, bool) or not isinstance(cone, (int, float)) or not 0.0 < cone < 180.0:
+        raise ValueError(
+            f"{source}: nozzle_cone_angle_deg must be a number of degrees in "
+            f"(0, 180), got {cone!r}"
+        )
 
 
 def _warn_if_placeholder(profile: MachineProfile, source: str) -> None:

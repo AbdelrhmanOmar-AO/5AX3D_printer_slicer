@@ -2231,3 +2231,31 @@ the nozzle's length below the gantry (gates M1, M3), not only on the tilt
 mechanism. Separately, Atomizer caps the field at 50 degrees for its 80-degree
 nozzle cone whatever the bed allows (P2-9); using 60 needs a nozzle cone of 60
 degrees or narrower.
+
+#### P2-11 The nozzle cone is a machine constant; a `dev60` development profile (operator's decisions)
+
+*Decisions by the operator, 2026-09-30, answering P2-10.* The tilt limit
+is a **cone** of 60 degrees (60 degrees total in any direction), the target,
+not yet a value (D0 stays open). The operator asked for:
+
+1. **`nozzle_cone_angle_deg` in every machine profile.** Upstream's
+   `toolpath3.NOZZLE_CONE_ANGLE = 80.0 * pi / 180.0` is now
+   `load_profile().nozzle_cone_angle_deg * pi / 180.0` (a vendored edit;
+   `reference` and `ours` say 80.0, which reproduces the literal bit for bit,
+   tested). It sets the planner's collision cone and, through
+   `fff3.MAX_SLOPE_ANGLE`, the field's tilt cap `90 - cone / 2`. Like the
+   kinematics constants, it is fixed when `toolpath3` is imported (plan hazard
+   12). The P4 clearance model and nozzle check (`clearance.nozzle_half_angle_deg`,
+   `NozzleCheckSettings.for_profile`) and `tools/tilt_bound.py` now take it
+   from the profile too. The golden test is owed on the laptop.
+2. **`config/machines/dev60.json`**: `reference`'s geometry with
+   `max_tilt_angle_deg` 60 (cone) and `nozzle_cone_angle_deg` **60**, the
+   widest cone that lets the field use 60 degrees (the operator chose it over
+   upstream's 80, which would cap the field at 50). A requirement on the
+   hotend, not a measured nozzle. `status: PLACEHOLDER`, so it warns. A test
+   pins that it differs from `reference` in those two numbers only. Select it
+   with `ATOM_MACHINE=dev60`. On this geometry large tilts near the bed need
+   the part lifted (P2-10), so its G-code is for inspection only; field-only
+   work (P2.0) does not use the kinematics at all.
+3. **Overhang-aware runs take their tilt budget from the profile**: built with
+   P2.2 (P2-12).

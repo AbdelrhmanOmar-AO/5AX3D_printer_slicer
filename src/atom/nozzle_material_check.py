@@ -14,7 +14,8 @@ The nozzle
 The nozzle body is the cone of `atom.clearance`: apex at the toolpath point,
 axis along the tool orientation ``d`` (the build direction, pointing away from
 the layer being printed, i.e. up the nozzle), half-angle
-``clearance.NOZZLE_HALF_ANGLE_DEG`` (Atomizer's own), and capped at
+half the machine profile's ``nozzle_cone_angle_deg`` (40 on the reference
+machine, the cone `order_atoms` plans with), and capped at
 ``nozzle_to_gantry`` along the axis. Beyond that cap is the gantry, whose
 check is the swept one (P4.2).
 
@@ -104,7 +105,9 @@ class NozzleCheckSettings:
 
     @classmethod
     def for_profile(cls, profile, **overrides) -> "NozzleCheckSettings":
-        """Settings sized from a machine profile's ``nozzle_to_gantry``."""
+        """Settings sized from a machine profile: the cone's height from
+        ``nozzle_to_gantry``, its half-angle from ``nozzle_cone_angle_deg``."""
+        overrides.setdefault("half_angle_deg", clearance.nozzle_half_angle_deg(profile))
         return cls(height_mm=float(profile.nozzle_to_gantry), **overrides)
 
 

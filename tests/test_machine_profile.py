@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import warnings
+from dataclasses import fields
 
 import numpy as np
 import pytest
@@ -163,6 +164,84 @@ def test_enumerated_fields_are_validated(tmp_path, field, value, message):
 
     with pytest.raises(ValueError, match=message):
         load_profile(str(path))
+
+
+@pytest.mark.parametrize("value", [0.0, 180.0, -10.0, "80", True, None])
+def test_nozzle_cone_angle_is_validated(tmp_path, value):
+    data = json.loads(
+        (machine_profile.CONFIG_DIR / "reference.json").read_text(encoding="utf-8")
+    )
+    data["nozzle_cone_angle_deg"] = value
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="nozzle_cone_angle_deg"):
+        load_profile(str(path))
+
+
+def test_the_nozzle_cone_is_upstreams_literal_on_the_reference_machine():
+    """`toolpath3.NOZZLE_CONE_ANGLE` now comes from the profile (2026-09-30).
+
+    On the reference machine it must still be upstream's `80.0 * pi / 180.0`,
+    bit for bit and a Python float, for the golden G-code to stay identical.
+    """
+    from math import pi
+
+    import atom.toolpath3 as toolpath3
+
+    assert load_profile("reference").nozzle_cone_angle_deg == 80.0
+    assert toolpath3.NOZZLE_CONE_ANGLE == 80.0 * pi / 180.0
+    assert type(toolpath3.NOZZLE_CONE_ANGLE) is float
+
+
+def test_a_profile_sets_the_nozzle_and_the_fields_tilt_cap(tmp_path):
+    """Under dev60, the planner's cone and the field's cap follow the profile.
+
+    In a child process: both are fixed when `toolpath3` and `fff3` are imported.
+    """
+    import os
+    import subprocess
+    import sys
+
+    script = (
+        "import math\n"
+        "import atom.toolpath3 as t, atom.fff3 as f\n"
+        "print(round(math.degrees(t.NOZZLE_CONE_ANGLE), 9))\n"
+        "print(round(math.degrees((math.pi - t.NOZZLE_CONE_ANGLE) * 0.5), 9))\n"
+    )
+    source = tmp_path / "probe.py"
+    source.write_text(script, encoding="utf-8")
+    repo = machine_profile.CONFIG_DIR.parent.parent
+    env = dict(os.environ, ATOM_MACHINE="dev60", ATOM_TI_ARCH="cpu", PYTHONIOENCODING="utf-8")
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(repo / "src"), env.get("PYTHONPATH")]))
+    result = subprocess.run(
+        [sys.executable, str(source)], env=env, capture_output=True, encoding="utf-8",
+        errors="replace", timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    numbers = [line for line in result.stdout.splitlines() if not line.startswith("[Taichi]")]
+    assert numbers == ["60.0", "60.0"]
+
+
+def test_dev60_is_reference_but_for_the_tilt_goal_and_its_nozzle():
+    """dev60 (operator, 2026-09-30) differs from reference in exactly two numbers."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", PlaceholderProfileWarning)
+        dev60 = load_profile("dev60")
+    reference = load_profile("reference")
+
+    differing = {
+        field.name
+        for field in fields(MachineProfile)
+        if getattr(dev60, field.name) != getattr(reference, field.name)
+    }
+    assert differing == {"name", "status", "max_tilt_angle_deg", "nozzle_cone_angle_deg"}
+    assert dev60.is_placeholder
+    assert dev60.tilt_limit_shape == "cone"
+    assert dev60.max_tilt_angle_deg == 60.0
+    assert dev60.nozzle_cone_angle_deg == 60.0
+    # The nozzle is exactly narrow enough for the field to use the full tilt.
+    assert 90.0 - dev60.nozzle_cone_angle_deg / 2.0 == dev60.max_tilt_angle_deg
 
 
 def test_ball_position_must_be_a_pair(tmp_path):

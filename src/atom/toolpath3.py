@@ -6,6 +6,7 @@ import taichi.math as tm
 
 from . import basis3, cone, direction, frame3, limits, math
 from .bvh import BVH, STACK_SIZE_MAX
+from .machine_profile import load_profile as _load_profile
 from .set import Set, set_find_u32, set_insert_u32, set_remove_u32
 
 # Region thresholds Distance are relative to layer height for axis 0 (tangent)
@@ -20,7 +21,11 @@ THRESHOLD_N_0 = 0.5
 THRESHOLD_N_1 = 0.5
 THRESHOLD_N_2 = 1.5
 
-NOZZLE_CONE_ANGLE = 80.0 * pi / 180.0
+# This fork: the nozzle cone is a machine constant, read from the active machine
+# profile (ATOM_MACHINE; `nozzle_cone_angle_deg`). The reference profile's 80.0
+# gives upstream's `80.0 * pi / 180.0` bit for bit. Fixed at import, like the
+# constants in `atom.kinematics3z`: set ATOM_MACHINE before importing.
+NOZZLE_CONE_ANGLE = _load_profile().nozzle_cone_angle_deg * pi / 180.0
 NOZZLE_COS_HALF_ANGLE = cos(NOZZLE_CONE_ANGLE * 0.5)
 
 # Angle for cone supporting region: 130 degrees

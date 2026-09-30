@@ -11,9 +11,11 @@ and a surface at ``theta_geo`` needs ``theta_geo - max_overhang`` of tilt. At
 the placeholder 45-degree threshold a flat ledge (90 degrees) needs 45.
 
 **Usable tilt** is the smaller of the machine's limit and the nozzle's.
-Atomizer never tilts the field further than ``90 - NOZZLE_HALF_ANGLE_DEG`` =
-50 degrees (`fff3.MAX_SLOPE_ANGLE`): beyond that a flat layer puts its own
-earlier beads inside the nozzle cone (plan_corrections P4-2).
+Atomizer never tilts the field further than ``90 - nozzle_cone_angle_deg / 2``
+(`fff3.MAX_SLOPE_ANGLE`): beyond that a flat layer puts its own earlier beads
+inside the nozzle cone (plan_corrections P4-2). Both limits come from the
+active machine profile: 30 and 50 degrees on the reference machine, 60 and 60
+on the ``dev60`` development profile.
 
 **Margin.** P2.2 asks for ``theta_geo - max_overhang + margin`` of tilt, and
 P2.5 counts a part toward its success criteria only when
@@ -28,6 +30,7 @@ the overhang starts (P2.4), and the placeholder threshold (gates D0, D1).
 Usage::
 
     python tools/tilt_bound.py                          # the machine profile's tilt
+    $env:ATOM_MACHINE = "dev60"; python tools/tilt_bound.py   # the 60-degree goal
     python tools/tilt_bound.py --max-overhang 45 --tilt 30
     python tools/tilt_bound.py --tilt 30 40 45 --tshape-underside 70
 """
@@ -52,10 +55,15 @@ DEFAULT_MAX_OVERHANG_DEG = 45.0
 #: GATE D1: placeholder. P2.2's ``margin_deg`` and P2.5's "- 2 degrees".
 DEFAULT_MARGIN_DEG = 2.0
 
-#: The tilt Atomizer's field can never exceed, whatever the machine allows:
-#: ``(180 - NOZZLE_CONE_ANGLE) / 2`` in `fff3`, from the same cone as
-#: `atom.clearance`.
+#: The tilt Atomizer's field can never exceed on the reference machine,
+#: whatever the bed allows: ``(180 - NOZZLE_CONE_ANGLE) / 2`` in `fff3`, from
+#: its 80-degree nozzle cone. A profile's own is `nozzle_tilt_cap_deg`.
 NOZZLE_TILT_CAP_DEG = 90.0 - clearance.NOZZLE_HALF_ANGLE_DEG
+
+
+def nozzle_tilt_cap_deg(profile) -> float:
+    """The field's tilt cap for a machine's nozzle: ``90 - cone / 2``, degrees."""
+    return 90.0 - clearance.nozzle_half_angle_deg(profile)
 
 INSIDE = "inside"
 EDGE = "edge"
@@ -63,14 +71,16 @@ OUT_OF_RANGE = "out of range"
 NO_OVERHANG = "no overhang"
 
 
-def usable_tilt_deg(machine_tilt_deg: float) -> float:
+def usable_tilt_deg(machine_tilt_deg: float, nozzle_cap_deg: float = NOZZLE_TILT_CAP_DEG) -> float:
     """The tilt the field can actually use, in degrees: the machine's, capped by the nozzle."""
-    return min(float(machine_tilt_deg), NOZZLE_TILT_CAP_DEG)
+    return min(float(machine_tilt_deg), float(nozzle_cap_deg))
 
 
-def steepest_printable_overhang_deg(max_overhang_deg: float, tilt_deg: float) -> float:
+def steepest_printable_overhang_deg(
+    max_overhang_deg: float, tilt_deg: float, nozzle_cap_deg: float = NOZZLE_TILT_CAP_DEG
+) -> float:
     """``max_overhang + usable tilt``, at most 90 degrees (a flat ledge)."""
-    return min(90.0, float(max_overhang_deg) + usable_tilt_deg(tilt_deg))
+    return min(90.0, float(max_overhang_deg) + usable_tilt_deg(tilt_deg, nozzle_cap_deg))
 
 
 def required_tilt_deg(theta_geo_deg: float, max_overhang_deg: float) -> float:
@@ -83,6 +93,7 @@ def classify(
     max_overhang_deg: float,
     tilt_deg: float,
     margin_deg: float = DEFAULT_MARGIN_DEG,
+    nozzle_cap_deg: float = NOZZLE_TILT_CAP_DEG,
 ) -> str:
     """`INSIDE`, `EDGE` or `OUT_OF_RANGE` for an overhang at ``theta_geo_deg``.
 
@@ -92,7 +103,7 @@ def classify(
     """
     # Uncapped on purpose: the 90-degree cap is a fact about surfaces, not
     # about tilt, so 45 + 50 - 2 = 93 still counts a flat ledge as inside.
-    reach = float(max_overhang_deg) + usable_tilt_deg(tilt_deg)
+    reach = float(max_overhang_deg) + usable_tilt_deg(tilt_deg, nozzle_cap_deg)
     if theta_geo_deg <= max_overhang_deg:
         return INSIDE
     if theta_geo_deg <= reach - margin_deg:
@@ -102,9 +113,15 @@ def classify(
     return OUT_OF_RANGE
 
 
-def counted_up_to_deg(max_overhang_deg: float, tilt_deg: float, margin_deg: float) -> float:
+def counted_up_to_deg(
+    max_overhang_deg: float, tilt_deg: float, margin_deg: float,
+    nozzle_cap_deg: float = NOZZLE_TILT_CAP_DEG,
+) -> float:
     """The steepest overhang P2.5 counts: ``max_overhang + usable tilt - margin``, at most 90."""
-    return min(90.0, float(max_overhang_deg) + usable_tilt_deg(tilt_deg) - float(margin_deg))
+    return min(
+        90.0,
+        float(max_overhang_deg) + usable_tilt_deg(tilt_deg, nozzle_cap_deg) - float(margin_deg),
+    )
 
 
 def benchmark_overhangs(tshape_underside_deg: float | None = None):
@@ -126,21 +143,23 @@ def benchmark_overhangs(tshape_underside_deg: float | None = None):
     return parts
 
 
-def table(max_overhang_deg, tilts_deg, margin_deg, parts):
+def table(max_overhang_deg, tilts_deg, margin_deg, parts, nozzle_cap_deg=NOZZLE_TILT_CAP_DEG):
     """The report as lines of text."""
     lines = [
         "Steepest printable overhang = max overhang + usable tilt (build plan P2.1)",
         f"  max overhang {max_overhang_deg:g} deg (placeholder, gates D0/D1), "
         f"margin {margin_deg:g} deg (placeholder, gate D1)",
-        f"  nozzle cap {NOZZLE_TILT_CAP_DEG:g} deg: Atomizer never tilts the field "
+        f"  nozzle cap {nozzle_cap_deg:g} deg: Atomizer never tilts the field "
         "further, whatever the machine allows",
         "",
         f"  {'machine tilt':<14}{'usable':<9}{'steepest printable':<21}counted by P2.5 up to",
     ]
     for tilt in tilts_deg:
-        bound = steepest_printable_overhang_deg(max_overhang_deg, tilt)
-        counted = counted_up_to_deg(max_overhang_deg, tilt, margin_deg)
-        lines.append(f"  {tilt:<14g}{usable_tilt_deg(tilt):<9g}{bound:<21g}{counted:g}")
+        bound = steepest_printable_overhang_deg(max_overhang_deg, tilt, nozzle_cap_deg)
+        counted = counted_up_to_deg(max_overhang_deg, tilt, margin_deg, nozzle_cap_deg)
+        lines.append(
+            f"  {tilt:<14g}{usable_tilt_deg(tilt, nozzle_cap_deg):<9g}{bound:<21g}{counted:g}"
+        )
 
     lines += ["", "  A flat ledge (90 deg) needs "
               f"{required_tilt_deg(90.0, max_overhang_deg):g} deg of usable tilt "
@@ -160,7 +179,8 @@ def table(max_overhang_deg, tilts_deg, margin_deg, parts):
         asked = needed + margin_deg if needed > 0 else 0.0
         needed_text = f"{needed:g} ({asked:g})"
         cells = "".join(
-            f"{classify(theta, max_overhang_deg, t, margin_deg):<16}" for t in tilts_deg
+            f"{classify(theta, max_overhang_deg, t, margin_deg, nozzle_cap_deg):<16}"
+            for t in tilts_deg
         )
         lines.append(f"  {name:<12}{theta:<11g}{needed_text:<23}{cells}")
 
@@ -199,16 +219,23 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
+    profile = machine_profile.load_profile()
+    nozzle_cap = nozzle_tilt_cap_deg(profile)
     tilts = args.tilt
     if tilts is None:
-        profile = machine_profile.load_profile()
         tilts = [profile.max_tilt_angle_deg]
-        print(f"Tilt limit from machine profile '{profile.name}': {profile.max_tilt_angle_deg:g} deg\n")
+        print(f"Tilt limit from machine profile '{profile.name}': {profile.max_tilt_angle_deg:g} deg")
+    print(
+        f"Nozzle from machine profile '{profile.name}': {profile.nozzle_cone_angle_deg:g} deg cone, "
+        f"capping the field at {nozzle_cap:g} deg\n"
+    )
     for value in [args.max_overhang, args.margin, *tilts]:
         if not 0.0 <= value <= 90.0:
             parser.error(f"angles must be between 0 and 90 degrees, got {value:g}")
 
-    lines = table(args.max_overhang, tilts, args.margin, benchmark_overhangs(args.tshape_underside))
+    lines = table(
+        args.max_overhang, tilts, args.margin, benchmark_overhangs(args.tshape_underside), nozzle_cap
+    )
     print("\n".join(lines))
     return 0
 

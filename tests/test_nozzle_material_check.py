@@ -351,3 +351,19 @@ def test_golden_cube_top_printed_top_down_collides(golden):
 
     result = nm.check(points, directions, deposit, SETTINGS)
     assert result.count > count // 3
+
+
+def test_the_checks_nozzle_follows_the_machine_profile():
+    """`for_profile` takes the cone from the profile (2026-09-30), unless overridden."""
+    import warnings
+
+    from atom import machine_profile
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", machine_profile.PlaceholderProfileWarning)
+        dev60 = machine_profile.load_profile("dev60")
+    reference = machine_profile.load_profile("reference")
+
+    assert nm.NozzleCheckSettings.for_profile(reference).half_angle_deg == 40.0
+    assert nm.NozzleCheckSettings.for_profile(dev60).half_angle_deg == 30.0
+    assert nm.NozzleCheckSettings.for_profile(dev60, half_angle_deg=35.0).half_angle_deg == 35.0

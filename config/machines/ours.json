@@ -22,6 +22,7 @@
     "max_z_axis": 280,
     "ball_to_corner": 10,
     "nozzle_to_gantry": 70,
+    "nozzle_cone_angle_deg": 80.0,
 
     "filament_diameter": 1.75,
     "deposition_feedrate": 600,

@@ -44,6 +44,21 @@ def test_cone_angle_is_atomizers_own():
     )
 
 
+def test_the_nozzle_cone_comes_from_the_profile():
+    """Each machine declares its nozzle (2026-09-30); dev60's is 60 degrees."""
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", machine_profile.PlaceholderProfileWarning)
+        dev60 = machine_profile.load_profile("dev60")
+    reference = machine_profile.load_profile("reference")
+
+    assert clearance.nozzle_half_angle_deg(reference) == clearance.NOZZLE_HALF_ANGLE_DEG == 40.0
+    assert clearance.ReferenceClearance(reference).half_angle_deg == 40.0
+    assert clearance.ReferenceClearance(dev60).half_angle_deg == 30.0
+    assert clearance.ReferenceClearance(dev60, half_angle_deg=35.0).half_angle_deg == 35.0
+
+
 def test_reference_model_is_sized_from_the_profile(model, reference):
     assert model.gantry_height_mm == reference.nozzle_to_gantry == 70
     assert model.half_angle_deg == 40.0
@@ -181,7 +196,9 @@ def test_invalid_reference_parameters(reference):
     with pytest.raises(ValueError, match="half_angle"):
         clearance.ReferenceClearance(reference, half_angle_deg=90.0)
     with pytest.raises(ValueError, match="nozzle_to_gantry"):
-        clearance.ReferenceClearance(SimpleNamespace(name="x", nozzle_to_gantry=0))
+        clearance.ReferenceClearance(
+            SimpleNamespace(name="x", nozzle_to_gantry=0, nozzle_cone_angle_deg=80.0)
+        )
 
 
 def test_describe_records_the_parameters(model):
