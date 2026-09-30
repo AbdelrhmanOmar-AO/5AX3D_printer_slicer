@@ -517,7 +517,16 @@ part's worst points are elsewhere; `tools/overhang_where.py` shows where.
 
 **With the metric counting only points over the air** (version 3, the
 operator's decision, plan_corrections P2-14), the same CPU runs read: stock
-89.3, overhang-aware **43.2**, with the ramp-in **43.3**. What is left there (46.4, 46.0) is at the edges of the constrained
+89.3, overhang-aware **43.2**, with the ramp-in **43.3**.
+
+**The laptop's remeshed part, re-measured with version 3** (the atoms of the
+ramp-in run, `--skip-pipeline`) and located with `tools/overhang_where.py`:
+148 atoms over the air, mean 42.9, p90 44.7; **147 of them at 44.7 or less**.
+The worst, 56.1, is **one atom at the tip's corner**, (29.76, 0.32, 9.72),
+where the underside meets the end face and the side face, printed with 4
+degrees of tilt instead of about 17: the SDF's closest normal there belongs
+to the side or end face, so the overhang rule does not fire in that corner.
+The 540 atoms on material (skipped) reach 56.6. What is left there (46.4, 46.0) is at the edges of the constrained
 band, the first half-millimetre and the tip. The field-level tests pin the
 column's gain (`tests/test_orientation_field.py`).
 
@@ -533,5 +542,6 @@ column's gain (`tests/test_orientation_field.py`).
 | The azimuth of a flat or nearly flat underside on a remeshed part | P2.2 follow-up, after a T-shape run (section 7.3) |
 | ~~The corner where a wall turns into an overhang prints before the tilt is complete~~ | mostly the metric counting supported atoms (7.4); the ramp-in (7.5) lowers the reported worst from 52.1 to 48.8 |
 | ~~Should the effective-overhang metric count only atoms that are out over the air?~~ | yes (operator, 2026-09-30): metrics version 3, P2-14. The lab machine re-scores the baseline |
-| The last 1.4 degrees at the edges of the constrained band (46.4 at the corner, 46.0 at the tip) | open |
+| ~~The last 1.4 degrees at the edges of the constrained band~~ | gone with metric v3 on the CPU runs (43.2) |
+| A sharp corner where an overhang meets two walls gets no overhang constraint (laptop `ramp60_xs`: one atom at 56.1, the rest at most 44.7) | the operator (7c P2-15) |
 | Whether the ceiling threshold should stay tied to `max_slope` once overhangs are constrained too | gate D1 |

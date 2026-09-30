@@ -2437,3 +2437,18 @@ counted per surface in the report as `supported_samples_skipped`.
 * **`tools/overhang_where.py`** (new, diagnostic): for each overhang surface,
   the points over air and on material, and the worst points with position and
   tilt. For finding where a part's worst value comes from.
+
+#### P2-15 One atom at the ramp's tip corner: the overhang rule does not reach sharp corners
+
+*Found on the laptop, 2026-09-30.* `ramp60_xs` at 30, overhang-aware with
+ramp-in, re-measured with metrics version 3: worst 56.1, from **one** atom
+of 148 over the air, at (29.76, 0.32, 9.72), the corner where the underside
+meets the end face (`x` = 30) and the side face (`y` = 0), tilted 4
+degrees. The other 147 are at most 44.7 (mean 42.9). The overhang rule reads
+each cell's closest surface normal; in that corner the closest surface is
+the side or end face, so no overhang constraint is set and the field there
+stays near vertical. The same will happen at every corner where an overhang
+meets two walls (the T-shape has four). The CPU run on the exact SDF did not
+show it (43.2), so it depends on the remeshed surface. **For the operator:**
+whether to fix it in the field now, or to see first how often it happens in
+P2.5's runs.
