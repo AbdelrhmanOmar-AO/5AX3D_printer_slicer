@@ -543,5 +543,5 @@ column's gain (`tests/test_orientation_field.py`).
 | ~~The corner where a wall turns into an overhang prints before the tilt is complete~~ | mostly the metric counting supported atoms (7.4); the ramp-in (7.5) lowers the reported worst from 52.1 to 48.8 |
 | ~~Should the effective-overhang metric count only atoms that are out over the air?~~ | yes (operator, 2026-09-30): metrics version 3, P2-14. The lab machine re-scores the baseline |
 | ~~The last 1.4 degrees at the edges of the constrained band~~ | gone with metric v3 on the CPU runs (43.2) |
-| A sharp corner where an overhang meets two walls gets no overhang constraint (laptop `ramp60_xs`: one atom at 56.1, the rest at most 44.7) | the operator (7c P2-15) |
+| A sharp corner where an overhang meets two walls gets no overhang constraint (laptop `ramp60_xs`: one atom at 56.1, the rest at most 44.7) | after P2.5's runs show how often (operator, 2026-09-30; 7c P2-15) |
 | Whether the ceiling threshold should stay tied to `max_slope` once overhangs are constrained too | gate D1 |

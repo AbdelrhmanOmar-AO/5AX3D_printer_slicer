@@ -2449,6 +2449,7 @@ each cell's closest surface normal; in that corner the closest surface is
 the side or end face, so no overhang constraint is set and the field there
 stays near vertical. The same will happen at every corner where an overhang
 meets two walls (the T-shape has four). The CPU run on the exact SDF did not
-show it (43.2), so it depends on the remeshed surface. **For the operator:**
-whether to fix it in the field now, or to see first how often it happens in
-P2.5's runs.
+show it (43.2), so it depends on the remeshed surface. **The operator's
+decision, 2026-09-30: leave it for now** and see in P2.5's runs (every part,
+the T-shape's four corners included) how often and how badly it happens,
+then decide on a fix with those numbers.
