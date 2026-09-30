@@ -30,6 +30,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .ramp_in import DEFAULT_MAX_TILT_RATE_DEG_PER_MM, RampSettings
+
 #: GATE D1: placeholder, team decision pending. The effective overhang the
 #: rule aims for, and the threshold `tools/overhang_report.py` judges by.
 DEFAULT_MAX_OVERHANG_DEG = 45.0
@@ -132,7 +134,10 @@ def effective_overhang_deg(normal, tilt_deg: float, azimuth_deg: float) -> float
 
 #: Optional keys of a part's parameter file. Absent, the stage runs upstream's
 #: field. The others need ``overhang_aware: true``.
-PARAMETER_KEYS = ("overhang_aware", "max_overhang_deg", "overhang_margin_deg", "hold_overhang")
+PARAMETER_KEYS = (
+    "overhang_aware", "max_overhang_deg", "overhang_margin_deg", "hold_overhang",
+    "ramp_in", "max_tilt_rate_deg_per_mm",
+)
 
 
 def _flag(name: str, value) -> bool:
@@ -151,20 +156,35 @@ def _angle(name: str, value) -> float:
     return float(value)
 
 
+def _rate(name: str, value) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a number of degrees per mm, got {value!r}")
+    try:
+        return RampSettings(float(value)).max_tilt_rate_deg_per_mm
+    except ValueError:
+        raise ValueError(f"{name} must be a positive number of degrees per mm, got {value!r}") from None
+
+
 def _format(value: float) -> str:
     return str(int(value)) if float(value).is_integer() else f"{value:g}"
 
 
 def overhang_arguments(
-    overhang_aware=None, max_overhang_deg=None, overhang_margin_deg=None, hold_overhang=None
+    overhang_aware=None,
+    max_overhang_deg=None,
+    overhang_margin_deg=None,
+    hold_overhang=None,
+    ramp_in=None,
+    max_tilt_rate_deg_per_mm=None,
 ) -> str:
     """The stage options for ``compute_tool_orientations.py`` from the parameter keys.
 
     Empty when ``overhang_aware`` is absent or false, so a parameter file
     without the keys runs exactly upstream's command. Otherwise the rule's
     values are written out in full (defaults included, hold as
-    ``--hold_overhang`` or ``--no_hold_overhang``), so the log shows what
-    ran. Values are checked here, when the parameter file is read; a rule key
+    ``--hold_overhang`` or ``--no_hold_overhang``, the ramp-in of build plan
+    P2.4 as ``--ramp_in --max_tilt_rate R`` or ``--no_ramp_in``), so the log
+    shows what ran. Values are checked here, when the parameter file is read; a rule key
     given without ``overhang_aware: true`` is refused rather than ignored.
     """
     if not _flag("overhang_aware", overhang_aware):
@@ -174,6 +194,8 @@ def overhang_arguments(
                 ("max_overhang_deg", max_overhang_deg),
                 ("overhang_margin_deg", overhang_margin_deg),
                 ("hold_overhang", hold_overhang),
+                ("ramp_in", ramp_in),
+                ("max_tilt_rate_deg_per_mm", max_tilt_rate_deg_per_mm),
             )
             if value is not None
         ]
@@ -191,4 +213,14 @@ def overhang_arguments(
     )
     hold = DEFAULT_HOLD_OVERHANG if hold_overhang is None else _flag("hold_overhang", hold_overhang)
     arguments += " --hold_overhang" if hold else " --no_hold_overhang"
+
+    if _flag("ramp_in", True if ramp_in is None else ramp_in):
+        rate = DEFAULT_MAX_TILT_RATE_DEG_PER_MM
+        if max_tilt_rate_deg_per_mm is not None:
+            rate = _rate("max_tilt_rate_deg_per_mm", max_tilt_rate_deg_per_mm)
+        arguments += f" --ramp_in --max_tilt_rate {_format(rate)}"
+    elif max_tilt_rate_deg_per_mm is not None:
+        raise ValueError('max_tilt_rate_deg_per_mm needs "ramp_in" left on')
+    else:
+        arguments += " --no_ramp_in"
     return arguments

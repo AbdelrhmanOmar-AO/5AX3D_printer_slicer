@@ -91,6 +91,8 @@ class Parameters:
             param_dict.get("max_overhang_deg"),
             param_dict.get("overhang_margin_deg"),
             param_dict.get("hold_overhang"),
+            param_dict.get("ramp_in"),
+            param_dict.get("max_tilt_rate_deg_per_mm"),
         )
         if self.overhang_aware and (self.ortho_to_wall or self.all_up):
             raise ValueError('"overhang_aware" cannot be combined with "ortho_to_wall" or "all_up"')

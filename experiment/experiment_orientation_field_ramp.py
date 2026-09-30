@@ -8,7 +8,8 @@ option is given (bit-identical to `tools/compute_tool_orientations.py`,
 `tests/test_orientation_field.py`), or P2.2's with ``--overhang-aware``,
 ``--solid`` (the field on the pre-infill SDF, plan_corrections P2-8) and
 ``--hold`` / ``--no-hold`` (the overhang constraints held through the final
-smoothing, on by default as in the pipeline).
+smoothing, on by default as in the pipeline) and ``--ramp`` / ``--no-ramp``
+(P2.4's ramp-in, on by default, at ``--rate`` degrees per mm).
 
 It reports which cells were constrained to a tilted direction and where, and
 what the field does next to the underside: its tilt, the effective overhang
@@ -53,6 +54,7 @@ from atom import analytic_sdf, grid3  # noqa: E402
 from atom import benchmark_meshes as bm  # noqa: E402
 from atom import orientation_field as of  # noqa: E402
 from atom.overhang_field import OverhangSettings  # noqa: E402
+from atom.ramp_in import RampSettings  # noqa: E402
 
 #: Upstream's infill arguments in tools/sdf_to_isdf.py: offset 0, gyroid on.
 INFILL_PERIOD = 8
@@ -88,6 +90,11 @@ def main():
         "--hold", action=argparse.BooleanOptionalAction, default=True,
         help="Hold overhang constraints in the final passes (default on).",
     )
+    parser.add_argument(
+        "--ramp", action=argparse.BooleanOptionalAction, default=True,
+        help="P2.4's ramp-in below overhangs (default on).",
+    )
+    parser.add_argument("--rate", type=float, default=3.0, help="Ramp-in rate, degrees per mm.")
     parser.add_argument("--max-overhang", type=float, default=45.0)
     parser.add_argument("--margin", type=float, default=2.0)
     parser.add_argument("--size", default="xs", choices=sorted(bm.SIZE_PRESETS))
@@ -117,6 +124,7 @@ def main():
         overhang=OverhangSettings(args.max_overhang, args.margin) if args.overhang_aware else None,
         solid_sdf=as_sdf(solid, cell) if args.solid else None,
         hold_overhang=args.hold,
+        ramp=RampSettings(args.rate) if args.ramp else None,
     )
     final = result.field.direction.to_numpy()
     if args.save_direction:
@@ -167,6 +175,13 @@ def main():
         "overhang_aware": args.overhang_aware,
         "solid": args.solid,
         "hold": bool(args.hold and args.overhang_aware),
+        "ramp_in": None if result.ramp is None else {
+            "rate": args.rate,
+            "cells": result.ramp.cells,
+            "walks_used": result.ramp.walks_used,
+            "walks_steepened": result.ramp.walks_steepened,
+            "steepest_rate_deg_per_mm": result.ramp.steepest_rate_deg_per_mm,
+        },
         "grid": list(shape),
         "overhang_cells": result.overhang_cells,
         "overhang_capped": result.overhang_capped,

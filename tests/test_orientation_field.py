@@ -8,7 +8,8 @@ Taichi.
 
 A field costs some 20 s on the CPU whatever the grid's size (Taichi compiles
 the aligner's kernels afresh for every new field), so the tests share three
-module-scoped fields rather than computing their own. They stay in the
+module-scoped fields rather than computing their own (four with P2.4's
+ramp-in, which is on by default). They stay in the
 default (unit) tier by the operator's choice, 2026-09-30.
 
 70 degrees, at a 30-degree budget: the rule asks 70 - 45 + 2 = 27 degrees
@@ -135,6 +136,22 @@ def loose_field(infilled, solid):
     )
 
 
+@pytest.fixture(scope="module")
+def no_ramp_field(infilled, solid):
+    """``aware_field`` without the ramp-in (build plan P2.4)."""
+    from atom import orientation_field as of
+
+    return of.compute_direction_field(
+        infilled, MAX_SLOPE, overhang=OverhangSettings(), solid_sdf=solid, ramp=None
+    )
+
+
+def _overhang_marks(result):
+    from atom import orientation_field as of
+
+    return (result.mark == of.MARK_OVERHANG) | (result.mark == of.MARK_OVERHANG_CAPPED)
+
+
 def _same_field(a, b):
     assert np.array_equal(np.isnan(a), np.isnan(b))
     assert np.array_equal(a[~np.isnan(a)], b[~np.isnan(b)])
@@ -239,6 +256,7 @@ def test_the_stage_runs_the_overhang_aware_field(stage_runs, request, name, fixt
         f"{field.overhang_capped} of them capped"
     ) in text
     assert f"hold {hold})" in text
+    assert f"Ramp-in: {field.ramp.cells} cells below {field.ramp.walks_used} overhang cells" in text
     assert "Field computed on the solid SDF" in text
     assert "Direction computation took" in text  # the line the reports time
     _same_field(np.load(output)["direction"], field.field.direction.to_numpy())
@@ -265,7 +283,7 @@ def test_overhang_cells_lean_27_degrees_toward_a_70_degree_overhang(aware_field,
     solid, geometry = ramp
     target = overhang_target(geometry["normal"], MAX_SLOPE)
     assert (target.tilt_deg, target.azimuth_deg) == pytest.approx((ANGLE - 45 + 2, 0.0))
-    marked = aware_field.mark != of.MARK_NONE
+    marked = _overhang_marks(aware_field)
     assert aware_field.overhang_cells == int(marked.sum()) > 100
     assert aware_field.overhang_capped == int((aware_field.mark == of.MARK_OVERHANG_CAPPED).sum())
     assert aware_field.overhang_capped < 0.1 * aware_field.overhang_cells
@@ -299,7 +317,7 @@ def test_the_solid_sdf_keeps_the_rule_off_the_infills_inner_surfaces(aware_field
     from atom import orientation_field as of
 
     solid, _ = ramp
-    assert (solid[aware_field.mark != of.MARK_NONE] > -0.45).all()
+    assert (solid[_overhang_marks(aware_field)] > -0.45).all()
     _, mark_on_infilled = _init(infilled, cell, MAX_SLOPE)
     assert (solid[mark_on_infilled != of.MARK_NONE] < -1.0).any()
     # Masked exactly where the infilled SDF is outside, as upstream masks.
@@ -310,8 +328,8 @@ def test_the_solid_sdf_keeps_the_rule_off_the_infills_inner_surfaces(aware_field
 def test_holding_keeps_the_overhang_constraints_exact(aware_field, loose_field):
     from atom import orientation_field as of
 
-    marked = aware_field.mark != of.MARK_NONE
-    assert np.array_equal(marked, loose_field.mark != of.MARK_NONE)
+    marked = _overhang_marks(aware_field)
+    assert np.array_equal(marked, _overhang_marks(loose_field))
     np.testing.assert_array_equal(aware_field.field.direction.to_numpy()[marked], aware_field.initial[marked])
     assert not np.array_equal(loose_field.field.direction.to_numpy()[marked], loose_field.initial[marked])
 
@@ -328,3 +346,65 @@ def test_the_field_turns_from_away_to_toward_the_overhang(stock_field, aware_fie
             assert effective.mean() < 46.0
         else:
             assert effective.mean() > 80.0
+
+
+# --------------------------------------------------------------------------
+# The ramp-in (build plan P2.4)
+# --------------------------------------------------------------------------
+
+
+def test_the_ramp_in_constrains_the_column_below_the_corner(aware_field, ramp, cell):
+    """Below where the column's wall turns into the overhang, leaning its way.
+
+    The corner is 1.8 mm above the bed: 27 degrees at 3 per mm would need 9 mm,
+    so the ramp is steepened to fit, by the operator's decision, and the
+    overhang keeps its 27 degrees.
+    """
+    from atom import orientation_field as of
+
+    solid, geometry = ramp
+    r = aware_field.ramp
+    ramp_cells = aware_field.mark == of.MARK_RAMP
+    assert r.cells == int(ramp_cells.sum()) > 0
+    assert r.walks_steepened > 0 and r.steepest_rate_deg_per_mm > 3.0
+
+    index = np.argwhere(ramp_cells)
+    x = (index[:, 0] + 0.5) * cell
+    z = (index[:, 2] + 0.5) * cell
+    assert (solid[ramp_cells] < 0).all()
+    assert (x < geometry["column_width"] + 0.5).all()
+    assert (z < geometry["base_height"] + 0.5).all()
+    tilt = np.degrees(aware_field.initial[..., 0][ramp_cells])
+    phi = np.degrees(aware_field.initial[..., 1][ramp_cells])
+    assert (tilt > 0).all() and (tilt < ANGLE - 45 + 2).all()
+    np.testing.assert_allclose(phi, 0.0, atol=1e-4)
+    assert aware_field.overhang_capped == 0
+
+
+def test_the_ramp_in_raises_the_tilt_below_the_corner(aware_field, no_ramp_field, ramp, cell):
+    """In the column just below and before the corner, the field leans further.
+
+    On this ramp (and on `ramp60_xs`) the overhang's own first strip hardly
+    changes, since its held constraints already give it nearly the full tilt;
+    what the ramp-in changes is the material printed just before it
+    (plan_corrections P2-13).
+    """
+    from atom import orientation_field as of
+
+    assert no_ramp_field.ramp is None
+    assert not (no_ramp_field.mark == of.MARK_RAMP).any()
+    solid, geometry = ramp
+    shape = solid.shape
+    X = np.broadcast_to(((np.arange(shape[0]) + 0.5) * cell)[:, None, None], shape)
+    Z = np.broadcast_to(((np.arange(shape[2]) + 0.5) * cell)[None, None, :], shape)
+    below_corner = (
+        (solid < 0)
+        & (X < geometry["column_width"]) & (X > geometry["column_width"] - 1.0)
+        & (Z > geometry["base_height"] - 1.0) & (Z < geometry["base_height"] + 0.5)
+    )
+    assert below_corner.sum() > 50
+
+    def tilt(result):
+        return np.degrees(result.field.direction.to_numpy()[..., 0][below_corner]).mean()
+
+    assert tilt(aware_field) > tilt(no_ramp_field) + 0.5

@@ -11,6 +11,7 @@ import atom.fff3
 import atom.orientation_field
 import atom.solid3
 import atom.toolpath3
+from atom.ramp_in import DEFAULT_MAX_TILT_RATE_DEG_PER_MM, RampSettings
 from atom.overhang_field import (
     DEFAULT_HOLD_OVERHANG,
     DEFAULT_MARGIN_DEG,
@@ -89,6 +90,29 @@ def compute_tool_orientation():
         action="store_const",
         const=False,
         help="With --overhang_aware: let the final smoothing passes smooth the overhang constraints too, as upstream does with its own.",
+    )
+    # Build plan P2.4 (this fork): the tilt ramp-in below overhangs.
+    ramp = parser.add_mutually_exclusive_group()
+    ramp.add_argument(
+        "--ramp_in",
+        dest="ramp_in",
+        action="store_const",
+        const=True,
+        default=None,
+        help="With --overhang_aware, build plan P2.4: constrain the material printed before each overhang cell so the tilt has built up where the overhang starts (default on).",
+    )
+    ramp.add_argument(
+        "--no_ramp_in",
+        dest="ramp_in",
+        action="store_const",
+        const=False,
+        help="With --overhang_aware: no ramp-in constraints.",
+    )
+    parser.add_argument(
+        "--max_tilt_rate",
+        type=float,
+        default=None,
+        help=f"With the ramp-in: how fast the tilt may build up, degrees per mm along the build direction (default {DEFAULT_MAX_TILT_RATE_DEG_PER_MM:g}, a gate D3 placeholder). Where the first layer is closer than that allows, the ramp is steepened and the log says so.",
     )
     parser.add_argument(
         "--solid_sdf",
@@ -190,10 +214,17 @@ def check_overhang_arguments(args):
         args.max_overhang is not None
         or args.overhang_margin is not None
         or args.hold_overhang is not None
+        or args.ramp_in is not None
+        or args.max_tilt_rate is not None
     ):
         raise SystemExit(
-            "--max_overhang, --overhang_margin and --[no_]hold_overhang need --overhang_aware."
+            "--max_overhang, --overhang_margin, --[no_]hold_overhang, --[no_]ramp_in "
+            "and --max_tilt_rate need --overhang_aware."
         )
+    if args.ramp_in is False and args.max_tilt_rate is not None:
+        raise SystemExit("--max_tilt_rate needs the ramp-in; it is refused with --no_ramp_in.")
+    if args.max_tilt_rate is not None and not args.max_tilt_rate > 0:
+        raise SystemExit("--max_tilt_rate must be a positive number of degrees per mm.")
     if (args.overhang_aware or args.solid_sdf is not None) and (args.ortho_to_wall or args.allup):
         raise SystemExit(
             "--ortho_to_wall and --allup are not supported with --overhang_aware "
@@ -202,7 +233,7 @@ def check_overhang_arguments(args):
 
 
 def compute_overhang_aware(args, sdf, df_path, log_file):
-    """Build plan P2.2: the field through `atom.orientation_field`.
+    """Build plan P2.2 and P2.4: the field through `atom.orientation_field`.
 
     Its options off, `compute_direction_field` reproduces upstream's steps
     above bit for bit (tests/test_orientation_field.py); `--ortho_to_wall`
@@ -215,6 +246,11 @@ def compute_overhang_aware(args, sdf, df_path, log_file):
             DEFAULT_MARGIN_DEG if args.overhang_margin is None else args.overhang_margin,
         )
     hold = DEFAULT_HOLD_OVERHANG if args.hold_overhang is None else args.hold_overhang
+    ramp = None
+    if args.ramp_in is not False:
+        ramp = RampSettings(
+            DEFAULT_MAX_TILT_RATE_DEG_PER_MM if args.max_tilt_rate is None else args.max_tilt_rate
+        )
     solid = None
     if args.solid_sdf is not None:
         solid = atom.solid3.SDF()
@@ -222,7 +258,7 @@ def compute_overhang_aware(args, sdf, df_path, log_file):
 
     t0 = time.perf_counter()
     result = atom.orientation_field.compute_direction_field(
-        sdf, args.maxslope, overhang=settings, solid_sdf=solid, hold_overhang=hold
+        sdf, args.maxslope, overhang=settings, solid_sdf=solid, hold_overhang=hold, ramp=ramp
     )
     duration = time.perf_counter() - t0
 
@@ -234,6 +270,20 @@ def compute_overhang_aware(args, sdf, df_path, log_file):
             f"(max overhang {settings.max_overhang_deg:g} degrees, margin "
             f"{settings.margin_deg:g}, hold {'on' if hold else 'off'})"
         )
+        if ramp is None:
+            lines.append("Ramp-in: off")
+        else:
+            r = result.ramp
+            line = (
+                f"Ramp-in: {r.cells} cells below {r.walks_used} overhang cells "
+                f"(max tilt rate {ramp.max_tilt_rate_deg_per_mm:g} degrees per mm)"
+            )
+            if r.walks_steepened:
+                line += (
+                    f"; {r.walks_steepened} of them had too little room above the first "
+                    f"layer and were steepened, up to {r.steepest_rate_deg_per_mm:.1f} degrees per mm"
+                )
+            lines.append(line)
     if solid is not None:
         lines.append(f"Field computed on the solid SDF {args.solid_sdf}, masked by the infilled one")
     lines.append(f"Direction computation took {duration:.1f} seconds")

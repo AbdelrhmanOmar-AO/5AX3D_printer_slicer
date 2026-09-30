@@ -96,10 +96,13 @@ def test_the_rule_is_written_out_in_full():
     assert of.DEFAULT_HOLD_OVERHANG is True
     assert of.overhang_arguments(True) == (
         " --overhang_aware --max_overhang 45 --overhang_margin 2 --hold_overhang"
+        " --ramp_in --max_tilt_rate 3"
     )
-    assert of.overhang_arguments(True, 50, 1.5, False) == (
+    assert of.overhang_arguments(True, 50, 1.5, False, None, 4.5) == (
         " --overhang_aware --max_overhang 50 --overhang_margin 1.5 --no_hold_overhang"
+        " --ramp_in --max_tilt_rate 4.5"
     )
+    assert of.overhang_arguments(True, ramp_in=False).endswith(" --hold_overhang --no_ramp_in")
 
 
 @pytest.mark.parametrize(
@@ -111,6 +114,12 @@ def test_the_rule_is_written_out_in_full():
         ({"overhang_aware": True, "max_overhang_deg": 100}, "between 0 and 90"),
         ({"overhang_aware": True, "overhang_margin_deg": "2"}, "number of degrees"),
         ({"overhang_aware": True, "hold_overhang": 1}, "true or false"),
+        ({"ramp_in": True}, "need"),
+        ({"max_tilt_rate_deg_per_mm": 3}, "need"),
+        ({"overhang_aware": True, "ramp_in": "no"}, "true or false"),
+        ({"overhang_aware": True, "max_tilt_rate_deg_per_mm": 0}, "positive"),
+        ({"overhang_aware": True, "max_tilt_rate_deg_per_mm": True}, "degrees per mm"),
+        ({"overhang_aware": True, "ramp_in": False, "max_tilt_rate_deg_per_mm": 3}, "ramp_in"),
     ],
 )
 def test_bad_keys_are_refused_when_the_file_is_read(keys, message):
