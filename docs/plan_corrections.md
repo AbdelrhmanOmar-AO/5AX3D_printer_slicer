@@ -54,6 +54,9 @@ The plan says "the floor/overhang constraint is commented out". More precisely:
 So the constant exists and holds 1.0 degree, but nothing reads it. It looks
 active on a grep and is not. P2.1 and P2.2 should say so explicitly.
 
+**Partly wrong (P2-7):** the orientation field does not read it, but the
+layer and tangent stages do.
+
 ### 1.3 The "placeholder" files do not exist ★ PLAN EDIT
 
 P1.1 says `tests/test_kinematics3z.py` ("replace the placeholder") and P4.2 says
@@ -1919,7 +1922,14 @@ overhang constraint after each pass, as the first layer is, or measure the
 loss and compensate. P2.2's planned tiny-SDF unit test and P2.0's field-only
 run can both measure it. Not decided here.
 
-#### P2-3 Where the stock tilt near an overhang comes from is not yet known (open, for P2.1)
+**Update (P2.1):** one measurement. For the infill's inner surface above
+`ramp70_xs` at 30 degrees (P2-3), the 32 passes changed the mean tilt next to
+the underside from 19.85 to 19.77 degrees: that constrained surface is broad
+and uniform, so averaging it with itself changes little. A thin band of
+overhang constraints facing an opposite constraint 1.8 mm away (P2-8) is the
+case that matters, and it is still unmeasured.
+
+#### P2-3 Where the stock tilt near an overhang comes from (found in P2.1: the infill, see the update)
 
 *Open question.* The per-surface data in the lab baseline
 (`reports/baseline_overhang/ramp*_s_ms*.json`, `surfaces[0]`) shows the tilt
@@ -1956,6 +1966,22 @@ field itself.
 overhangs, P2.2 must override or remove it, not only add a constraint beside
 it. P2.1 should find it, most cheaply by running the field stage on a small
 analytic ramp SDF on the CPU and looking at which cells are constrained.
+
+**Update (P2.1, 2026-09-30): found. It is the infill.** `sdf_to_isdf.py`
+overwrites the part's SDF with a shell (`fff3.sdf_generate_infill`,
+`hollow_sdf = -sdf - wall_width`), which makes every cell deeper than 1.8 mm
+"outside" again, apart from the gyroid walls. The SDF therefore has an inner
+surface 1.8 mm under every outer one, facing the other way. Above an overhang
+it faces up and away, at `90 - theta_geo` from vertical; it is not "pointing
+down", so the ceiling rule constrains the field to it whenever that angle is
+within `max_slope`. Measured by running stage 4 itself on exact ramp SDFs on
+the CPU (`experiment/experiment_orientation_field_ramp.py`, bit-identical to
+`tools/compute_tool_orientations.py`): `ramp70` at 30 degrees gets 3 910
+constrained cells at 20.3 degrees, azimuth 179, 1.5 mm deep, and a tilt of
+19.8 degrees next to the underside (baseline 20.6); **with infill off, 0 tilted
+constraints and exactly zero tilt** on `ramp60`, `ramp70` and `ramp90`. Full
+table and reasoning: `docs/orientation_field.md` section 4. What it means for
+P2.2: P2-8.
 
 #### P2-4 A stale figure in `overhang_metrics`'s docstring
 
@@ -2077,3 +2103,73 @@ P2.0's "Done when" asks to record.
 Single field-only runs are a few minutes each at size `xs`; whether the P2
 iterations need a parallel field-only matrix on the lab machine is the
 operator's call.
+
+#### P2-7 `FLOOR_MAX_ANGLE` is read, by stages 5 and 6 ★ PLAN EDIT
+
+*Factual error, in correction 1.2 and in the plan.* Correction 1.2 says the
+constant "exists and holds 1.0 degree, but nothing reads it", and P2.1 asks to
+"say this explicitly so nobody mistakes it for a live constraint". Only the
+first half is right: the **orientation field** does not read it (its floor
+branch is commented out, `fff3.py:92`, `:101`). But:
+
+* `fff3.init_phasor3_field_from_sdf` (stage 5, layers) pins layer positions
+  on floors within `FLOOR_MAX_ANGLE` of straight down (`fff3.py:293`, `:313`);
+* `fff3.init_deposition_tangent_field` (stage 6, tangents) uses it for bottom
+  surfaces when a `bottom_lines` image is given (`fff3.py:235`).
+
+`sdf_df_to_layers.py` and `compute_tangents.py` both set it to 1 degree
+explicitly. So a flat underside (within 1 degree) fixes where a layer lies,
+and a sloped one does not. P2.2 should not reuse the name for an overhang
+threshold without deciding what that does to the layers.
+`docs/orientation_field.md` section 3.
+
+#### P2-8 With infill on, P2.2's overhang constraint would face a stock constraint pointing the other way (for P2.2's design)
+
+*Hazard for P2.2; found in P2.1.* P2.2 constrains the outer underside cells to
+`[t, azimuth of n]`, toward the overhang. With infill (every benchmark part,
+and the calibration cube), stock's ceiling rule constrains the infill's inner
+surface 1.8 mm above them to `-n`, away from it (P2-3). On `ramp60` at 30
+degrees with `t = 17`, the two directions are 47 degrees apart across ten
+cells, and the 32 final passes average both (P2-2). The plan's P2.2 text does
+not anticipate this.
+
+Options, for the operator with P2.2's design (`docs/orientation_field.md`
+section 5):
+
+* **(a)** when `overhang_aware`, compute the orientation field on the SDF
+  **before** infill; the later stages keep the infilled one, so the infill
+  still prints. Needs the pre-infill SDF kept (stage 3 bis overwrites it in
+  place today);
+* **(b)** keep the infilled SDF but exclude inner surfaces from the ceiling
+  rule, which needs the pre-infill SDF to tell them apart;
+* **(c)** leave it and let the constraints fight: not recommended.
+
+(a) and (b) also change stock's behaviour wherever the gyroid's surfaces were
+acting as ceilings, so P2.5's top-surface check should cover it. Both are
+behind the `overhang_aware` flag, so the golden output is untouched.
+
+A related question for the team: stock **without** infill is exactly vertical
+on the ramps (`theta_eff = theta_geo`), a fairer 3-axis-like reference than
+stock with infill, which tilts away. Whether to add it to the comparison is
+open; it is cheap in the field-only tier.
+
+#### P2-9 P2.1 as built
+
+*Definitions within P2.1.*
+
+* **`tools/tilt_bound.py`**: steepest printable overhang =
+  `max_overhang + usable tilt`, at most 90; usable tilt = the machine's limit
+  capped at **50 degrees by the nozzle** (`fff3.MAX_SLOPE_ANGLE`, from the
+  80-degree `NOZZLE_CONE_ANGLE`; the plan's bound omits the cap). Each part is
+  **inside** (P2.5's criterion, `theta_geo <= max_overhang + usable tilt -
+  margin`), **edge** (inside only without the margin; not counted) or **out of
+  range**. The 90-degree cap is applied after the margin, so at 50 degrees of
+  tilt a flat ledge (needing 47 with the margin) is inside. Parts are read
+  from `atom.benchmark_meshes` (the T-shape at its default underside unless
+  `--tshape-underside` is given); the default tilt is the machine profile's;
+  several `--tilt` values give a column each, for gate D0.
+* **`docs/orientation_field.md`**: the field from SDF to toolpath with line
+  references, the constraint rules, the multigrid aligner, what the later
+  stages read, the mechanism of P2-3 and what it means for P2.2.
+* **`experiment/experiment_orientation_field_ramp.py`**: the P2-3 experiment,
+  kept so the finding can be re-checked. Development numbers only.
