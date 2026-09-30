@@ -221,7 +221,9 @@ def test_the_progress_log_gains_a_machine_column(tmp_path):
 
     assert tuple(rows[0]) == overhang_report.PROGRESS_COLUMNS
     assert len(rows[1]) == len(overhang_report.PROGRESS_COLUMNS)
-    assert rows[1][-1] == "", "an old row has no machine, and must not gain a made-up one"
+    columns = overhang_report.PROGRESS_COLUMNS
+    assert rows[1][columns.index("machine")] == "", "an old row has no machine, and must not gain a made-up one"
+    assert rows[1][columns.index("overhang_aware")] == "", "nor a made-up field (P2.5's column)"
     assert rows[1][1] == "ramp45_xs", "the existing data must survive the migration"
 
 

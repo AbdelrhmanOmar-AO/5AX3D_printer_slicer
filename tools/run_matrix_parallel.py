@@ -45,6 +45,12 @@ Usage
     python tools/run_matrix_parallel.py --sizes xs s --workers 16
     python tools/run_matrix_parallel.py --sizes xs --workers 8 --resume
     python tools/run_matrix_parallel.py --sizes xs s --workers 16 --dry-run
+    python tools/run_matrix_parallel.py --sizes xs s --workers 8 --overhang-aware
+
+`--overhang-aware` (build plan P2.5) runs the same matrix with the
+overhang-aware field. Its reports, archived toolpaths and logs are named
+`<part>_ms<deg>_aware`, beside the stock ones and never over them, and the
+summary puts each next to the stock run of the same part and slope.
 
 `--dry-run` prints the plan, the disk estimate and the projected wall-clock
 without running or copying anything. Worth doing first on a new machine.
@@ -194,8 +200,13 @@ def report_machine_key(report):
     )
 
 
+def job_name(job):
+    """``<part>_ms<deg>``, with ``_aware`` for an overhang-aware job: its files' stem."""
+    return orep.report_path(job["part"], job["slope"], job.get("aware", False)).stem
+
+
 def build_jobs(sizes, parts=orep.MATRIX_PARTS, slopes=orep.MATRIX_SLOPES,
-               resume=False):
+               resume=False, overhang_aware=False):
     """Every (part, slope) to run, in longest-first order.
 
     Longest first matters: with a queue, starting the slow jobs last leaves one
@@ -207,19 +218,25 @@ def build_jobs(sizes, parts=orep.MATRIX_PARTS, slopes=orep.MATRIX_SLOPES,
     ``resume`` drops combinations that already hold a current result, using the
     same metrics-version test as ``--status`` so a stale report counts as
     missing (correction 4.7).
+
+    ``overhang_aware`` (build plan P2.5) makes overhang-aware jobs: resume
+    looks at overhang-aware reports only, and a job with no overhang-aware
+    runtime yet is estimated from the stock run of the same part and slope.
     """
     known = {}
-    for report in orep.load_reports(quiet=True):
-        total = (report.get("runtime") or {}).get("total_s") or 0.0
-        if total:
-            known[(report["part"], report["max_slope_deg"])] = total
+    kinds = (False, True) if overhang_aware else (False,)
+    for kind in kinds:  # overhang-aware runtimes, when there are any, win
+        for report in orep.load_reports(quiet=True, overhang_aware=kind):
+            total = (report.get("runtime") or {}).get("total_s") or 0.0
+            if total:
+                known[(report["part"], report["max_slope_deg"])] = total
 
     current = set()
     if resume:
         mine = this_machine_key()
         current = {
             (r["part"], r["max_slope_deg"])
-            for r in orep.load_reports(quiet=True)
+            for r in orep.load_reports(quiet=True, overhang_aware=overhang_aware)
             if r.get("metrics_version") == orep.METRICS_VERSION
             and report_machine_key(r) == mine
         }
@@ -235,6 +252,7 @@ def build_jobs(sizes, parts=orep.MATRIX_PARTS, slopes=orep.MATRIX_SLOPES,
                     "part": key[0],
                     "slope": key[1],
                     "estimate_s": known.get(key, 0.0),
+                    "aware": bool(overhang_aware),
                 })
 
     # Unknown durations sort first: an unmeasured job could be the long one, and
@@ -526,7 +544,7 @@ def run_job(worker, job, log_dir, threads=None):
     """
     worker = Path(worker)
     param = f"data/param/{job['part']}.json"
-    log_path = Path(log_dir) / f"{job['part']}_ms{job['slope']:g}.log"
+    log_path = Path(log_dir) / f"{job_name(job)}.log"
 
     env = dict(
         os.environ,
@@ -544,13 +562,19 @@ def run_job(worker, job, log_dir, threads=None):
 
     started = time.monotonic()
     with log_path.open("w", encoding="utf-8", errors="replace") as handle:
-        handle.write(f"# {job['part']} @ max_slope {job['slope']:g}\n")
+        handle.write(
+            f"# {job['part']} @ max_slope {job['slope']:g}"
+            f"{', overhang-aware' if job.get('aware') else ''}\n"
+        )
         handle.write(f"# worker: {worker}\n")
         handle.write(f"# started: {datetime.now(timezone.utc).isoformat()}\n\n")
         handle.flush()
+        command = [sys.executable, "tools/overhang_report.py", param,
+                   "--max-slope", f"{job['slope']:g}"]
+        if job.get("aware"):
+            command.append("--overhang-aware")
         result = subprocess.run(
-            [sys.executable, "tools/overhang_report.py", param,
-             "--max-slope", f"{job['slope']:g}"],
+            command,
             cwd=str(worker), env=env,
             stdout=handle, stderr=subprocess.STDOUT,
         )
@@ -565,7 +589,7 @@ def collect(worker, job):
     Returns the report dict, or None if the worker produced none.
     """
     worker = Path(worker)
-    name = f"{job['part']}_ms{job['slope']:g}"
+    name = job_name(job)
 
     source = worker / "reports" / "baseline_overhang" / f"{name}.json"
     if not source.is_file():
@@ -698,6 +722,14 @@ def main(argv=None):
         help="Skip combinations that already hold a current result.",
     )
     parser.add_argument(
+        "--overhang-aware", action="store_true",
+        help=(
+            "Build plan P2.5: run the matrix with the overhang-aware field. "
+            "Reports, archives and logs are named <part>_ms<deg>_aware, beside "
+            "the stock ones; --resume then looks at overhang-aware reports only."
+        ),
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Print the plan, disk estimate and projected time; change nothing.",
     )
@@ -718,7 +750,8 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    jobs = build_jobs(args.sizes, args.parts, args.slopes, resume=args.resume)
+    jobs = build_jobs(args.sizes, args.parts, args.slopes, resume=args.resume,
+                      overhang_aware=args.overhang_aware)
     if not jobs:
         print("Nothing to run: every combination already has a current result.")
         return 0
@@ -738,7 +771,8 @@ def main(argv=None):
     timed = sum(1 for j in jobs if j["estimate_s"])
     serial = sum(j["estimate_s"] for j in jobs)
 
-    print(f"Matrix: {len(jobs)} run(s) across {workers_wanted} worker(s)")
+    field = "overhang-aware (build plan P2.5)" if args.overhang_aware else "stock"
+    print(f"Matrix: {len(jobs)} run(s) across {workers_wanted} worker(s), {field} field")
     print(f"Sizes: {', '.join(args.sizes)}   Slopes: "
           f"{', '.join(f'{s:g}' for s in args.slopes)} deg")
     if timed:

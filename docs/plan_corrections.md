@@ -2453,3 +2453,38 @@ show it (43.2), so it depends on the remeshed surface. **The operator's
 decision, 2026-09-30: leave it for now** and see in P2.5's runs (every part,
 the T-shape's four corners included) how often and how badly it happens,
 then decide on a fix with those numbers.
+
+#### P2-16 P2.5 prepared: the matrix runner's `--overhang-aware`, and stock beside overhang-aware in the summary
+
+*Built 2026-09-30 at the operator's request; the run itself is the lab
+machine's.*
+
+* **`tools/run_matrix_parallel.py --overhang-aware`**: the same matrix with
+  the overhang-aware field. Every job's report, archived toolpath and worker
+  log is named `<part>_ms<deg>_aware`, so it lands beside the stock files and
+  never over them (the runner named everything by part and slope only, so
+  without this an overhang-aware matrix would have overwritten the stock
+  archives the comparison needs). `--resume` looks at overhang-aware reports
+  only; a job with no overhang-aware runtime yet is estimated from the stock
+  run of the same part and slope. Dry run for `--sizes xs s --workers 8`: 48
+  runs, **4:39 to 5:39** at the measured 79-65 % efficiency (the plan said
+  3.5-4 h, from the lower bound).
+* **Which runs:** the plan says "re-run the full P0.8 matrix (xs + s, as the
+  baseline) with overhang_aware on, max_slope = machine limit". Its success
+  criteria compare at every budget ("`ramp45` still passes at every budget",
+  "the same 18-run subset"), so the runner's default is the baseline's own 48
+  combinations, slopes 7, 15 and 30, each against the stock run with the same
+  slope. `--slopes 30` runs the machine limit alone (16 runs).
+* **The summary:** the overhang-aware section is now **Stock vs
+  overhang-aware**: one cell per part and slope, `stock -> overhang-aware`,
+  each as mark, worst effective overhang and unsupported deposition, with a
+  count of printable pairs. Above it, a warning when the pairs are not all in
+  one provenance group (the plan's "one provenance group" requirement) or
+  were scored with different metrics versions (the case until the lab
+  re-scores the stock baseline to version 3, P2-14).
+* **The progress log** gains an `overhang_aware` column (older rows padded
+  empty; all of them are stock), so overhang-aware full runs are now logged.
+* **Not yet built** (the plan's other P2.5 numbers): top-surface quality and
+  the maximum tilt rate along the toolpath. Both can be measured from the
+  archived toolpaths and the mesh, so they can be added after the lab run and
+  applied with `--reanalyse` without re-running anything.

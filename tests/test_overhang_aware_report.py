@@ -116,19 +116,65 @@ def test_loading_picks_stock_aware_or_both(tmp_path, monkeypatch):
     assert len(orep.load_reports(overhang_aware=None)) == 4
 
 
-def test_overhang_aware_runs_get_their_own_section():
-    stock = [_report("ramp60_xs", 30.0, False)]
-    aware = [_report("ramp70_xs", 30.0, True, worst=44.0)]
+def _provenance(machine="labpc", metrics_version=None):
+    """A complete provenance block, as `atom.provenance.is_known` wants it."""
+    return {
+        "source": "pipeline", "machine": machine, "os": "Windows-10", "python": "3.10.21",
+        "taichi": "1.7.4", "ti_arch_setting": "stock mix", "stage_arches": {"order_atoms": "x64"},
+        "machine_profile": "reference", "git_commit": "abc123", "code_modified": False,
+        "recorded_utc": "2026-10-01T00:00:00Z",
+        "metrics_version": orep.METRICS_VERSION if metrics_version is None else metrics_version,
+        "scored": {},
+    }
 
-    alone = orep.summarize(stock)
-    both = orep.summarize(stock, (), aware)
 
-    assert orep.summarize(stock, (), ()) == alone
-    before, section = both.split("## Overhang-aware runs (build plan P2.2)")
+def _paired(worst_stock=89.0, worst_aware=43.0, aware_machine="labpc", aware_version=None):
+    stock = _report("ramp60_s", 30.0, False, worst=worst_stock)
+    stock["provenance"] = _provenance()
+    aware = _report("ramp60_s", 30.0, True, worst=worst_aware)
+    aware["provenance"] = _provenance(aware_machine)
+    aware["verdict"]["printable"] = worst_aware <= 45
+    if aware_version is not None:
+        aware["metrics_version"] = aware_version
+    return stock, aware
+
+
+def test_overhang_aware_runs_sit_beside_the_stock_run():
+    """Build plan P2.5: stock -> overhang-aware in one cell, after the conclusion."""
+    stock, aware = _paired()
+    alone = orep.summarize([stock])
+    both = orep.summarize([stock], (), [aware])
+
+    assert orep.summarize([stock], (), ()) == alone
+    before, section = both.split("## Stock vs overhang-aware (build plan P2.5)")
     assert before.rstrip() == alone.split("\n## Runtime")[0].rstrip()
-    assert "ramp70_xs" not in before
-    assert "| `ramp70_xs` |" in section
+    assert "| `ramp60_s` | ❌ 89° / 5.0% → ✅ 43° / 5.0% |" in section
+    assert "share one provenance group" in section and "Comparable." in section
+    assert "Printable, over the 1 part and slope pair(s) with both runs: stock 0, overhang-aware 1." in section
     assert "## Runtime" in section
+
+
+def test_a_pair_from_two_machines_is_flagged():
+    stock, aware = _paired(aware_machine="laptop")
+    section = orep.summarize([stock], (), [aware]).split("## Stock vs overhang-aware")[1]
+    assert "Not comparable as they stand: 2 provenance group(s)" in section
+    assert "stock: machine labpc" in section and "overhang-aware: machine laptop" in section
+
+
+def test_a_pair_scored_with_two_metrics_versions_is_flagged():
+    """Tomorrow's case until the lab re-scores: stock at version 2, overhang-aware at 3."""
+    stock, aware = _paired()
+    stock["metrics_version"] = orep.METRICS_VERSION - 1
+    section = orep.summarize([stock], (), [aware]).split("## Stock vs overhang-aware")[1]
+    assert "Scored with different metrics versions" in section
+
+
+def test_an_overhang_aware_run_with_no_stock_partner_shows_a_dash():
+    stock, aware = _paired()
+    lonely = dict(aware, part="tshape_s")
+    section = orep.summarize([stock], (), [aware, lonely]).split("## Stock vs overhang-aware")[1]
+    assert "| `tshape_s` | — → ✅ 43° / 5.0% |" in section
+    assert "over the 1 part and slope pair(s)" in section
 
 
 def test_field_only_runs_split_stock_from_aware():
@@ -208,7 +254,9 @@ def tiny_repo(tmp_path, monkeypatch):
     [([], "baseline_overhang"), (["--field-only"], "field_only")],
 )
 def test_the_command_line_writes_an_aware_report_apart(tiny_repo, capsys, extra, folder):
-    """Named ``_aware``, at the profile's budget, and never in the stock progress log."""
+    """Named ``_aware``, at the profile's budget; a full run is logged as overhang-aware (P2.5)."""
+    import csv
+
     root, param = tiny_repo
     assert orep.main([str(param), "--skip-pipeline", "--overhang-aware", *extra]) == 0
 
@@ -216,7 +264,13 @@ def test_the_command_line_writes_an_aware_report_apart(tiny_repo, capsys, extra,
     assert written["overhang_aware"] is True
     assert written["max_slope_deg"] == 60.0
     assert not (root / "reports" / folder / "ramp60_t_ms60.json").exists()
-    assert not (root / "reports" / "matrix_progress.csv").exists()
+    log = root / "reports" / "matrix_progress.csv"
+    if "--field-only" in extra:
+        assert not log.exists()  # the log has no column for field-only runs
+    else:
+        with log.open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        assert [(r["part"], r["overhang_aware"]) for r in rows] == [("ramp60_t", "True")]
     assert "ramp60_t at max_slope 60°, overhang-aware" in capsys.readouterr().out
 
 

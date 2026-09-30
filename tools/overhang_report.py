@@ -574,10 +574,14 @@ def measure_field_only(
 #: Columns of the progress log. `machine` was appended once a second machine
 #: started running the pipeline; `migrate_progress_header` brings an older file
 #: up to it rather than writing ragged rows into it.
+#: `overhang_aware` was appended for build plan P2.5; older rows are padded
+#: with an empty value, and every one of them is a stock run (nothing else was
+#: logged before the column existed).
 PROGRESS_COLUMNS = (
     "finished_utc", "part", "max_slope_deg", "metrics_version",
     "worst_effective_deg", "unsupported_near_overhangs",
     "max_tilt_used_deg", "printable", "runtime_s", "machine",
+    "overhang_aware",
 )
 
 
@@ -641,6 +645,7 @@ def append_progress(report):
             verdict["printable"],
             f"{report['runtime']['total_s']:.0f}",
             provenance.get("machine") or "",
+            bool(report.get("overhang_aware", False)),
         ])
         handle.flush()
         os.fsync(handle.fileno())
@@ -973,20 +978,93 @@ def _field_only_section(reports):
     return lines[:-1]
 
 
-def _aware_section(reports):
-    """Full overhang-aware runs (build plan P2.2), in a table of their own."""
+def _short_cell(report):
+    """Mark, worst effective angle and unsupported deposition: half a comparison cell."""
+    metrics, verdict = report["metrics"], report["verdict"]
+    if not verdict.get("assessable", True):
+        return "– no overhang"
+    worst = verdict["worst_effective_deg"]
+    near = metrics["unsupported_fraction_near_overhangs"]
+    worst_text = "n/m" if math.isnan(worst) else f"{worst:.0f}°"
+    near_text = "n/m" if near is None or math.isnan(near) else f"{near * 100:.1f}%"
+    return f"{'✅' if verdict['printable'] else '❌'} {worst_text} / {near_text}"
+
+
+def _comparison_section(stock, aware):
+    """Stock and overhang-aware runs side by side (build plan P2.5).
+
+    One cell per part and slope that has an overhang-aware run: **stock ->
+    overhang-aware**. Warns above the table when the pairs are not all from
+    one provenance group, or were scored with different metrics versions,
+    since then the arrows compare different measurements.
+    """
+    stock_by_key = {(r["part"], r["max_slope_deg"]): r for r in stock}
+    aware_by_key = {(r["part"], r["max_slope_deg"]): r for r in aware}
+    pairs = [(stock_by_key.get(key), report) for key, report in sorted(aware_by_key.items())]
+    compared = [s for s, _ in pairs if s is not None] + [a for _, a in pairs]
+
     lines = [
-        "## Overhang-aware runs (build plan P2.2)",
+        "## Stock vs overhang-aware (build plan P2.5)",
         "",
-        "Full runs with the overhang-aware field (`overhang_report.py "
-        "--overhang-aware`), cells as in the table above. Their tilt budget is "
-        "the machine profile's limit unless a run set it. P2.5 puts the "
-        "comparison side by side; until then compare a cell only with a stock "
-        "run from the same provenance group.",
+        "Each cell is **stock → overhang-aware** for the same part and "
+        "max_slope: worst effective overhang angle / unsupported deposition "
+        "near overhangs. Overhang-aware runs: `overhang_report.py "
+        "--overhang-aware`, or `run_matrix_parallel.py --overhang-aware` for the "
+        "matrix. `—` means that side has no run.",
         "",
     ]
-    lines += _provenance_section(reports)
-    lines += _table(reports, _format_cell)
+    groups = provenance_groups(compared)
+    if len(groups) == 1 and prov.is_known(groups[0][2][0].get("provenance")):
+        lines += [
+            f"Stock and overhang-aware runs share one provenance group: "
+            f"{groups[0][1]}. Comparable.",
+            "",
+        ]
+    else:
+        lines += [
+            f"> ⚠️ **Not comparable as they stand: {len(groups)} provenance "
+            "group(s)** (plan §0 rule 10, build plan P2.5: stock and "
+            "overhang-aware must come from the same machine and backend).",
+            ">",
+        ]
+        for label, description, members in groups:
+            kinds = sorted({"overhang-aware" if m.get("overhang_aware") else "stock" for m in members})
+            lines.append(f"> **[{label}]** {len(members)} run(s), {' and '.join(kinds)}: {description}")
+        lines.append("")
+    versions = sorted({r.get("metrics_version") for r in compared}, key=str)
+    if len(versions) > 1:
+        lines += [
+            f"> ⚠️ **Scored with different metrics versions ({', '.join(map(str, versions))}).** "
+            "Re-score the older runs (`overhang_report.py --reanalyse`, on the "
+            "machine that measured them) before comparing.",
+            "",
+        ]
+
+    slopes = sorted({key[1] for key in aware_by_key})
+    parts = sorted({key[0] for key in aware_by_key})
+    lines += [
+        "| Part | " + " | ".join(f"max_slope {s:g}°" for s in slopes) + " |",
+        "|" + "---|" * (len(slopes) + 1),
+    ]
+    for part in parts:
+        cells = []
+        for slope in slopes:
+            a = aware_by_key.get((part, slope))
+            st = stock_by_key.get((part, slope))
+            if a is None:
+                cells.append("—")
+            else:
+                cells.append(f"{_short_cell(st) if st else '—'} → {_short_cell(a)}")
+        lines.append(f"| `{part}` | " + " | ".join(cells) + " |")
+
+    both = [(s, a) for s, a in pairs if s is not None]
+    stock_ok = sum(bool(s["verdict"]["printable"]) for s, _ in both)
+    aware_ok = sum(bool(a["verdict"]["printable"]) for _, a in both)
+    lines += [
+        "",
+        f"Printable, over the {len(both)} part and slope pair(s) with both runs: "
+        f"stock {stock_ok}, overhang-aware {aware_ok}.",
+    ]
     return lines
 
 
@@ -994,9 +1072,10 @@ def summarize(reports, field_only_reports=(), aware_reports=()):
     """Build the comparison table and the plain-language conclusion.
 
     ``reports`` are the stock full runs, the baseline. ``aware_reports``
-    (build plan P2.2, full overhang-aware runs) and ``field_only_reports``
-    (P2.0, stock and overhang-aware) get sections and tables of their own,
-    after the conclusion; they never enter the main table.
+    (full overhang-aware runs) get a section of their own after the
+    conclusion, side by side with the stock run of the same part and slope
+    (build plan P2.5); ``field_only_reports`` (P2.0, stock and overhang-aware)
+    get their own too. Neither enters the main table.
     """
     slopes = sorted({r["max_slope_deg"] for r in reports})
 
@@ -1021,7 +1100,7 @@ def summarize(reports, field_only_reports=(), aware_reports=()):
 
     lines += ["", "## Conclusion", ""] + _conclusion(reports, slopes)
     if aware_reports:
-        lines += [""] + _aware_section(list(aware_reports))
+        lines += [""] + _comparison_section(reports, list(aware_reports))
     if field_only_reports:
         lines += [""] + _field_only_section(list(field_only_reports))
     lines += [""] + _timing_section(reports)
@@ -1491,10 +1570,10 @@ def main(argv=None):
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    # The progress log has no column saying how a run was made, so a
-    # field-only or overhang-aware row would read as a stock full run's. It
-    # records stock full runs only, until P2.5 gives it that column.
-    if not args.field_only and not aware:
+    # The progress log records full runs, with a column saying whether the
+    # field was overhang-aware (P2.5). It has no column for field-only runs,
+    # which would read as full ones, so they stay out.
+    if not args.field_only:
         append_progress(report)
 
     verdict = report["verdict"]

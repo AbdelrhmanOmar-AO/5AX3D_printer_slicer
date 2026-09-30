@@ -127,7 +127,7 @@ def test_resume_skips_a_run_this_machine_already_did(monkeypatch):
     monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix",
                                                           "1.7.4", "reference"))
     monkeypatch.setattr(orep, "load_reports",
-                        lambda quiet=False: [_report("ramp45_xs", 7.0,
+                        lambda quiet=False, **_: [_report("ramp45_xs", 7.0,
                                                      _provenance("labpc"))])
     jobs = rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,), resume=True)
     assert jobs == []
@@ -143,7 +143,7 @@ def test_resume_re_runs_a_report_from_another_machine(monkeypatch):
     monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix",
                                                           "1.7.4", "reference"))
     monkeypatch.setattr(orep, "load_reports",
-                        lambda quiet=False: [_report("ramp45_xs", 7.0,
+                        lambda quiet=False, **_: [_report("ramp45_xs", 7.0,
                                                      _provenance("AbdoYasser"))])
     jobs = rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,), resume=True)
     assert [(j["part"], j["slope"]) for j in jobs] == [("ramp45_xs", 7.0)]
@@ -154,7 +154,7 @@ def test_a_renamed_machine_is_still_the_same_machine(monkeypatch):
     monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix",
                                                           "1.7.4", "reference"))
     monkeypatch.setattr(orep, "load_reports",
-                        lambda quiet=False: [_report("ramp45_xs", 7.0,
+                        lambda quiet=False, **_: [_report("ramp45_xs", 7.0,
                                                      _provenance("LabPC"))])
     assert rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,),
                           resume=True) == []
@@ -165,7 +165,7 @@ def test_resume_re_runs_when_the_backend_was_forced(monkeypatch):
     monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix",
                                                           "1.7.4", "reference"))
     monkeypatch.setattr(orep, "load_reports",
-                        lambda quiet=False: [_report("ramp45_xs", 7.0,
+                        lambda quiet=False, **_: [_report("ramp45_xs", 7.0,
                                                      _provenance("labpc",
                                                                  arch="cpu"))])
     assert len(rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,),
@@ -177,7 +177,7 @@ def test_resume_re_runs_a_report_with_no_provenance(monkeypatch):
     monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix",
                                                           "1.7.4", "reference"))
     monkeypatch.setattr(orep, "load_reports",
-                        lambda quiet=False: [_report("ramp45_xs", 7.0, None)])
+                        lambda quiet=False, **_: [_report("ramp45_xs", 7.0, None)])
     assert len(rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,),
                               resume=True)) == 1
 
@@ -189,7 +189,7 @@ def test_resume_re_runs_a_skip_pipeline_report(monkeypatch):
                                                           "1.7.4", "reference"))
     block = dict(_provenance("labpc"), source="skip-pipeline")
     monkeypatch.setattr(orep, "load_reports",
-                        lambda quiet=False: [_report("ramp45_xs", 7.0, block)])
+                        lambda quiet=False, **_: [_report("ramp45_xs", 7.0, block)])
     assert len(rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,),
                               resume=True)) == 1
 
@@ -290,7 +290,7 @@ def test_the_warmup_is_the_shortest_job_not_the_longest(monkeypatch, tmp_path, c
     monkeypatch.setattr(rmp, "collect",
                         lambda w, j: _stub_report(j["part"], j["slope"]))
     monkeypatch.setattr(orep, "append_progress", lambda report: None)
-    monkeypatch.setattr(orep, "load_reports", lambda quiet=False: [])
+    monkeypatch.setattr(orep, "load_reports", lambda quiet=False, **_: [])
     monkeypatch.setattr(rmp, "create_worker",
                         lambda root, i, overwrite=False: tmp_path / f"w{i}")
     monkeypatch.setattr(rmp, "seed_cache", lambda source, workers: len(workers) - 1)
@@ -356,7 +356,7 @@ def test_the_dry_run_and_the_real_run_agree_on_the_warmup(monkeypatch, tmp_path)
     monkeypatch.setattr(rmp, "collect",
                         lambda w, j: _stub_report(j["part"], j["slope"]))
     monkeypatch.setattr(orep, "append_progress", lambda report: None)
-    monkeypatch.setattr(orep, "load_reports", lambda quiet=False: [])
+    monkeypatch.setattr(orep, "load_reports", lambda quiet=False, **_: [])
     monkeypatch.setattr(rmp, "create_worker",
                         lambda root, i, overwrite=False: tmp_path / f"w{i}")
     monkeypatch.setattr(rmp, "seed_cache", lambda s, w: len(w) - 1)
@@ -913,7 +913,7 @@ def test_the_pool_size_is_the_number_of_workers(monkeypatch, tmp_path):
     monkeypatch.setattr(rmp, "run_job", fake_run_job)
     monkeypatch.setattr(rmp, "collect", lambda w, j: _stub_report(j["part"], j["slope"]))
     monkeypatch.setattr(orep, "append_progress", lambda report: None)
-    monkeypatch.setattr(orep, "load_reports", lambda quiet=False: [])
+    monkeypatch.setattr(orep, "load_reports", lambda quiet=False, **_: [])
     monkeypatch.setattr(rmp, "create_worker",
                         lambda root, i, overwrite=False: tmp_path / f"w{i}")
     monkeypatch.setattr(rmp, "seed_cache", lambda source, workers: len(workers) - 1)
@@ -952,3 +952,79 @@ def test_a_mixed_table_is_announced_on_screen(monkeypatch, tmp_path, capsys):
               "--keep-workers"])
 
     assert "WARNING: this table mixes 2 provenance groups" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------
+# --overhang-aware (build plan P2.5)
+# --------------------------------------------------------------------------
+
+
+def test_overhang_aware_jobs_are_named_apart_from_stock_ones():
+    stock = {"part": "ramp60_s", "slope": 30.0}
+    assert rmp.job_name(stock) == "ramp60_s_ms30"
+    assert rmp.job_name(dict(stock, aware=True)) == "ramp60_s_ms30_aware"
+
+
+def test_overhang_aware_jobs_are_estimated_from_the_stock_runs(monkeypatch):
+    """No overhang-aware run has a runtime yet: the stock run of the same part and slope stands in."""
+    def load(quiet=False, field_only=False, overhang_aware=False):
+        return [] if overhang_aware else [_report("ramp45_xs", 7.0, _provenance("labpc"))]
+
+    monkeypatch.setattr(orep, "load_reports", load)
+    jobs = rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,), overhang_aware=True)
+    assert jobs == [{"part": "ramp45_xs", "slope": 7.0, "estimate_s": 100.0, "aware": True}]
+
+
+def test_resume_looks_at_overhang_aware_reports_only(monkeypatch):
+    """A stock report of the same part and slope does not make the overhang-aware job done."""
+    monkeypatch.setattr(rmp, "this_machine_key", lambda: ("labpc", "stock mix", "1.7.4", "reference"))
+    stock_done = [_report("ramp45_xs", 7.0, _provenance("labpc"))]
+
+    def load(quiet=False, field_only=False, overhang_aware=False):
+        return [] if overhang_aware else stock_done
+
+    monkeypatch.setattr(orep, "load_reports", load)
+    assert rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,), resume=True) == []
+    aware = rmp.build_jobs(["xs"], parts=("ramp45",), slopes=(7.0,), resume=True, overhang_aware=True)
+    assert [(j["part"], j["slope"]) for j in aware] == [("ramp45_xs", 7.0)]
+
+
+def test_an_overhang_aware_job_runs_the_report_with_the_option(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_run(command, cwd, env, stdout, stderr):
+        seen["command"] = command
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(rmp, "_PARENT_GIT_ENV", {})
+    monkeypatch.setattr(rmp.subprocess, "run", fake_run)
+    job = {"part": "ramp60_s", "slope": 30.0, "estimate_s": 0.0, "pool_size": 8, "aware": True}
+    ok, _, log = rmp.run_job(tmp_path, job, tmp_path)
+
+    assert ok and seen["command"][-3:] == ["--max-slope", "30", "--overhang-aware"]
+    assert log.name == "ramp60_s_ms30_aware.log"
+
+
+def test_collect_brings_back_the_overhang_aware_files_without_touching_stock(tmp_path, monkeypatch):
+    worker = rmp.create_worker(tmp_path / "workers", 0)
+    name = "ramp45_xs_ms7_aware"
+    (worker / "reports" / "baseline_overhang" / f"{name}.json").write_text(
+        json.dumps(_stub_report("ramp45_xs", 7.0)), encoding="utf-8"
+    )
+    (worker / "reports" / "toolpaths" / f"{name}.npz").write_bytes(b"aware")
+    out, archive = tmp_path / "out", tmp_path / "archive"
+    archive.mkdir()
+    (archive / "ramp45_xs_ms7.npz").write_bytes(b"stock")
+    monkeypatch.setattr(orep, "REPORT_DIR", out)
+    monkeypatch.setattr(orep, "TOOLPATH_ARCHIVE", archive)
+
+    assert rmp.collect(worker, {"part": "ramp45_xs", "slope": 7.0, "aware": True}) is not None
+    assert (out / f"{name}.json").is_file() and not (out / "ramp45_xs_ms7.json").exists()
+    assert (archive / f"{name}.npz").read_bytes() == b"aware"
+    assert (archive / "ramp45_xs_ms7.npz").read_bytes() == b"stock"
+
+
+def test_the_dry_run_says_which_field(tmp_path, capsys):
+    rmp.main(["--sizes", "xs", "--workers", "2", "--dry-run", "--overhang-aware",
+              "--root", str(tmp_path / "w")])
+    assert "overhang-aware (build plan P2.5) field" in capsys.readouterr().out
