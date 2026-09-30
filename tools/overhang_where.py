@@ -31,11 +31,12 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 import overhang_report as orep  # noqa: E402
 from atom import frame_atoms  # noqa: E402
 from atom import overhang_metrics as om  # noqa: E402
+from atom.ti_env import init_taichi  # noqa: E402
 
 
 def load_points(args, part):
     if args.toolpath:
-        orep.init_taichi("cpu")
+        init_taichi("cpu")
         from atom import toolpath3
 
         toolpath = toolpath3.Toolpath()
