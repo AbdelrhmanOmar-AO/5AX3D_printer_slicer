@@ -35,6 +35,10 @@ import numpy as np
 DEFAULT_MAX_OVERHANG_DEG = 45.0
 #: GATE D1: placeholder. Extra tilt beyond the bare minimum.
 DEFAULT_MARGIN_DEG = 2.0
+#: The operator's decision, 2026-09-30: hold the overhang constraints through
+#: the field's 32 final smoothing passes unless a part says otherwise
+#: (plan_corrections 7c P2-12).
+DEFAULT_HOLD_OVERHANG = True
 
 
 @dataclass(frozen=True)
@@ -158,7 +162,8 @@ def overhang_arguments(
 
     Empty when ``overhang_aware`` is absent or false, so a parameter file
     without the keys runs exactly upstream's command. Otherwise the rule's
-    values are written out in full (defaults included), so the log shows what
+    values are written out in full (defaults included, hold as
+    ``--hold_overhang`` or ``--no_hold_overhang``), so the log shows what
     ran. Values are checked here, when the parameter file is read; a rule key
     given without ``overhang_aware: true`` is refused rather than ignored.
     """
@@ -184,6 +189,6 @@ def overhang_arguments(
         f" --overhang_aware --max_overhang {_format(settings.max_overhang_deg)}"
         f" --overhang_margin {_format(settings.margin_deg)}"
     )
-    if _flag("hold_overhang", hold_overhang):
-        arguments += " --hold_overhang"
+    hold = DEFAULT_HOLD_OVERHANG if hold_overhang is None else _flag("hold_overhang", hold_overhang)
+    arguments += " --hold_overhang" if hold else " --no_hold_overhang"
     return arguments

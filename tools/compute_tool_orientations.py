@@ -12,6 +12,7 @@ import atom.orientation_field
 import atom.solid3
 import atom.toolpath3
 from atom.overhang_field import (
+    DEFAULT_HOLD_OVERHANG,
     DEFAULT_MARGIN_DEG,
     DEFAULT_MAX_OVERHANG_DEG,
     OverhangSettings,
@@ -71,10 +72,23 @@ def compute_tool_orientation():
         default=None,
         help=f"With --overhang_aware: extra tilt, degrees (default {DEFAULT_MARGIN_DEG:g}, a gate D1 placeholder).",
     )
-    parser.add_argument(
+    # Two spellings for one setting; argparse's BooleanOptionalAction would
+    # name the second --no-hold_overhang, unlike every other option here.
+    hold = parser.add_mutually_exclusive_group()
+    hold.add_argument(
         "--hold_overhang",
-        action="store_true",
-        help="With --overhang_aware: re-apply the overhang constraints after each of the 32 final smoothing passes, as upstream does for the first layer.",
+        dest="hold_overhang",
+        action="store_const",
+        const=True,
+        default=None,
+        help=f"With --overhang_aware: re-apply the overhang constraints after each of the 32 final smoothing passes, as upstream does for the first layer (default {'on' if DEFAULT_HOLD_OVERHANG else 'off'}).",
+    )
+    hold.add_argument(
+        "--no_hold_overhang",
+        dest="hold_overhang",
+        action="store_const",
+        const=False,
+        help="With --overhang_aware: let the final smoothing passes smooth the overhang constraints too, as upstream does with its own.",
     )
     parser.add_argument(
         "--solid_sdf",
@@ -173,9 +187,13 @@ def check_overhang_arguments(args):
     stage takes upstream's path, which would ignore the rule's options.
     """
     if not args.overhang_aware and (
-        args.max_overhang is not None or args.overhang_margin is not None or args.hold_overhang
+        args.max_overhang is not None
+        or args.overhang_margin is not None
+        or args.hold_overhang is not None
     ):
-        raise SystemExit("--max_overhang, --overhang_margin and --hold_overhang need --overhang_aware.")
+        raise SystemExit(
+            "--max_overhang, --overhang_margin and --[no_]hold_overhang need --overhang_aware."
+        )
     if (args.overhang_aware or args.solid_sdf is not None) and (args.ortho_to_wall or args.allup):
         raise SystemExit(
             "--ortho_to_wall and --allup are not supported with --overhang_aware "
@@ -196,6 +214,7 @@ def compute_overhang_aware(args, sdf, df_path, log_file):
             DEFAULT_MAX_OVERHANG_DEG if args.max_overhang is None else args.max_overhang,
             DEFAULT_MARGIN_DEG if args.overhang_margin is None else args.overhang_margin,
         )
+    hold = DEFAULT_HOLD_OVERHANG if args.hold_overhang is None else args.hold_overhang
     solid = None
     if args.solid_sdf is not None:
         solid = atom.solid3.SDF()
@@ -203,7 +222,7 @@ def compute_overhang_aware(args, sdf, df_path, log_file):
 
     t0 = time.perf_counter()
     result = atom.orientation_field.compute_direction_field(
-        sdf, args.maxslope, overhang=settings, solid_sdf=solid, hold_overhang=args.hold_overhang
+        sdf, args.maxslope, overhang=settings, solid_sdf=solid, hold_overhang=hold
     )
     duration = time.perf_counter() - t0
 
@@ -213,7 +232,7 @@ def compute_overhang_aware(args, sdf, df_path, log_file):
             f"Overhang constraints: {result.overhang_cells} cells, "
             f"{result.overhang_capped} of them capped by the tilt budget "
             f"(max overhang {settings.max_overhang_deg:g} degrees, margin "
-            f"{settings.margin_deg:g}, hold {'on' if args.hold_overhang else 'off'})"
+            f"{settings.margin_deg:g}, hold {'on' if hold else 'off'})"
         )
     if solid is not None:
         lines.append(f"Field computed on the solid SDF {args.solid_sdf}, masked by the infilled one")

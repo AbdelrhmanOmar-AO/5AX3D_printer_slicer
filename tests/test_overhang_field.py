@@ -92,9 +92,13 @@ def test_no_keys_means_upstreams_command():
 
 
 def test_the_rule_is_written_out_in_full():
-    assert of.overhang_arguments(True) == " --overhang_aware --max_overhang 45 --overhang_margin 2"
-    assert of.overhang_arguments(True, 50, 1.5, True) == (
-        " --overhang_aware --max_overhang 50 --overhang_margin 1.5 --hold_overhang"
+    """Hold is on unless the part says otherwise (the operator, 2026-09-30)."""
+    assert of.DEFAULT_HOLD_OVERHANG is True
+    assert of.overhang_arguments(True) == (
+        " --overhang_aware --max_overhang 45 --overhang_margin 2 --hold_overhang"
+    )
+    assert of.overhang_arguments(True, 50, 1.5, False) == (
+        " --overhang_aware --max_overhang 50 --overhang_margin 1.5 --no_hold_overhang"
     )
 
 

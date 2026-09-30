@@ -344,9 +344,10 @@ upstream's code and commands exactly (`tests/test_atomize_stages.py`).
   NaN wherever the infilled SDF is outside: exactly the cells upstream
   masks, so no later stage sees a difference in which cells have a
   direction. Without infill there is one SDF and nothing to route.
-* **Holding the overhang constraints** (`"hold_overhang": true`, off by
-  default): after each of the 32 final passes the overhang cells are put back
-  to their constraint, as upstream does for the first layer (P2-2).
+* **Holding the overhang constraints** (`"hold_overhang"`, **on by
+  default**, the operator's decision of 2026-09-30; `false` switches it off):
+  after each of the 32 final passes the overhang cells are put back to their
+  constraint, as upstream does for the first layer (P2-2).
 * Stage 4 runs all this through `atom.orientation_field.compute_direction_field`
   when it is given `--overhang_aware` or `--solid_sdf`, and upstream's own
   code otherwise. With every option off, `compute_direction_field` gives
@@ -358,7 +359,7 @@ upstream's code and commands exactly (`tests/test_atomize_stages.py`).
 ### 7.2 Measured on the `xs` ramps
 
 `experiment/experiment_orientation_field_ramp.py` with `--infill
---overhang-aware --solid [--hold]`: the exact SDF, Atomizer's infill kernel,
+--overhang-aware --solid [--no-hold]`: the exact SDF, Atomizer's infill kernel,
 CPU. Cells inside the part within 0.9 mm of the underside, away from its ends
 (as section 4.2). Development numbers, not comparable with the lab baseline.
 Budget 30 is the reference machine's; 60 is `dev60`'s (60-degree nozzle).
@@ -440,8 +441,8 @@ What it shows:
 |---|---|
 | ~~How P2.2 handles the infill's inner surfaces~~ | decided: option (a), built (section 7.1) |
 | Whether a stock-without-infill reference joins the comparison | the team, with D0 |
-| ~~How much of an overhang constraint survives the 32 final passes~~ | measured: 0.3-1.9 degrees lost, none with hold (section 7.2) |
-| Whether `hold_overhang` should be on by default | the operator, with P2.2's field-only runs |
+| ~~How much of an overhang constraint survives the 32 final passes~~ | measured: 0.1-1.8 degrees lost, none with hold (section 7.2) |
+| ~~Whether `hold_overhang` should be on by default~~ | decided: on (operator, 2026-09-30). Not yet checked: whether it makes the nozzle turn less smoothly near overhangs (P2.5) |
 | `max_overhang_deg` and the margin: is 2 degrees enough, should it fade in | kept as they are for now (operator, 2026-09-30); gate D1 can revisit with P2.5's numbers |
 | The azimuth of a flat or nearly flat underside on a remeshed part | P2.2 follow-up, after a T-shape run (section 7.3) |
 | Whether the ceiling threshold should stay tied to `max_slope` once overhangs are constrained too | gate D1 |

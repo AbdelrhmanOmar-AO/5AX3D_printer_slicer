@@ -8,7 +8,8 @@ Taichi.
 
 A field costs some 20 s on the CPU whatever the grid's size (Taichi compiles
 the aligner's kernels afresh for every new field), so the tests share three
-module-scoped fields rather than computing their own.
+module-scoped fields rather than computing their own. They stay in the
+default (unit) tier by the operator's choice, 2026-09-30.
 
 70 degrees, at a 30-degree budget: the rule asks 70 - 45 + 2 = 27 degrees
 toward the overhang, inside the budget; the infill's inner surface faces 20
@@ -118,19 +119,19 @@ def stock_field(infilled):
 
 @pytest.fixture(scope="module")
 def aware_field(infilled, solid):
-    """The pipeline's overhang-aware run: rule on, computed on the solid SDF."""
+    """The pipeline's overhang-aware run: rule on, on the solid SDF, held (the default)."""
     from atom import orientation_field as of
 
     return of.compute_direction_field(infilled, MAX_SLOPE, overhang=OverhangSettings(), solid_sdf=solid)
 
 
 @pytest.fixture(scope="module")
-def held_field(infilled, solid):
-    """``aware_field`` with the overhang constraints held through the final passes."""
+def loose_field(infilled, solid):
+    """``aware_field`` without holding: the final passes smooth the overhang constraints."""
     from atom import orientation_field as of
 
     return of.compute_direction_field(
-        infilled, MAX_SLOPE, overhang=OverhangSettings(), solid_sdf=solid, hold_overhang=True
+        infilled, MAX_SLOPE, overhang=OverhangSettings(), solid_sdf=solid, hold_overhang=False
     )
 
 
@@ -210,7 +211,9 @@ def stage_runs(ti_cpu, solid, infilled, tmp_path_factory):
     return {
         "stock": run("stock"),
         "aware": run("aware", "--overhang_aware", "--solid_sdf", str(work / "solid.npz")),
+        "loose": run("loose", "--overhang_aware", "--no_hold_overhang", "--solid_sdf", str(work / "solid.npz")),
         "misused": run("misused", "--max_overhang", "50"),
+        "misused_hold": run("misused_hold", "--no_hold_overhang"),
     }
 
 
@@ -223,21 +226,27 @@ def test_the_driver_reproduces_the_stage_bit_for_bit(stage_runs, stock_field):
     assert np.array_equal(stage["state"], stock_field.field.state.to_numpy())
 
 
-def test_the_stage_runs_the_overhang_aware_field(stage_runs, aware_field):
-    result, log, output = stage_runs["aware"]
+@pytest.mark.parametrize("name,fixture,hold", [("aware", "aware_field", "on"), ("loose", "loose_field", "off")])
+def test_the_stage_runs_the_overhang_aware_field(stage_runs, request, name, fixture, hold):
+    """Hold is on by default; ``--no_hold_overhang`` (what `atomize.py` writes for
+    ``"hold_overhang": false``) switches it off."""
+    field = request.getfixturevalue(fixture)
+    result, log, output = stage_runs[name]
     assert result.returncode == 0, result.stderr
     text = log.read_text(encoding="utf-8")
     assert (
-        f"Overhang constraints: {aware_field.overhang_cells} cells, "
-        f"{aware_field.overhang_capped} of them capped"
+        f"Overhang constraints: {field.overhang_cells} cells, "
+        f"{field.overhang_capped} of them capped"
     ) in text
+    assert f"hold {hold})" in text
     assert "Field computed on the solid SDF" in text
     assert "Direction computation took" in text  # the line the reports time
-    _same_field(np.load(output)["direction"], aware_field.field.direction.to_numpy())
+    _same_field(np.load(output)["direction"], field.field.direction.to_numpy())
 
 
-def test_rule_options_without_the_rule_are_refused(stage_runs):
-    result, _, output = stage_runs["misused"]
+@pytest.mark.parametrize("name", ["misused", "misused_hold"])
+def test_rule_options_without_the_rule_are_refused(stage_runs, name):
+    result, _, output = stage_runs[name]
     assert result.returncode != 0
     assert "need --overhang_aware" in result.stderr + result.stdout
     assert not output.exists()
@@ -298,19 +307,19 @@ def test_the_solid_sdf_keeps_the_rule_off_the_infills_inner_surfaces(aware_field
     assert np.array_equal(np.isnan(final[..., 0]), infilled.sdf.to_numpy() >= 0)
 
 
-def test_holding_keeps_the_overhang_constraints_exact(aware_field, held_field):
+def test_holding_keeps_the_overhang_constraints_exact(aware_field, loose_field):
     from atom import orientation_field as of
 
-    marked = held_field.mark != of.MARK_NONE
-    assert np.array_equal(marked, aware_field.mark != of.MARK_NONE)
-    np.testing.assert_array_equal(held_field.field.direction.to_numpy()[marked], held_field.initial[marked])
-    assert not np.array_equal(aware_field.field.direction.to_numpy()[marked], aware_field.initial[marked])
+    marked = aware_field.mark != of.MARK_NONE
+    assert np.array_equal(marked, loose_field.mark != of.MARK_NONE)
+    np.testing.assert_array_equal(aware_field.field.direction.to_numpy()[marked], aware_field.initial[marked])
+    assert not np.array_equal(loose_field.field.direction.to_numpy()[marked], loose_field.initial[marked])
 
 
-def test_the_field_turns_from_away_to_toward_the_overhang(stock_field, held_field, ramp, cell):
+def test_the_field_turns_from_away_to_toward_the_overhang(stock_field, aware_field, ramp, cell):
     """P2.2's sign check at the field: stock with infill leans away, overhang-aware toward."""
     solid, geometry = ramp
-    for result, sign in ((stock_field, -1.0), (held_field, 1.0)):
+    for result, sign in ((stock_field, -1.0), (aware_field, 1.0)):
         d, n = _next_to_underside(solid, geometry, cell, result.field.direction.to_numpy())
         lean = d @ np.array([n[0], n[1], 0.0]) / math.hypot(n[0], n[1])
         effective = 90 - np.degrees(np.arccos(np.clip(d @ -n, -1, 1)))

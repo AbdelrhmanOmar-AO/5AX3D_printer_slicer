@@ -23,7 +23,7 @@ What it adds:
    then masked where the infilled SDF is outside, exactly the cells upstream
    masks, so no later stage sees a direction in an infill void.
 3. **Holding the overhang constraints** through the 32 final smoothing passes
-   (``hold_overhang``). Upstream smooths every constraint in those passes and
+   (``hold_overhang``, on by default: the operator's decision, 2026-09-30). Upstream smooths every constraint in those passes and
    puts back only the first layer (P2-2); holding re-applies the overhang
    constraints after each pass too.
 
@@ -42,7 +42,7 @@ import numpy as np
 import taichi as ti
 
 from . import direction, fff3, grid3, solid3, toolpath3
-from .overhang_field import OverhangSettings
+from .overhang_field import DEFAULT_HOLD_OVERHANG, OverhangSettings
 
 #: Smoothing passes after the multigrid solve, as upstream.
 FINAL_SMOOTHING_PASSES = 32
@@ -167,15 +167,16 @@ def compute_direction_field(
     max_slope_deg: float,
     overhang: Optional[OverhangSettings] = None,
     solid_sdf: Optional[solid3.SDF] = None,
-    hold_overhang: bool = False,
+    hold_overhang: bool = DEFAULT_HOLD_OVERHANG,
 ) -> FieldResult:
     """Stage 4's field, with P2.2's options.
 
     ``sdf`` is the pipeline's SDF (infilled if the part has infill).
     ``overhang`` switches the overhang rule on. ``solid_sdf``, the SDF from
     before infill on the same grid, puts the field on the solid part, masked
-    by ``sdf`` afterwards. ``hold_overhang`` re-applies the overhang
-    constraints after each final smoothing pass. With all three off, this is
+    by ``sdf`` afterwards. ``hold_overhang`` (on by default; it only matters
+    with ``overhang``) re-applies the overhang constraints after each final
+    smoothing pass. With ``overhang`` and ``solid_sdf`` off, this is
     upstream's stage 4 (without ``--ortho_to_wall`` and ``--allup``, which
     it does not support). Requires Taichi to be initialised.
     """
@@ -205,7 +206,7 @@ def compute_direction_field(
     )
     initial = field.direction.to_numpy()
     saved = None
-    if hold_overhang:
+    if hold_overhang and overhang is not None:
         saved = ti.Vector.field(n=2, dtype=ti.f32, shape=shape)
         saved.copy_from(field.direction)
 

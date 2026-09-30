@@ -7,7 +7,8 @@ optionally applies Atomizer's own infill kernel with the arguments
 option is given (bit-identical to `tools/compute_tool_orientations.py`,
 `tests/test_orientation_field.py`), or P2.2's with ``--overhang-aware``,
 ``--solid`` (the field on the pre-infill SDF, plan_corrections P2-8) and
-``--hold`` (the overhang constraints held through the final smoothing).
+``--hold`` / ``--no-hold`` (the overhang constraints held through the final
+smoothing, on by default as in the pipeline).
 
 It reports which cells were constrained to a tilted direction and where, and
 what the field does next to the underside: its tilt, the effective overhang
@@ -25,7 +26,8 @@ Examples::
 
     python experiment/experiment_orientation_field_ramp.py 70 30 --infill
     python experiment/experiment_orientation_field_ramp.py 60 30 --infill --overhang-aware --solid
-    ATOM_MACHINE=dev60 python experiment/experiment_orientation_field_ramp.py 80 60 --infill --overhang-aware --solid --hold
+    ATOM_MACHINE=dev60 python experiment/experiment_orientation_field_ramp.py 80 60 --infill --overhang-aware --solid
+    python experiment/experiment_orientation_field_ramp.py 70 30 --infill --overhang-aware --solid --no-hold
 """
 
 # No `from __future__ import annotations`: this drives Taichi kernels.
@@ -82,7 +84,10 @@ def main():
     parser.add_argument("--infill", action="store_true", help="Apply the infill kernel first.")
     parser.add_argument("--overhang-aware", action="store_true", help="P2.2's overhang rule.")
     parser.add_argument("--solid", action="store_true", help="Compute the field on the pre-infill SDF.")
-    parser.add_argument("--hold", action="store_true", help="Hold overhang constraints in the final passes.")
+    parser.add_argument(
+        "--hold", action=argparse.BooleanOptionalAction, default=True,
+        help="Hold overhang constraints in the final passes (default on).",
+    )
     parser.add_argument("--max-overhang", type=float, default=45.0)
     parser.add_argument("--margin", type=float, default=2.0)
     parser.add_argument("--size", default="xs", choices=sorted(bm.SIZE_PRESETS))
@@ -161,7 +166,7 @@ def main():
         "infill": args.infill,
         "overhang_aware": args.overhang_aware,
         "solid": args.solid,
-        "hold": args.hold,
+        "hold": bool(args.hold and args.overhang_aware),
         "grid": list(shape),
         "overhang_cells": result.overhang_cells,
         "overhang_capped": result.overhang_capped,

@@ -2292,8 +2292,13 @@ not yet a value (D0 stays open). The operator asked for:
   next to `ramp60`'s underside is 57 degrees effective, with it 44.
 * **`hold_overhang`** (new, not in the plan; P2-2's first option). Re-applies
   the overhang constraints after each final pass. Measured: the passes cost
-  0.1-1.8 degrees of tilt without it, none with it. **Off by default until the
-  operator decides.**
+  0.1-1.8 degrees of tilt without it, none with it. **On by default: the
+  operator's decision, 2026-09-30.** `"hold_overhang": false` switches it off;
+  the stage takes `--hold_overhang` / `--no_hold_overhang` (two explicit
+  options: argparse's `BooleanOptionalAction` would have spelled the second
+  `--no-hold_overhang`, which a test caught). Upstream smooths its
+  constraints on purpose, for smoother tool motion, so whether holding makes
+  the nozzle turn less smoothly next to overhangs is for P2.5's check.
 * **The budget.** `max_tilt_here` waits for P2.3's map; until then the cap is
   `fff3.MAX_SLOPE_ANGLE`, `min(max_slope, 90 - cone / 2)`, which is also the
   ceiling threshold. By the operator's decision (b) of 2026-09-30,
@@ -2325,7 +2330,9 @@ not yet a value (D0 stays open). The operator asked for:
   tests use a 12 x 5.4 x 7.2 mm ramp (72 x 33 x 43 cells); on the CPU a field
   costs about 20 s whatever the size, because Taichi compiles the aligner's
   kernels for every new field, so the file shares three fields and takes
-  about 3 minutes.
+  one to three minutes. **It stays in the default (unit) tier, the
+  operator's choice of 2026-09-30**, although `pytest.ini` describes that tier
+  as tests of about 2 s: the whole default run is about 3 minutes.
 * **Found while measuring, for D1:** the rule is a threshold (at 45.1 degrees
   it asks for 2.1, at 45 for nothing); a flat underside's azimuth is decided
   by rounding, harmless on the analytic ramps, untested on a remeshed part;
