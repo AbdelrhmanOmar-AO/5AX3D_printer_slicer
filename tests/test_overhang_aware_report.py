@@ -202,6 +202,14 @@ def test_reports_without_the_top_surface_measure_say_not_scored():
     assert "1 pair(s) not scored yet." in section
 
 
+def test_tilt_rate_sits_beside_the_stock_run():
+    stock, aware = _paired()
+    stock["metrics"]["tilt_rate"] = {"max_deg_per_mm": 4.2, "fraction_over_limit": 0.01}
+    aware["metrics"]["tilt_rate"] = {"max_deg_per_mm": 50.6, "fraction_over_limit": 0.264}
+    section = orep.summarize([stock], (), [aware]).split("### Tilt rate")[1]
+    assert "| `ramp60_s` | 4°/mm (1%) → 51°/mm (26%) |" in section
+
+
 def test_field_only_runs_split_stock_from_aware():
     field = [
         _report("ramp60_xs", 30.0, False, orep.MODE_FIELD_ONLY),

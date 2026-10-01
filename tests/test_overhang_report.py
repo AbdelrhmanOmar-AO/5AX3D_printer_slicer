@@ -187,6 +187,9 @@ def test_a_box_printed_vertically_has_its_whole_top_on_target(ti_cpu, tmp_path):
     assert top["sample_count"] == len(top_layer)
     assert top["fraction_on_target"] == 1.0 and top["tolerance_deg"] == 2.0
     assert top["top_max_angle_deg"] == 7.0
+    rate = report["metrics"]["tilt_rate"]
+    assert rate["max_deg_per_mm"] == pytest.approx(0.0, abs=1e-4) and rate["fraction_over_limit"] == 0.0
+    assert rate["limit_deg_per_mm"] == overhang_report.TILT_RATE_LIMIT_DEG_PER_MM == 3.0
 
 
 @pytest.mark.parametrize(

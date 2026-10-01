@@ -659,3 +659,52 @@ def test_a_dome_is_measured_against_its_smooth_normal():
     result = om.top_surface_quality(toolpath, sphere.triangles, 30.0, 0.45)
     assert result.sample_count == len(radial) and result.fraction_on_target == 1.0
     assert result.max_deviation_deg < 1.0
+
+
+# --------------------------------------------------------------------------
+# Tilt rate (build plan P2.5)
+# --------------------------------------------------------------------------
+
+
+def _turning_run(step_mm, turns_deg, travel=None):
+    """Points along +x, ``step_mm`` apart; the tool turns ``turns_deg[i]`` over move ``i``."""
+    tilts = np.r_[0.0, np.cumsum(turns_deg)]
+    points = [[i * step_mm, 0.0, 1.0] for i in range(len(tilts))]
+    directions = [direction_tilted_toward(t, 90.0) for t in tilts]
+    return FakeToolpath(points, directions, travel_type=travel)
+
+
+def test_a_steady_tool_has_no_tilt_rate():
+    result = om.tilt_rate(_turning_run(0.5, [0.0] * 10), 3.0)
+    assert result.max_deg_per_mm == 0.0 and result.fraction_over_limit == 0.0
+    assert result.printing_moves == 10
+
+
+def test_a_steady_turn_is_measured_per_mm_of_printing():
+    """1 degree per 0.5 mm move is 2 degrees per mm, over every 1 mm of the run."""
+    result = om.tilt_rate(_turning_run(0.5, [1.0] * 10), 1.5)
+    assert result.max_deg_per_mm == pytest.approx(2.0)
+    assert result.fraction_over_limit == 1.0  # the last move too: the run's last 1 mm
+    assert om.tilt_rate(_turning_run(0.5, [1.0] * 10), 2.5).fraction_over_limit == 0.0
+
+
+@pytest.mark.parametrize("step", [0.1, 0.4])
+def test_a_sharp_flip_counts_its_turn_whatever_the_move_length(step):
+    """Per move, 28 degrees over 0.1 mm would read 280 degrees per mm; over 1 mm of printing it is 28."""
+    turns = [0.0] * 10 + [28.0] + [0.0] * 10
+    result = om.tilt_rate(_turning_run(step, turns), 3.0)
+    assert result.max_deg_per_mm == pytest.approx(28.0)
+    assert 9 * step - 1.0 <= result.max_at_mm[0] <= 10 * step + 1e-9
+
+
+def test_a_window_between_points_is_found():
+    """Turning only over the middle 1.2 mm, at 10 degrees per mm: the largest 1 mm stretch lies inside it."""
+    result = om.tilt_rate(_turning_run(0.6, [0.0, 6.0, 6.0, 0.0]), 3.0)
+    assert result.max_deg_per_mm == pytest.approx(10.0)
+
+
+def test_turning_during_a_travel_move_does_not_count():
+    travel = [TRAVEL_TYPE_DEPOSITION] * 6
+    travel[3] = TRAVEL_TYPE_NO_DEPOSITION  # the move into point 3
+    result = om.tilt_rate(_turning_run(0.5, [0.0, 0.0, 30.0, 0.0, 0.0], travel), 3.0)
+    assert result.max_deg_per_mm == pytest.approx(0.0, abs=1e-4) and result.printing_moves == 4

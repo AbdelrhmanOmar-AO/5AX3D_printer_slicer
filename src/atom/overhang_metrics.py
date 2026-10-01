@@ -737,6 +737,77 @@ def toolpath_segments(toolpath) -> ToolpathSegments:
     return ToolpathSegments(length, np.degrees(np.arccos(cosine)), deposits)
 
 
+#: The length of printing the tilt rate is measured over, mm (build plan P2.5,
+#: the operator's choice, 2026-10-01).
+TILT_RATE_STRETCH_MM = 1.0
+
+
+@dataclass(frozen=True)
+class TiltRateResult:
+    """How fast the tool turns while printing (build plan P2.5)."""
+
+    #: The largest turn within any ``stretch_mm`` of continuous printing,
+    #: divided by ``stretch_mm``: degrees per mm. NaN with no printing move.
+    max_deg_per_mm: float
+    #: Where that stretch starts, mm (part frame).
+    max_at_mm: tuple
+    #: The share of printing moves where the ``stretch_mm`` of printing
+    #: starting there (near a run's end, the run's last ``stretch_mm``) turns
+    #: faster than ``limit_deg_per_mm``.
+    fraction_over_limit: float
+    limit_deg_per_mm: float
+    stretch_mm: float
+    printing_moves: int
+
+
+def tilt_rate(toolpath, limit_deg_per_mm: float, stretch_mm: float = TILT_RATE_STRETCH_MM) -> TiltRateResult:
+    """The tilt rate along the printing moves, over stretches of ``stretch_mm``.
+
+    The turn is the angle between consecutive build directions, summed along
+    each run of consecutive printing moves (travel moves end a run: the bed
+    may turn freely between beads). Per move, the rate would depend on how
+    finely the path is cut: smoothing the points alone took a T-shape's
+    largest per-move rate from 70 to 111 degrees per mm with no more turning
+    (plan_corrections P2-21). Over a stretch it measures how far the bed
+    turns per mm of printing, which is what a tilt-rate limit (gate D3)
+    bounds. A run shorter than the stretch counts its whole turn.
+
+    Turning accumulates linearly along each move, so the largest stretch
+    starts or ends at a point of the toolpath; both are tried.
+    """
+    segments = toolpath_segments(toolpath)
+    points = np.asarray(toolpath.point[: int(np.asarray(toolpath.point_count).item())], dtype=np.float64)
+    deposits = segments.deposits
+    best, best_at = float("nan"), (float("nan"),) * 3
+    over = moves = 0
+    starts = np.flatnonzero(deposits & ~np.r_[False, deposits[:-1]])
+    ends = np.flatnonzero(deposits & ~np.r_[deposits[1:], False]) + 1
+    for first, last in zip(starts, ends):
+        length = np.r_[0.0, np.cumsum(segments.length_mm[first:last])]
+        turn = np.r_[0.0, np.cumsum(segments.turn_deg[first:last])]
+        room = max(length[-1] - stretch_mm, 0.0)
+        candidates = np.clip(np.r_[length, length - stretch_mm], 0.0, room)
+        windows = np.interp(np.minimum(candidates + stretch_mm, length[-1]), length, turn) - np.interp(candidates, length, turn)
+        k = int(np.argmax(windows))
+        if np.isnan(best) or windows[k] / stretch_mm > best:
+            best = float(windows[k] / stretch_mm)
+            position = np.interp(candidates[k], length, np.arange(len(length)))
+            i = int(min(np.floor(position), len(length) - 2))
+            best_at = tuple(float(v) for v in points[first + i] + (position - i) * (points[first + i + 1] - points[first + i]))
+        ahead = np.clip(length[:-1], 0.0, room)
+        rates = (np.interp(np.minimum(ahead + stretch_mm, length[-1]), length, turn) - np.interp(ahead, length, turn)) / stretch_mm
+        over += int(np.count_nonzero(rates > limit_deg_per_mm))
+        moves += int(last - first)
+    return TiltRateResult(
+        max_deg_per_mm=best,
+        max_at_mm=best_at,
+        fraction_over_limit=over / moves if moves else float("nan"),
+        limit_deg_per_mm=float(limit_deg_per_mm),
+        stretch_mm=float(stretch_mm),
+        printing_moves=moves,
+    )
+
+
 def overhang_face_mask(
     face_normals: np.ndarray,
     face_centres: np.ndarray,

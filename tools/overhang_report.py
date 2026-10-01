@@ -90,6 +90,7 @@ from atom import frame_atoms  # noqa: E402
 from atom import overhang_metrics as om  # noqa: E402
 from atom import provenance as prov  # noqa: E402
 from atom.ti_env import ARCH_LOG_ENV_VAR  # noqa: E402
+from atom.ramp_in import DEFAULT_MAX_TILT_RATE_DEG_PER_MM  # noqa: E402
 from atom.ti_env import init_taichi  # noqa: E402
 
 #: Where individual reports and the summary live.
@@ -151,6 +152,9 @@ MAX_UNSUPPORTED_FRACTION = 0.01
 #: Build plan P2.5: top-surface quality may fall at most this many percentage
 #: points below stock's (a placeholder, like the two above).
 TOP_SURFACE_ALLOWANCE_POINTS = 5.0
+#: GATE D3: the tilt rate's placeholder limit, degrees per mm of printing;
+#: the report counts the printing that turns faster. The ramp-in's default.
+TILT_RATE_LIMIT_DEG_PER_MM = DEFAULT_MAX_TILT_RATE_DEG_PER_MM
 
 #: Search radius for deposition points near a face, in deposition widths.
 SURFACE_SEARCH_WIDTHS = 1.0
@@ -405,6 +409,7 @@ def measure(
         top_surface_angle_deg(max_slope_deg, provenance),
         LAYER_HEIGHT_WRT_DEPOSITION_WIDTH * deposition_width,
     )
+    rate = om.tilt_rate(toolpath, TILT_RATE_LIMIT_DEG_PER_MM)
 
     measured = [s for s in surfaces if s.measured]
     worst_effective = max((s.max_effective_deg for s in measured), default=float("nan"))
@@ -440,6 +445,7 @@ def measure(
             "deposition_points_near_overhangs": near_count,
             "surfaces": _surfaces_block(surfaces),
             "top_surface": _top_surface_block(top),
+            "tilt_rate": _tilt_rate_block(rate),
         },
         "verdict": {
             "printable": printable,
@@ -489,6 +495,18 @@ def _top_surface_block(top):
         "skipped_samples": top.skipped_samples,
         "top_max_angle_deg": top.top_max_angle_deg,
         "tolerance_deg": top.tolerance_deg,
+    }
+
+
+def _tilt_rate_block(rate):
+    """A report's ``tilt_rate`` entry (build plan P2.5, `overhang_metrics.tilt_rate`)."""
+    return {
+        "max_deg_per_mm": rate.max_deg_per_mm,
+        "max_at_mm": list(rate.max_at_mm),
+        "fraction_over_limit": rate.fraction_over_limit,
+        "limit_deg_per_mm": rate.limit_deg_per_mm,
+        "stretch_mm": rate.stretch_mm,
+        "printing_moves": rate.printing_moves,
     }
 
 
@@ -1118,6 +1136,47 @@ def _comparison_section(stock, aware):
         f"stock {stock_ok}, overhang-aware {aware_ok}.",
     ]
     lines += [""] + _top_surface_section(parts, slopes, stock_by_key, aware_by_key)
+    lines += [""] + _tilt_rate_section(parts, slopes, stock_by_key, aware_by_key)
+    return lines
+
+
+def _tilt_rate_text(report):
+    if report is None:
+        return "—"
+    rate = report.get("metrics", {}).get("tilt_rate")
+    if rate is None:
+        return "not scored"
+    value, share = rate.get("max_deg_per_mm"), rate.get("fraction_over_limit")
+    if value is None or math.isnan(value):
+        return "n/m"
+    return f"{value:.0f}°/mm ({share * 100:.0f}%)"
+
+
+def _tilt_rate_section(parts, slopes, stock_by_key, aware_by_key):
+    """The tilt rate along the printing, stock -> overhang-aware (build plan P2.5)."""
+    lines = [
+        "### Tilt rate",
+        "",
+        "Each cell is **stock → overhang-aware**: the largest turn of the tool "
+        f"within any {om.TILT_RATE_STRETCH_MM:g} mm of continuous printing, in "
+        "degrees per mm, and in brackets the share of printing moves where the "
+        f"{om.TILT_RATE_STRETCH_MM:g} mm of printing from there turns faster than "
+        f"{TILT_RATE_LIMIT_DEG_PER_MM:g}°/mm (the gate D3 placeholder; "
+        "`overhang_metrics.tilt_rate`). Reported, not judged: P2.5 sets no "
+        "limit on it.",
+        "",
+        "| Part | " + " | ".join(f"max_slope {s:g}°" for s in slopes) + " |",
+        "|" + "---|" * (len(slopes) + 1),
+    ]
+    for part in parts:
+        cells = []
+        for slope in slopes:
+            aware = aware_by_key.get((part, slope))
+            if aware is None:
+                cells.append("—")
+            else:
+                cells.append(f"{_tilt_rate_text(stock_by_key.get((part, slope)))} → {_tilt_rate_text(aware)}")
+        lines.append(f"| `{part}` | " + " | ".join(cells) + " |")
     return lines
 
 

@@ -60,6 +60,54 @@ Stock and overhang-aware runs share one provenance group: machine cad-p07-2065-9
 
 Printable, over the 44 part and slope pair(s) with both runs: stock 4, overhang-aware 6.
 
+### Top-surface quality
+
+Each cell is **stock → overhang-aware**: the share of the top layer's deposition points printed within 2° of the top surface's normal (`overhang_metrics.top_surface_quality`; top surfaces are the faces within max_slope of level, upstream's ceilings). P2.5 asks for overhang-aware ≥ stock − 5 points; ⚠️ marks a pair that misses it. `n/m`: no top surface measured; `not scored`: the report predates the measure (`--reanalyse` adds it).
+
+| Part | max_slope 7° | max_slope 15° | max_slope 30° |
+|---|---|---|---|
+| `ramp45_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp45_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp50_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp50_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp60_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp60_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp70_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp70_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp80_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp80_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp90_s` | not scored → not scored | not scored → not scored | — |
+| `ramp90_xs` | not scored → not scored | not scored → not scored | — |
+| `tshape_s` | not scored → not scored | not scored → not scored | — |
+| `tshape_xs` | not scored → not scored | not scored → not scored | — |
+| `twin_domes_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `twin_domes_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+
+Pairs within 5 points of stock or better: 0 of 0. 44 pair(s) not scored yet.
+
+### Tilt rate
+
+Each cell is **stock → overhang-aware**: the largest turn of the tool within any 1 mm of continuous printing, in degrees per mm, and in brackets the share of printing moves where the 1 mm of printing from there turns faster than 3°/mm (the gate D3 placeholder; `overhang_metrics.tilt_rate`). Reported, not judged: P2.5 sets no limit on it.
+
+| Part | max_slope 7° | max_slope 15° | max_slope 30° |
+|---|---|---|---|
+| `ramp45_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp45_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp50_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp50_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp60_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp60_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp70_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp70_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp80_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp80_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp90_s` | not scored → not scored | not scored → not scored | — |
+| `ramp90_xs` | not scored → not scored | not scored → not scored | — |
+| `tshape_s` | not scored → not scored | not scored → not scored | — |
+| `tshape_xs` | not scored → not scored | not scored → not scored | — |
+| `twin_domes_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `twin_domes_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+
 ## Runtime
 
 How the pipeline's cost scaled with part size. `order_atoms` is the stage that dominates, and it runs on the CPU.
