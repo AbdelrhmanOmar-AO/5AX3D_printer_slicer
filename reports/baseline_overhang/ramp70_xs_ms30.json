@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "metrics_version": 3,
+  "metrics_version": 4,
   "part": "ramp70_xs",
   "max_slope_deg": 30.0,
   "overhang_aware": false,
@@ -40,18 +40,18 @@
         "geometric_angle_deg": 70.0,
         "area_mm2": 129.29759904189248,
         "face_count": 1024,
-        "sample_count": 3718,
-        "max_effective_deg": 89.97975855080885,
-        "mean_effective_deg": 89.01477313474189,
+        "sample_count": 3958,
+        "max_effective_deg": 89.98907152782532,
+        "mean_effective_deg": 89.2296142825769,
         "max_tilt_used_deg": 20.41878734450329,
-        "supported_samples_skipped": 1089
+        "skipped_samples": 849
       }
     ]
   },
   "verdict": {
     "printable": false,
     "assessable": true,
-    "worst_effective_deg": 89.97975855080885,
+    "worst_effective_deg": 89.98907152782532,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
       "max_unsupported_fraction": 0.01,
@@ -85,13 +85,13 @@
     "git_commit": "fadcab359fb41539a80f43c4301fa7957daf8665",
     "code_modified": false,
     "recorded_utc": "2026-09-27T11:17:10+00:00",
-    "metrics_version": 3,
+    "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "c22829edb4eb3779e62388a1d95793ae54daddd2",
+      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
       "code_modified": false,
-      "utc": "2026-10-01T10:13:51+00:00",
-      "metrics_version": 3
+      "utc": "2026-10-01T10:34:26+00:00",
+      "metrics_version": 4
     },
     "parallel_workers": 16,
     "taichi_cpu_threads": null

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "metrics_version": 3,
+  "metrics_version": 4,
   "part": "ramp50_s",
   "max_slope_deg": 30.0,
   "overhang_aware": true,
@@ -40,11 +40,11 @@
         "geometric_angle_deg": 50.0,
         "area_mm2": 440.5749598335117,
         "face_count": 4096,
-        "sample_count": 1645,
+        "sample_count": 14617,
         "max_effective_deg": 45.2152467767714,
-        "mean_effective_deg": 40.4991394436021,
+        "mean_effective_deg": 42.52009388781548,
         "max_tilt_used_deg": 15.036103089818413,
-        "supported_samples_skipped": 14671
+        "skipped_samples": 1699
       }
     ]
   },
@@ -85,13 +85,13 @@
     "git_commit": "c22829edb4eb3779e62388a1d95793ae54daddd2",
     "code_modified": false,
     "recorded_utc": "2026-10-01T07:23:34+00:00",
-    "metrics_version": 3,
+    "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "c22829edb4eb3779e62388a1d95793ae54daddd2",
+      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
       "code_modified": false,
-      "utc": "2026-10-01T10:12:30+00:00",
-      "metrics_version": 3
+      "utc": "2026-10-01T10:33:03+00:00",
+      "metrics_version": 4
     },
     "parallel_workers": 8,
     "taichi_cpu_threads": null
