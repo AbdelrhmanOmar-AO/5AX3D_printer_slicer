@@ -2749,6 +2749,99 @@ mm layers (65 degrees). Across-bead spacing near the underside has median
 side of that limit. **So the cause is the discretisation of the outermost
 beads at the overhang surface, not the tilt and not the print order.**
 
-*Still to settle (the comparison runs are going):* why the overhang-aware
-runs show it ten times more often than stock at a similar effective angle
-(stock `ramp45_xs` at 7: 0.24 %, the known answer).
+**`ramp60_xs` at 30, overhang-aware (CPU):** worst 46.5, mean 43.2,
+unsupported near the overhang **1.06 %** (the lab, on older code: 1.73 %);
+the same picture: all 14 nothing beneath, all within two layer heights of
+the underside.
+
+**Against stock** (`ramp45_xs` at 7, the known answer, CPU: 0.00 % here,
+0.24 % in the lab): the outermost bead jumps a whole width there too, and as
+often, but the jump lands at 0.8-0.9 mm sideways, just inside the cone; in
+the overhang-aware runs it lands at 0.9-1.05:
+
+| Sideways step to the layer below, share of near-overhang points | 0.8-0.9 | 0.9-0.96 | 0.96-1.05 | 1.05-1.5 |
+|---|---|---|---|---|
+| `ramp45_xs` stock at 7 | 10.2 % | 2.1 % | 0.1 % | 0.0 % |
+| `ramp50_xs` overhang-aware at 30 | 2.0 % | 4.4 % | 3.4 % | 0.4 % |
+| `ramp60_xs` overhang-aware at 30 | 5.2 % | 3.9 % | 1.1 % | 0.2 % |
+
+Bead spacing across the beads is the same in all three (median 0.88-0.92
+mm). The overhang-aware layers are not quite parallel by the underside (the
+tilt changes 0.3-0.6 degrees from one layer to the next, against 0.0 in
+stock), but the size of a jump does not follow that change (correlation
+0.11 and -0.03), so that is not the reason.
+
+**Part of it is the metric.** The support test looks for earlier
+*points* in the cone, but a bead is a line with points about 0.45 mm apart
+along it. In stock the points of successive layers sit in step; in the
+overhang-aware runs they do not, so the nearest point below can be a little
+along the bead from the nearest part of the bead, and a 0.9 mm jump measures
+up to about 1.0. Measured to the bead *line* below instead (the segments
+between consecutive deposition points), the share stepping past 0.96 mm
+falls from 1.37 % to **0.61 %** on `ramp60_xs` (its unsupported points have a
+bead line a median 0.82 mm sideways, inside the cone) and from 3.81 % to
+2.79 % on `ramp50_xs` (whose jumps stay about 0.98 mm: real), and from 0.12
+to 0.06 % on stock.
+
+**So, two causes, neither of them the tilt or the print order:** (1) the
+outermost bead at an overhang surface steps a whole bead width every few
+layers, which in stock falls just inside the 65-degree cone and in the
+overhang-aware runs often just outside (a margin of about 0.06 mm); (2) the
+support test checks points rather than bead lines, which counts some
+supported beads as unsupported when the points of successive layers are out
+of step, as they are with a tilted field. The 1 % criterion therefore turns
+on a difference of a few hundredths of a millimetre at the jumps. **What to
+do is the operator's decision** (handoff, START HERE): change the metric to
+test bead lines (a version 5, a ★ metric change, which moves stock too, a
+little), work on the jumps in the slicer, or leave both and judge P2.5 with
+this in mind.
+
+#### P2-23 P2.3 as built: the reachable-tilt map on `reference`, viewed only (operator's decisions, 2026-10-01)
+
+*Built 2026-10-01.* `atom.reachability`, `tools/reachability_map.py`,
+`tests/test_reachability.py`. Two decisions by the operator: **map only**,
+the field unchanged (`use_reachability_map` waits for the real machine's
+geometry: on `reference` it would change no test part at the bed centre, and
+wiring it in is a vendored edit needing a laptop golden run); and **both
+meanings kept**, with the lift.
+
+* **What it holds.** Over the bed every 10 mm (31 x 30 x 29 points up to
+  `max_z_axis`) and 13 tilts (0-30 in 2.5-degree steps) x 16 azimuths: the
+  lift each pose needs (NaN unreachable, 0 as the part stands), and whether
+  the bed's corners at the lifted pose clear the P4.1 clearance model. From
+  it: the largest tilt reachable with **any platform**, and with **none**.
+  About 20 s on a CPU; cached in `data/reachability/<profile>.npz`
+  (gitignored, 1.2 MB). The map is in the bed frame, so it is the same for
+  every part; a lookup adds the part's placement
+  (`contracts.bed_centering_offset`, hazard 7) and any platform height.
+  Trilinear between grid points, the smaller of the two azimuths either side,
+  rounded down to the tilt step; NaN (nothing known reachable) off the grid.
+* **The lift is iterated** (P1-9): the kinematics' offset is a first
+  estimate, and the map raises the part by it and solves again until no more
+  is asked. At the bed centre 2 mm up and 30 degrees the converged lift is
+  **10-57 mm** by direction; P2-10's table gave 46 mm there from the first
+  estimate, about 10 mm short at the worst direction. Without iterating, the
+  clearance model then rejected 6.8 % of the poses the kinematics accepted
+  (the corners still 1-6 mm into the gantry); with it, none.
+* **The raw kinematics are not monotonic in tilt** (the plan's test assumed
+  they are): 1.8 % of reachable (point, direction) pairs have a smaller tilt
+  in the same azimuth that is unreachable, 95 % of them within 10 mm of the
+  X or Y travel limits (tilting shifts the axes, bringing some edge points
+  into range), the rest high up where a screw nears its limit. The field's
+  tilt grows from the vertical first layer, so the map's max tilt is the
+  largest **whose every smaller step is reachable**: monotonic by
+  definition, and the test checks that instead.
+* **On `reference`** (`python tools/reachability_map.py`): near the bed,
+  interior points reach 28-30 degrees with a platform and **10-15 without**;
+  at 100 mm up, 20-30 in the middle of the bed and 10-12 near its edges, the
+  same with or without a platform; the row at x = 0 reaches only the
+  vertical and x = 300 nothing. `ramp60_s` placed at the bed centre reaches
+  30 degrees in every direction with a platform, 15 without: the lab's
+  30-degree runs would need a platform on this geometry. The clearance proxy
+  rejects nothing the kinematics accept (its gantry is the same plane); a
+  clearance file (gate M3) can.
+* **Tests** (the plan's, adjusted): the bed centre near the bed reaches the
+  golden cube's 5.53 degrees, with and without a platform; points outside
+  travel reach nothing; every tilt up to a cell's max is reachable; the lift
+  is converged; the reference proxy agrees with the kinematics; cache round
+  trip; the lookup's interpolation, azimuth and rounding on a hand-made map.
