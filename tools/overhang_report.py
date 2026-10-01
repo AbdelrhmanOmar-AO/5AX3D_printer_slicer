@@ -148,11 +148,18 @@ PROGRESS_LOG = REPO_ROOT / "reports" / "matrix_progress.csv"
 #: used in P2.5, so stock and overhang-aware are judged on one scale.
 MAX_EFFECTIVE_OVERHANG_DEG = 45.0
 MAX_UNSUPPORTED_FRACTION = 0.01
+#: Build plan P2.5: top-surface quality may fall at most this many percentage
+#: points below stock's (a placeholder, like the two above).
+TOP_SURFACE_ALLOWANCE_POINTS = 5.0
 
 #: Search radius for deposition points near a face, in deposition widths.
 SURFACE_SEARCH_WIDTHS = 1.0
 #: Radius defining "near an overhang" for the unsupported measurement.
 NEAR_OVERHANG_WIDTHS = 2.0
+#: Atomizer's layer height as a share of the deposition width
+#: (`fff3.LAYER_HEIGHT_WRT_NOZZLE`). A top surface's top layer lies within one
+#: layer height of it (`overhang_metrics.top_surface_quality`).
+LAYER_HEIGHT_WRT_DEPOSITION_WIDTH = 0.5
 
 _STAGE_TIME = re.compile(
     r"^(?P<label>[A-Z][^\n]*?)\s+took\s+(?P<seconds>[\d.]+)\s+seconds", re.MULTILINE
@@ -392,6 +399,12 @@ def measure(
         radius=NEAR_OVERHANG_WIDTHS * deposition_width,
     )
     max_tilt = om.max_tool_tilt_deg(toolpath)
+    top = om.top_surface_quality(
+        toolpath,
+        mesh.triangles,
+        top_surface_angle_deg(max_slope_deg, provenance),
+        LAYER_HEIGHT_WRT_DEPOSITION_WIDTH * deposition_width,
+    )
 
     measured = [s for s in surfaces if s.measured]
     worst_effective = max((s.max_effective_deg for s in measured), default=float("nan"))
@@ -426,6 +439,7 @@ def measure(
             "unsupported_fraction_near_overhangs": near_fraction,
             "deposition_points_near_overhangs": near_count,
             "surfaces": _surfaces_block(surfaces),
+            "top_surface": _top_surface_block(top),
         },
         "verdict": {
             "printable": printable,
@@ -462,6 +476,42 @@ def _surfaces_block(surfaces):
         }
         for s in surfaces
     ]
+
+
+def _top_surface_block(top):
+    """A report's ``top_surface`` entry (build plan P2.5, `top_surface_quality`)."""
+    return {
+        "fraction_on_target": top.fraction_on_target,
+        "sample_count": top.sample_count,
+        "on_target_count": top.on_target_count,
+        "mean_deviation_deg": top.mean_deviation_deg,
+        "max_deviation_deg": top.max_deviation_deg,
+        "skipped_samples": top.skipped_samples,
+        "top_max_angle_deg": top.top_max_angle_deg,
+        "tolerance_deg": top.tolerance_deg,
+    }
+
+
+def top_surface_angle_deg(max_slope_deg, provenance=None):
+    """Which faces are top surfaces: upstream's ceiling angle, `fff3.CEIL_MAX_ANGLE`.
+
+    ``max_slope`` capped at ``(180 - nozzle cone) / 2`` by the machine profile
+    the run used (its provenance; the current one when that is not recorded),
+    as `compute_tool_orientations.py` sets it. Every matrix slope is under
+    the cap on both profiles (50 on `reference`, 60 on `dev60`).
+    """
+    import warnings
+
+    from atom import machine_profile
+
+    name = provenance.get("machine_profile") if isinstance(provenance, dict) else None
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            cone = machine_profile.load_profile(name).nozzle_cone_angle_deg
+    except (OSError, ValueError, KeyError, TypeError):
+        return float(max_slope_deg)
+    return min(float(max_slope_deg), (180.0 - cone) / 2.0)
 
 
 def _thresholds_block():
@@ -1067,7 +1117,73 @@ def _comparison_section(stock, aware):
         f"Printable, over the {len(both)} part and slope pair(s) with both runs: "
         f"stock {stock_ok}, overhang-aware {aware_ok}.",
     ]
+    lines += [""] + _top_surface_section(parts, slopes, stock_by_key, aware_by_key)
     return lines
+
+
+def _top_surface_value(report):
+    """A report's top-surface fraction; None when not scored, NaN when no top."""
+    top = (report or {}).get("metrics", {}).get("top_surface")
+    if top is None:
+        return None
+    value = top.get("fraction_on_target")
+    return float("nan") if value is None else float(value)
+
+
+def _top_surface_text(report):
+    value = _top_surface_value(report)
+    if report is None:
+        return "—"
+    if value is None:
+        return "not scored"
+    return "n/m" if math.isnan(value) else f"{value * 100:.0f}%"
+
+
+def _top_surface_section(parts, slopes, stock_by_key, aware_by_key):
+    """Top-surface quality, stock -> overhang-aware (build plan P2.5)."""
+    lines = [
+        "### Top-surface quality",
+        "",
+        "Each cell is **stock → overhang-aware**: the share of the top layer's "
+        f"deposition points printed within {om.TOP_SURFACE_TOLERANCE_DEG:g}° of "
+        "the top surface's normal (`overhang_metrics.top_surface_quality`; top "
+        "surfaces are the faces within max_slope of level, upstream's ceilings). "
+        f"P2.5 asks for overhang-aware ≥ stock − {TOP_SURFACE_ALLOWANCE_POINTS:g} "
+        "points; ⚠️ marks a pair that misses it. `n/m`: no top surface measured; "
+        "`not scored`: the report predates the measure (`--reanalyse` adds it).",
+        "",
+        "| Part | " + " | ".join(f"max_slope {s:g}°" for s in slopes) + " |",
+        "|" + "---|" * (len(slopes) + 1),
+    ]
+    misses = compared = unscored = 0
+    for part in parts:
+        cells = []
+        for slope in slopes:
+            aware = aware_by_key.get((part, slope))
+            stock = stock_by_key.get((part, slope))
+            if aware is None:
+                cells.append("—")
+                continue
+            cell = f"{_top_surface_text(stock)} → {_top_surface_text(aware)}"
+            s, a = _top_surface_value(stock), _top_surface_value(aware)
+            if stock is None:
+                pass
+            elif s is None or a is None:
+                unscored += 1
+            elif not (math.isnan(s) or math.isnan(a)):
+                compared += 1
+                if a * 100 < s * 100 - TOP_SURFACE_ALLOWANCE_POINTS:
+                    misses += 1
+                    cell += " ⚠️"
+            cells.append(cell)
+        lines.append(f"| `{part}` | " + " | ".join(cells) + " |")
+    summary = (
+        f"Pairs within {TOP_SURFACE_ALLOWANCE_POINTS:g} points of stock or better: "
+        f"{compared - misses} of {compared}."
+    )
+    if unscored:
+        summary += f" {unscored} pair(s) not scored yet."
+    return lines + ["", summary]
 
 
 def summarize(reports, field_only_reports=(), aware_reports=()):

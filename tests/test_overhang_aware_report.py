@@ -177,6 +177,31 @@ def test_an_overhang_aware_run_with_no_stock_partner_shows_a_dash():
     assert "over the 1 part and slope pair(s)" in section
 
 
+def _with_top(report, fraction):
+    report["metrics"]["top_surface"] = {"fraction_on_target": fraction}
+    return report
+
+
+def test_top_surface_quality_sits_beside_the_stock_run():
+    """Build plan P2.5: overhang-aware >= stock - 5 points, flagged when missed."""
+    stock, aware = _paired()
+    section = orep.summarize([_with_top(stock, 0.95)], (), [_with_top(aware, 0.91)]).split("### Top-surface quality")[1]
+    assert "| `ramp60_s` | 95% → 91% |" in section
+    assert "Pairs within 5 points of stock or better: 1 of 1." in section
+
+    stock, aware = _paired()
+    section = orep.summarize([_with_top(stock, 0.95)], (), [_with_top(aware, 0.80)]).split("### Top-surface quality")[1]
+    assert "| `ramp60_s` | 95% → 80% ⚠️ |" in section
+    assert "Pairs within 5 points of stock or better: 0 of 1." in section
+
+
+def test_reports_without_the_top_surface_measure_say_not_scored():
+    stock, aware = _paired()
+    section = orep.summarize([stock], (), [_with_top(aware, float("nan"))]).split("### Top-surface quality")[1]
+    assert "| `ramp60_s` | not scored → n/m |" in section
+    assert "1 pair(s) not scored yet." in section
+
+
 def test_field_only_runs_split_stock_from_aware():
     field = [
         _report("ramp60_xs", 30.0, False, orep.MODE_FIELD_ONLY),

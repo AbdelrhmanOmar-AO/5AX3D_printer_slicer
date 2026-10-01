@@ -554,3 +554,108 @@ def test_a_point_at_the_shared_edge_of_a_wall_and_an_overhang_does_not_count():
     mesh, _ = _ramp(60)
     corner_above = np.array([[20.9, 6.0, 4.6]])  # its nearest point is the corner edge itself
     assert om.nearest_surface_is_overhang(corner_above, mesh.triangles).tolist() == [False]
+
+
+# --------------------------------------------------------------------------
+# Top-surface quality (build plan P2.5)
+# --------------------------------------------------------------------------
+
+
+def test_closest_points_on_triangles_match_the_exact_distances():
+    rng = np.random.default_rng(0)
+    triangles = rng.normal(size=(500, 3, 3))
+    points = rng.normal(size=(500, 3)) * 2.0
+    closest, barycentric = om.closest_points_on_triangles(points, triangles)
+    expected = [om.triangle_distances(points[i:i + 1], triangles[i:i + 1])[0, 0] for i in range(500)]
+    np.testing.assert_allclose(np.linalg.norm(points - closest, axis=1), expected, atol=1e-9)
+    np.testing.assert_allclose(np.einsum("nk,nkj->nj", barycentric, triangles), closest, atol=1e-9)
+    assert barycentric.min() >= -1e-12
+
+
+def test_corner_normals_keep_a_box_sharp():
+    triangles = _cube_triangles()
+    corners = om.corner_normals(triangles)
+    np.testing.assert_allclose(corners, np.repeat(om.unit_face_normals(triangles)[:, None], 3, axis=1))
+
+
+def test_corner_normals_round_a_faceted_sphere():
+    trimesh = pytest.importorskip("trimesh", reason="trimesh is a dev dependency")
+    sphere = trimesh.creation.icosphere(subdivisions=3, radius=5.0)
+    radial = sphere.triangles / np.linalg.norm(sphere.triangles, axis=2, keepdims=True)
+    facet = om.unit_face_normals(sphere.triangles)
+
+    def worst_deg(normals):
+        return np.degrees(np.arccos(np.clip(np.sum(normals * radial, axis=2), -1.0, 1.0))).max()
+
+    assert worst_deg(np.repeat(facet[:, None], 3, axis=1)) > 4.0
+    assert worst_deg(om.corner_normals(sphere.triangles)) < 1.0
+
+
+def _top_layer_points(depth=0.2, spacing=0.2):
+    """A patch of points ``depth`` below the 2 mm cube's top, clear of its walls."""
+    xs = np.arange(0.7, 1.31, spacing)
+    return np.array([[x, y, 2.0 - depth] for x in xs for y in xs])
+
+
+def test_a_vertical_tool_under_a_flat_top_is_on_target():
+    points = _top_layer_points()
+    result = om.top_surface_quality(FakeToolpath(points, [0.0, 0.0, 1.0]), _cube_triangles(), 7.0, 0.45)
+    assert result.sample_count == len(points) and result.skipped_samples == 0
+    assert result.fraction_on_target == 1.0
+    assert result.max_deviation_deg == pytest.approx(0.0, abs=1e-6)
+
+
+def test_a_tool_tilted_past_the_tolerance_is_off_target():
+    points = _top_layer_points()
+    toolpath = FakeToolpath(points, direction_tilted_toward(3.0, 45.0))
+    result = om.top_surface_quality(toolpath, _cube_triangles(), 7.0, 0.45)
+    assert result.on_target_count == 0
+    assert result.mean_deviation_deg == pytest.approx(3.0, abs=1e-4)
+    within = om.top_surface_quality(FakeToolpath(points, direction_tilted_toward(1.5)), _cube_triangles(), 7.0, 0.45)
+    assert within.fraction_on_target == 1.0
+
+
+def test_points_below_the_top_layer_do_not_count():
+    toolpath = FakeToolpath(_top_layer_points(depth=0.6), [0.0, 0.0, 1.0])
+    result = om.top_surface_quality(toolpath, _cube_triangles(), 7.0, 0.45)
+    assert not result.measured and math.isnan(result.fraction_on_target)
+
+
+def test_a_top_layer_point_against_a_wall_is_skipped():
+    """Nearer the wall (0.1 mm) than the top (0.2 mm): printed against the wall."""
+    by_the_wall = [[0.1, 1.0, 1.8]]
+    result = om.top_surface_quality(FakeToolpath(by_the_wall, [0.0, 0.0, 1.0]), _cube_triangles(), 7.0, 0.45)
+    assert result.sample_count == 0 and result.skipped_samples == 1
+
+
+def test_travel_moves_do_not_count():
+    points = _top_layer_points()
+    travel = np.full(len(points), TRAVEL_TYPE_NO_DEPOSITION)
+    travel[0] = TRAVEL_TYPE_DEPOSITION
+    toolpath = FakeToolpath(points, [0.0, 0.0, 1.0], travel_type=travel)
+    assert om.top_surface_quality(toolpath, _cube_triangles(), 7.0, 0.45).sample_count == 1
+
+
+def test_only_tops_within_the_angle_are_top_surfaces():
+    """A cube turned 10 degrees: its top is a top surface at 15 degrees, not at 7."""
+    angle = math.radians(10.0)
+    turn = np.array([[math.cos(angle), 0.0, math.sin(angle)], [0.0, 1.0, 0.0], [-math.sin(angle), 0.0, math.cos(angle)]])
+    triangles = _cube_triangles() @ turn.T
+    points = _top_layer_points() @ turn.T
+    toolpath = FakeToolpath(points, turn @ np.array([0.0, 0.0, 1.0]))
+    assert not om.top_surface_quality(toolpath, triangles, 7.0, 0.45).measured
+    result = om.top_surface_quality(toolpath, triangles, 15.0, 0.45)
+    assert result.sample_count == len(points) and result.fraction_on_target == 1.0
+
+
+def test_a_dome_is_measured_against_its_smooth_normal():
+    """Its facets are 5 degrees off the true normal; the tool along the true one is on target."""
+    trimesh = pytest.importorskip("trimesh", reason="trimesh is a dev dependency")
+    sphere = trimesh.creation.icosphere(subdivisions=3, radius=5.0)
+    polar = np.radians(np.linspace(0.0, 25.0, 12))
+    azimuth = np.radians(np.linspace(0.0, 330.0, 12))
+    radial = np.array([[math.sin(t) * math.cos(a), math.sin(t) * math.sin(a), math.cos(t)] for t in polar for a in azimuth])
+    toolpath = FakeToolpath(radial * 4.8, radial)
+    result = om.top_surface_quality(toolpath, sphere.triangles, 30.0, 0.45)
+    assert result.sample_count == len(radial) and result.fraction_on_target == 1.0
+    assert result.max_deviation_deg < 1.0

@@ -476,6 +476,267 @@ def effective_overhang_angles(
     return results
 
 
+def closest_points_on_triangles(points: np.ndarray, triangles: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The closest point of each triangle to the point paired with it.
+
+    ``points`` ``(N, 3)`` and ``triangles`` ``(N, 3, 3)``, taken in pairs.
+    Returns ``(closest, barycentric)``, ``(N, 3)`` each: the closest point and
+    its barycentric coordinates on the triangle. Ericson, *Real-Time Collision
+    Detection* (2005), 5.1.5, region by region.
+    """
+    p = np.asarray(points, dtype=np.float64)
+    tri = np.asarray(triangles, dtype=np.float64)
+    a, b, c = tri[:, 0], tri[:, 1], tri[:, 2]
+    ab, ac = b - a, c - a
+    dot = lambda u, v: np.einsum("nk,nk->n", u, v)  # noqa: E731
+    ap, bp, cp = p - a, p - b, p - c
+    d1, d2 = dot(ab, ap), dot(ac, ap)
+    d3, d4 = dot(ab, bp), dot(ac, bp)
+    d5, d6 = dot(ab, cp), dot(ac, cp)
+    va = d3 * d6 - d5 * d4
+    vb = d5 * d2 - d1 * d6
+    vc = d1 * d4 - d3 * d2
+
+    def ratio(numerator, denominator):
+        return numerator / np.where(np.abs(denominator) > 1e-300, denominator, 1.0)
+
+    v_ab = ratio(d1, d1 - d3)
+    w_ac = ratio(d2, d2 - d6)
+    w_bc = ratio(d4 - d3, (d4 - d3) + (d5 - d6))
+    total = va + vb + vc
+    v_in, w_in = ratio(vb, total), ratio(vc, total)
+    ones, zeros = np.ones(len(p)), np.zeros(len(p))
+    regions = [
+        (d1 <= 0) & (d2 <= 0),  # vertex a
+        (d3 >= 0) & (d4 <= d3),  # vertex b
+        (vc <= 0) & (d1 >= 0) & (d3 <= 0),  # edge ab
+        (d6 >= 0) & (d5 <= d6),  # vertex c
+        (vb <= 0) & (d2 >= 0) & (d6 <= 0),  # edge ac
+        (va <= 0) & (d4 - d3 >= 0) & (d5 - d6 >= 0),  # edge bc
+    ]
+    v = np.select(regions, [zeros, ones, v_ab, zeros, zeros, 1.0 - w_bc], default=v_in)
+    w = np.select(regions, [zeros, zeros, zeros, ones, w_ac, w_bc], default=w_in)
+    barycentric = np.column_stack([1.0 - v - w, v, w])
+    closest = a + v[:, None] * ab + w[:, None] * ac
+    return closest, barycentric
+
+
+def _nearest_within(points: np.ndarray, triangles: np.ndarray, reach: float):
+    """For each point, its nearest triangle among those within ``reach``.
+
+    Returns ``(distance, triangle, barycentric)``: ``inf``, -1 and NaN where no
+    triangle is that close. Only point and triangle pairs that can be within
+    ``reach`` are measured (a k-d tree on the points, queried from each
+    triangle's centroid out to its farthest vertex plus ``reach``), so large
+    meshes cost what their surface near the points costs.
+    """
+    count = len(points)
+    distance = np.full(count, np.inf)
+    nearest = np.full(count, -1, dtype=np.int64)
+    barycentric = np.full((count, 3), np.nan)
+    if count == 0 or len(triangles) == 0:
+        return distance, nearest, barycentric
+    centres = triangles.mean(axis=1)
+    radii = np.linalg.norm(triangles - centres[:, None, :], axis=2).max(axis=1)
+    found = cKDTree(points).query_ball_point(centres, r=radii + reach)
+    sizes = np.fromiter((len(f) for f in found), dtype=np.int64, count=len(found))
+    if not sizes.any():
+        return distance, nearest, barycentric
+    pair_point = np.concatenate([np.asarray(f, dtype=np.int64) for f in found if f])
+    pair_triangle = np.repeat(np.arange(len(triangles)), sizes)
+    closest, pair_bary = closest_points_on_triangles(points[pair_point], triangles[pair_triangle])
+    pair_distance = np.linalg.norm(points[pair_point] - closest, axis=1)
+    # The nearest pair per point: sort by point, then distance; keep the first.
+    order = np.lexsort((pair_distance, pair_point))
+    first = order[np.unique(pair_point[order], return_index=True)[1]]
+    keep = first[pair_distance[first] <= reach]
+    distance[pair_point[keep]] = pair_distance[keep]
+    nearest[pair_point[keep]] = pair_triangle[keep]
+    barycentric[pair_point[keep]] = pair_bary[keep]
+    return distance, nearest, barycentric
+
+
+def unit_face_normals(triangles: np.ndarray) -> np.ndarray:
+    """``(T, 3)`` unit normals from the winding, as the other mesh tests use."""
+    normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+    return normals / np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-30)
+
+
+#: Faces meeting at a vertex at less than this share their normals there
+#: (`corner_normals`); sharper edges, like a top meeting a wall, stay sharp.
+CREASE_ANGLE_DEG = 30.0
+
+
+def corner_normals(triangles: np.ndarray, crease_deg: float = CREASE_ANGLE_DEG) -> np.ndarray:
+    """``(T, 3, 3)`` smooth normals at each triangle's corners.
+
+    At each corner, the area-weighted mean of the normals of the faces that
+    share the vertex and lie within ``crease_deg`` of this face, as a
+    renderer's auto-smooth does. Interpolated across a face, they stand for
+    the smooth surface a faceted mesh approximates: a dome's facets are about
+    10 degrees apart (`twin_domes`), five times the top-surface tolerance, so
+    the facet normal itself is no target; a flat face keeps its own normal.
+    Vertices are matched by position, so an STL's unshared vertices work.
+    """
+    triangles = np.asarray(triangles, dtype=np.float64)
+    count = len(triangles)
+    normals = unit_face_normals(triangles)
+    areas = 0.5 * np.linalg.norm(
+        np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0]), axis=1
+    )
+    keys = np.round(triangles.reshape(-1, 3) * 1e6).astype(np.int64)
+    _, vertex = np.unique(keys, axis=0, return_inverse=True)
+    vertex = vertex.reshape(-1)
+    corner_face = np.repeat(np.arange(count), 3)
+    order = np.argsort(vertex, kind="stable")
+    starts = np.flatnonzero(np.r_[True, np.diff(vertex[order]) != 0])
+    ends = np.r_[starts[1:], len(order)]
+    cos_crease = np.cos(np.radians(crease_deg))
+    result = np.empty((count * 3, 3))
+    for start, end in zip(starts, ends):
+        corners = order[start:end]
+        faces = corner_face[corners]
+        n = normals[faces]
+        shared = (n @ n.T) >= cos_crease
+        summed = shared @ (n * areas[faces, None])
+        result[corners] = summed / np.maximum(np.linalg.norm(summed, axis=1, keepdims=True), 1e-30)
+    return result.reshape(count, 3, 3)
+
+
+#: Top-surface quality (build plan P2.5): a top-layer point is on target when
+#: its build direction is within this of the top surface's normal.
+TOP_SURFACE_TOLERANCE_DEG = 2.0
+
+
+@dataclass(frozen=True)
+class TopSurfaceResult:
+    """How the top surfaces were printed (build plan P2.5, the operator's
+    toolpath form of the plan's "ceiling cells within 2 degrees of their
+    target", 2026-10-01)."""
+
+    #: Deposition points counted: in the top layer of a top surface, and
+    #: nearer it than any other surface. Zero: nothing measured, NaN below.
+    sample_count: int
+    #: How many of them are within the tolerance of the surface's normal.
+    on_target_count: int
+    #: ``on_target_count / sample_count``.
+    fraction_on_target: float
+    mean_deviation_deg: float
+    max_deviation_deg: float
+    #: Points in a top layer that are nearer another surface (a wall), left out.
+    skipped_samples: int
+    #: The faces that count as top surfaces: their normal within this of +Z.
+    top_max_angle_deg: float
+    tolerance_deg: float
+
+    @property
+    def measured(self) -> bool:
+        return self.sample_count > 0
+
+
+def top_surface_quality(
+    toolpath,
+    part_triangles: np.ndarray,
+    top_max_angle_deg: float,
+    layer_height: float,
+    tolerance_deg: float = TOP_SURFACE_TOLERANCE_DEG,
+    margin: float = NEAREST_SURFACE_MARGIN_MM,
+    crease_deg: float = CREASE_ANGLE_DEG,
+) -> TopSurfaceResult:
+    """The share of top-layer points printed along the top surface's normal.
+
+    A **top surface** is an upward face whose normal is within
+    ``top_max_angle_deg`` of +Z: upstream's ceiling (`fff3.CEIL_MAX_ANGLE`,
+    the slicer's ``max_slope`` capped by the nozzle cone), which the field
+    is asked to follow exactly, so a print whose layers there are parallel
+    to the surface has a smooth top rather than a staircase.
+
+    A deposition point counts when it lies within ``layer_height`` of a top
+    face (the top layer, as upstream's ceiling cells lie within one layer
+    height of the surface) and that face is nearer it, by ``margin``, than
+    any other face (as the effective overhang angle's
+    `nearest_surface_is_overhang`): a top-layer bead against a wall is
+    printed against the wall. Its target is the smooth surface normal at the
+    nearest point (`corner_normals`), and its deviation the angle between
+    that and its build direction.
+
+    Upstream's ceiling rule also needs low curvature (``CURVATURE_THRESHOLD``
+    on the SDF); this measure has no such condition, so a small dome's top
+    counts here although the field may leave it unconstrained.
+    """
+    triangles = np.asarray(part_triangles, dtype=np.float64)
+    normals = unit_face_normals(triangles)
+    top = (normals[:, 2] > 0.0) & (
+        np.degrees(np.arccos(np.clip(normals[:, 2], -1.0, 1.0))) < top_max_angle_deg
+    )
+
+    count = int(np.asarray(toolpath.point_count).item())
+    mask = deposition_mask(toolpath)
+    points = np.asarray(toolpath.point[:count], dtype=np.float64)[mask]
+    directions = tool_directions(toolpath)[:count][mask]
+
+    def result(samples, on_target, deviations, skipped):
+        return TopSurfaceResult(
+            sample_count=samples,
+            on_target_count=on_target,
+            fraction_on_target=on_target / samples if samples else float("nan"),
+            mean_deviation_deg=float(np.mean(deviations)) if samples else float("nan"),
+            max_deviation_deg=float(np.max(deviations)) if samples else float("nan"),
+            skipped_samples=skipped,
+            top_max_angle_deg=float(top_max_angle_deg),
+            tolerance_deg=float(tolerance_deg),
+        )
+
+    if not top.any() or len(points) == 0:
+        return result(0, 0, [], 0)
+
+    top_index = np.flatnonzero(top)
+    to_top, nearest, barycentric = _nearest_within(points, triangles[top], layer_height)
+    in_top_layer = np.flatnonzero(np.isfinite(to_top))
+    if len(in_top_layer) == 0:
+        return result(0, 0, [], 0)
+
+    to_other, _, _ = _nearest_within(points[in_top_layer], triangles[~top], layer_height + margin)
+    counted = in_top_layer[to_top[in_top_layer] + margin < to_other]
+    skipped = len(in_top_layer) - len(counted)
+    if len(counted) == 0:
+        return result(0, 0, [], skipped)
+
+    corners = corner_normals(triangles, crease_deg)[top_index[nearest[counted]]]
+    target = np.einsum("nk,nkj->nj", barycentric[counted], corners)
+    target /= np.maximum(np.linalg.norm(target, axis=1, keepdims=True), 1e-30)
+    cosine = np.clip(np.einsum("nk,nk->n", target, directions[counted]), -1.0, 1.0)
+    deviations = np.degrees(np.arccos(cosine))
+    on_target = int(np.count_nonzero(deviations <= tolerance_deg))
+    return result(len(counted), on_target, deviations, skipped)
+
+
+@dataclass(frozen=True)
+class ToolpathSegments:
+    """Each move of a toolpath: from point ``i - 1`` to point ``i``."""
+
+    #: Its length, mm.
+    length_mm: np.ndarray = field(repr=False)
+    #: How far the build direction turns over it, degrees.
+    turn_deg: np.ndarray = field(repr=False)
+    #: Whether it deposits (`toolpath3`'s ``travel_type`` of its end point).
+    deposits: np.ndarray = field(repr=False)
+
+
+def toolpath_segments(toolpath) -> ToolpathSegments:
+    """The moves between consecutive toolpath points, for the tilt rate."""
+    count = int(np.asarray(toolpath.point_count).item())
+    points = np.asarray(toolpath.point[:count], dtype=np.float64)
+    directions = tool_directions(toolpath)[:count]
+    if count < 2:
+        empty = np.zeros(0)
+        return ToolpathSegments(empty, empty, np.zeros(0, dtype=bool))
+    length = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    cosine = np.clip(np.einsum("nk,nk->n", directions[1:], directions[:-1]), -1.0, 1.0)
+    deposits = np.asarray(toolpath.travel_type[1:count]) == TRAVEL_TYPE_DEPOSITION
+    return ToolpathSegments(length, np.degrees(np.arccos(cosine)), deposits)
+
+
 def overhang_face_mask(
     face_normals: np.ndarray,
     face_centres: np.ndarray,

@@ -171,6 +171,38 @@ def test_a_box_reports_no_overhang_surfaces(ti_cpu, tmp_path):
     )
 
 
+def test_a_box_printed_vertically_has_its_whole_top_on_target(ti_cpu, tmp_path):
+    """Build plan P2.5's top-surface quality: the box's top layer, tool vertical."""
+    mesh = bm.make_box(**bm.default_dimensions(60.0))
+    stl_path = tmp_path / "box.stl"
+    mesh.export(stl_path)
+    top_layer = np.array([[x, y, 36.0 - 0.2] for x in np.arange(5.0, 55.0, 2.0) for y in np.arange(5.0, 22.0, 2.0)])
+    below = np.array([[30.0, 13.5, z] for z in np.arange(0.45, 35.0, 0.45)])
+    toolpath_path = tmp_path / "box_smoothed.npz"
+    SyntheticToolpath(np.vstack([below, top_layer]), [0.0, 0.0, 1.0]).save(toolpath_path)
+
+    report = overhang_report.measure("box", 7.0, 0.9, toolpath_path=toolpath_path, stl_path=stl_path)
+
+    top = report["metrics"]["top_surface"]
+    assert top["sample_count"] == len(top_layer)
+    assert top["fraction_on_target"] == 1.0 and top["tolerance_deg"] == 2.0
+    assert top["top_max_angle_deg"] == 7.0
+
+
+@pytest.mark.parametrize(
+    "slope, profile, expected",
+    [(7.0, "reference", 7.0), (30.0, "reference", 30.0), (70.0, "reference", 50.0), (70.0, "dev60", 60.0)],
+)
+def test_top_surfaces_are_upstreams_ceilings(slope, profile, expected):
+    """max_slope, capped at (180 - nozzle cone) / 2 by the run's profile."""
+    provenance = {"machine_profile": profile}
+    assert overhang_report.top_surface_angle_deg(slope, provenance) == pytest.approx(expected)
+
+
+def test_an_unknown_profile_falls_back_to_max_slope():
+    assert overhang_report.top_surface_angle_deg(15.0, {"machine_profile": "no_such_machine"}) == 15.0
+
+
 # --------------------------------------------------------------------------
 # Summary table
 # --------------------------------------------------------------------------
