@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "metrics_version": 2,
+  "metrics_version": 3,
   "part": "twin_domes_s",
   "max_slope_deg": 30.0,
   "overhang_aware": false,
@@ -74,13 +74,13 @@
     "git_commit": "fadcab359fb41539a80f43c4301fa7957daf8665",
     "code_modified": false,
     "recorded_utc": "2026-09-28T08:54:35+00:00",
-    "metrics_version": 2,
+    "metrics_version": 3,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "fadcab359fb41539a80f43c4301fa7957daf8665",
+      "git_commit": "3ce2cfead7523713a80ac35a80f86f7fd0a318f2",
       "code_modified": false,
-      "utc": "2026-09-28T08:54:35+00:00",
-      "metrics_version": 2
+      "utc": "2026-10-01T06:00:02+00:00",
+      "metrics_version": 3
     },
     "parallel_workers": 8,
     "taichi_cpu_threads": null
