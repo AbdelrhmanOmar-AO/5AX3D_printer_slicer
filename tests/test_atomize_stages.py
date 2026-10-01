@@ -98,6 +98,7 @@ def _overhang_cases():
             "params": {
                 **plain, "overhang_aware": True, "max_overhang_deg": 50,
                 "overhang_margin_deg": 1.5, "hold_overhang": False, "ramp_in": False,
+                "overhang_edges": False,
             },
         },
         {"name": "aware_off", "params": {**cube, "overhang_aware": False}},
@@ -303,8 +304,8 @@ def test_an_overhang_aware_part_with_infill_keeps_its_solid_sdf(recorded_now):
             "python tools/compute_tool_orientations.py": (
                 "python tools/compute_tool_orientations.py data/sdf/calibration_cube.npz "
                 "data/direction/calibration_cube.npz --maxslope 7.0 --overhang_aware "
-                f"--max_overhang 45 --overhang_margin 2 --hold_overhang --ramp_in "
-                f"--max_tilt_rate 3 --solid_sdf {solid} "
+                f"--max_overhang 45 --overhang_margin 2 --hold_overhang --overhang_edges "
+                f"--ramp_in --max_tilt_rate 3 --solid_sdf {solid} "
                 "--logpath data/log/calibration_cube.log"
             ),
         },
@@ -321,7 +322,8 @@ def test_an_overhang_aware_part_without_infill_has_one_sdf(recorded_now):
             "python tools/compute_tool_orientations.py": (
                 "python tools/compute_tool_orientations.py data/sdf/plain.npz "
                 "data/direction/plain.npz --maxslope 30.0 --overhang_aware --max_overhang 50 "
-                "--overhang_margin 1.5 --no_hold_overhang --no_ramp_in --logpath data/log/plain.log"
+                "--overhang_margin 1.5 --no_hold_overhang --no_overhang_edges --no_ramp_in "
+                "--logpath data/log/plain.log"
             ),
         },
     )

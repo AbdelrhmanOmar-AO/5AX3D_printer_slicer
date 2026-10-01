@@ -8,8 +8,8 @@ Taichi.
 
 A field costs some 20 s on the CPU whatever the grid's size (Taichi compiles
 the aligner's kernels afresh for every new field), so the tests share three
-module-scoped fields rather than computing their own (four with P2.4's
-ramp-in, which is on by default). They stay in the
+module-scoped fields rather than computing their own (five, with P2.4's
+ramp-in and the edges of P2-19 each switched off once). They stay in the
 default (unit) tier by the operator's choice, 2026-09-30.
 
 70 degrees, at a 30-degree budget: the rule asks 70 - 45 + 2 = 27 degrees
@@ -146,6 +146,16 @@ def no_ramp_field(infilled, solid):
     )
 
 
+@pytest.fixture(scope="module")
+def no_edges_field(infilled, solid):
+    """``aware_field`` without carrying the constraint to the overhang's edges (P2-19)."""
+    from atom import orientation_field as of
+
+    return of.compute_direction_field(
+        infilled, MAX_SLOPE, overhang=OverhangSettings(), solid_sdf=solid, edges=False
+    )
+
+
 def _overhang_marks(result):
     from atom import orientation_field as of
 
@@ -256,6 +266,7 @@ def test_the_stage_runs_the_overhang_aware_field(stage_runs, request, name, fixt
         f"{field.overhang_capped} of them capped"
     ) in text
     assert f"hold {hold})" in text
+    assert f"Overhang edges: {field.edge_cells} cells given the nearest overhang cell's constraint" in text
     assert f"Ramp-in: {field.ramp.cells} cells below {field.ramp.walks_used} overhang cells" in text
     assert "Field computed on the solid SDF" in text
     assert "Direction computation took" in text  # the line the reports time
@@ -358,7 +369,8 @@ def test_the_ramp_in_constrains_the_column_below_the_corner(aware_field, ramp, c
 
     The corner is 1.8 mm above the bed: 27 degrees at 3 per mm would need 9 mm,
     so the ramp is steepened to fit, by the operator's decision, and the
-    overhang keeps its 27 degrees.
+    overhang keeps its 27 degrees. Never as steep as copying the tilt into the
+    wall below the corner would make it (P2-19: 40 degrees per mm).
     """
     from atom import orientation_field as of
 
@@ -366,18 +378,23 @@ def test_the_ramp_in_constrains_the_column_below_the_corner(aware_field, ramp, c
     r = aware_field.ramp
     ramp_cells = aware_field.mark == of.MARK_RAMP
     assert r.cells == int(ramp_cells.sum()) > 0
-    assert r.walks_steepened > 0 and r.steepest_rate_deg_per_mm > 3.0
+    assert r.walks_steepened > 0 and 3.0 < r.steepest_rate_deg_per_mm < 20.0
 
     index = np.argwhere(ramp_cells)
     x = (index[:, 0] + 0.5) * cell
     z = (index[:, 2] + 0.5) * cell
     assert (solid[ramp_cells] < 0).all()
-    assert (x < geometry["column_width"] + 0.5).all()
-    assert (z < geometry["base_height"] + 0.5).all()
+    below_corner = (x < geometry["column_width"] + 0.5) & (z < geometry["base_height"] + 0.5)
+    # Most are in the column below the corner. The rest are under the edge
+    # cells at the tip (P2-19), in the material printed just before them.
+    assert below_corner.mean() > 0.8
+    assert (below_corner | (x > LENGTH - 1.0)).all()
     tilt = np.degrees(aware_field.initial[..., 0][ramp_cells])
     phi = np.degrees(aware_field.initial[..., 1][ramp_cells])
     assert (tilt > 0).all() and (tilt < ANGLE - 45 + 2).all()
-    np.testing.assert_allclose(phi, 0.0, atol=1e-4)
+    # The overhang's way. Next to the side walls the normals blend, and the
+    # edge cells there (P2-19) pass a few degrees of that on: within 10.
+    np.testing.assert_allclose(phi, 0.0, atol=10.0)
     assert aware_field.overhang_capped == 0
 
 
@@ -408,3 +425,43 @@ def test_the_ramp_in_raises_the_tilt_below_the_corner(aware_field, no_ramp_field
         return np.degrees(result.field.direction.to_numpy()[..., 0][below_corner]).mean()
 
     assert tilt(aware_field) > tilt(no_ramp_field) + 0.5
+
+
+# --------------------------------------------------------------------------
+# The overhang's edges (plan_corrections P2-19)
+# --------------------------------------------------------------------------
+
+
+def _underside_band(ramp, cell, near_side_mm=None):
+    """Boundary cells within one layer height above the underside; optionally only near the side walls."""
+    solid, geometry = ramp
+    shape = solid.shape
+    X = np.broadcast_to(((np.arange(shape[0]) + 0.5) * cell)[:, None, None], shape)
+    Y = np.broadcast_to(((np.arange(shape[1]) + 0.5) * cell)[None, :, None], shape)
+    Z = np.broadcast_to(((np.arange(shape[2]) + 0.5) * cell)[None, None, :], shape)
+    n = geometry["normal"]
+    above = -((X - geometry["column_width"]) * n[0] + (Z - geometry["base_height"]) * n[2])
+    along = (X - geometry["column_width"]) / geometry["run"]
+    band = (solid < 0) & (solid > -0.45) & (above > 0) & (above <= 0.45) & (along > 0.1) & (along < 0.9)
+    if near_side_mm is not None:
+        band &= np.minimum(Y, DEPTH - Y) < near_side_mm
+    return band
+
+
+def test_the_edges_next_to_the_side_walls_get_the_constraint(aware_field, no_edges_field, ramp, cell):
+    from atom import orientation_field as of
+
+    edge = aware_field.mark == of.MARK_OVERHANG_EDGE
+    assert aware_field.edge_cells == int(edge.sum()) > 0
+    assert no_edges_field.edge_cells == 0 and not (no_edges_field.mark == of.MARK_OVERHANG_EDGE).any()
+    near_walls = _underside_band(ramp, cell, near_side_mm=0.5)
+    constrained = lambda r: (r.mark[near_walls] != of.MARK_NONE).mean()  # noqa: E731
+    assert constrained(aware_field) > 0.95 > constrained(no_edges_field)
+    # Held like the overhang cells they copy.
+    np.testing.assert_array_equal(aware_field.field.direction.to_numpy()[edge], aware_field.initial[edge])
+
+
+def test_the_field_leans_further_next_to_the_side_walls(aware_field, no_edges_field, ramp, cell):
+    near_walls = _underside_band(ramp, cell, near_side_mm=0.5)
+    tilt = lambda r: np.degrees(r.field.direction.to_numpy()[..., 0][near_walls]).mean()  # noqa: E731
+    assert tilt(aware_field) > tilt(no_edges_field) + 0.5

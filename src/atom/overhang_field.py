@@ -136,7 +136,7 @@ def effective_overhang_deg(normal, tilt_deg: float, azimuth_deg: float) -> float
 #: field. The others need ``overhang_aware: true``.
 PARAMETER_KEYS = (
     "overhang_aware", "max_overhang_deg", "overhang_margin_deg", "hold_overhang",
-    "ramp_in", "max_tilt_rate_deg_per_mm",
+    "overhang_edges", "ramp_in", "max_tilt_rate_deg_per_mm",
 )
 
 
@@ -176,15 +176,17 @@ def overhang_arguments(
     hold_overhang=None,
     ramp_in=None,
     max_tilt_rate_deg_per_mm=None,
+    overhang_edges=None,
 ) -> str:
     """The stage options for ``compute_tool_orientations.py`` from the parameter keys.
 
     Empty when ``overhang_aware`` is absent or false, so a parameter file
     without the keys runs exactly upstream's command. Otherwise the rule's
     values are written out in full (defaults included, hold as
-    ``--hold_overhang`` or ``--no_hold_overhang``, the ramp-in of build plan
-    P2.4 as ``--ramp_in --max_tilt_rate R`` or ``--no_ramp_in``), so the log
-    shows what ran. Values are checked here, when the parameter file is read; a rule key
+    ``--hold_overhang`` or ``--no_hold_overhang``, the edges as
+    ``--overhang_edges`` or ``--no_overhang_edges``, the ramp-in of build
+    plan P2.4 as ``--ramp_in --max_tilt_rate R`` or ``--no_ramp_in``), so the
+    log shows what ran. Values are checked here, when the parameter file is read; a rule key
     given without ``overhang_aware: true`` is refused rather than ignored.
     """
     if not _flag("overhang_aware", overhang_aware):
@@ -194,6 +196,7 @@ def overhang_arguments(
                 ("max_overhang_deg", max_overhang_deg),
                 ("overhang_margin_deg", overhang_margin_deg),
                 ("hold_overhang", hold_overhang),
+                ("overhang_edges", overhang_edges),
                 ("ramp_in", ramp_in),
                 ("max_tilt_rate_deg_per_mm", max_tilt_rate_deg_per_mm),
             )
@@ -213,6 +216,8 @@ def overhang_arguments(
     )
     hold = DEFAULT_HOLD_OVERHANG if hold_overhang is None else _flag("hold_overhang", hold_overhang)
     arguments += " --hold_overhang" if hold else " --no_hold_overhang"
+    edges = True if overhang_edges is None else _flag("overhang_edges", overhang_edges)
+    arguments += " --overhang_edges" if edges else " --no_overhang_edges"
 
     if _flag("ramp_in", True if ramp_in is None else ramp_in):
         rate = DEFAULT_MAX_TILT_RATE_DEG_PER_MM

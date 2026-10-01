@@ -2562,3 +2562,34 @@ above the mean (`ramp60_s` at 30: 49 against 42.7; `ramp70_xs` 50 against
 a few spots per part, the edge and corner effect of P2-15, which now decides
 whether a part passes. Unsupported deposition near the overhangs, where the
 budget suffices: 0.1-2.0 %.
+
+#### P2-19 The overhang constraint carried to the overhang's edges (operator's decision, 2026-10-01)
+
+*Answering P2-15 with P2-18's numbers.* The overhang rule, like upstream's
+ceiling rule, constrains only low-curvature boundary cells whose own normal
+is steeper than `max_overhang`. Along an overhang's edges neither holds: the
+curvature is high and the central-difference normal blends the two faces.
+Measured on the 60-degree test ramp: within 0.5 mm of the side walls **26 %**
+of the boundary cells next to the underside were constrained (43 % low
+curvature, 49 % steeper than 45 degrees), near the tip 44 %, in the middle
+100 %. So the worst point of most parts in P2.5 sat at an edge, 4-11 degrees
+above the surface's mean.
+
+**`atom.overhang_edges.fill_overhang_edges`**, between the rule and the
+ramp-in: every unconstrained boundary cell (inside, within one layer height
+of the surface, not in the first layer) within **two layer heights** of an
+overhang cell takes the nearest overhang cell's direction (`scipy.ndimage`
+distance transform), **unless it lies behind that cell along its build
+direction**: that is the material printed before it, such as the wall below a
+corner, which is the ramp-in's job (copying the full tilt there put 27
+degrees a millimetre above the bed on the test ramp and asked the ramp for 40
+degrees per mm). The filled cells are marked `MARK_OVERHANG_EDGE`, held with
+the overhang cells, and the ramp-in starts below them too. Key
+`overhang_edges` (default true), stage options `--overhang_edges` /
+`--no_overhang_edges`; the stage logs the count.
+
+On the test ramp (exact SDF): the boundary cells next to the underside within
+0.5 mm of the side walls are now all constrained, and the field there leans
+0.9 degrees further (25.9 -> 26.8 of the rule's 27). The exact SDF has
+cleaner edges than the remeshed one, so the laptop's remeshed `ramp60_xs`
+is the real test.

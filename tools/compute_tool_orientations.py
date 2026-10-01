@@ -91,6 +91,23 @@ def compute_tool_orientation():
         const=False,
         help="With --overhang_aware: let the final smoothing passes smooth the overhang constraints too, as upstream does with its own.",
     )
+    # This fork, plan_corrections P2-19: the overhang constraint at its edges.
+    edges = parser.add_mutually_exclusive_group()
+    edges.add_argument(
+        "--overhang_edges",
+        dest="overhang_edges",
+        action="store_const",
+        const=True,
+        default=None,
+        help="With --overhang_aware: give the edge cells next to an overhang (side walls, tip, corners), which the rule skips, the nearest overhang cell's constraint (default on).",
+    )
+    edges.add_argument(
+        "--no_overhang_edges",
+        dest="overhang_edges",
+        action="store_const",
+        const=False,
+        help="With --overhang_aware: leave the edge cells unconstrained.",
+    )
     # Build plan P2.4 (this fork): the tilt ramp-in below overhangs.
     ramp = parser.add_mutually_exclusive_group()
     ramp.add_argument(
@@ -214,12 +231,13 @@ def check_overhang_arguments(args):
         args.max_overhang is not None
         or args.overhang_margin is not None
         or args.hold_overhang is not None
+        or args.overhang_edges is not None
         or args.ramp_in is not None
         or args.max_tilt_rate is not None
     ):
         raise SystemExit(
-            "--max_overhang, --overhang_margin, --[no_]hold_overhang, --[no_]ramp_in "
-            "and --max_tilt_rate need --overhang_aware."
+            "--max_overhang, --overhang_margin, --[no_]hold_overhang, --[no_]overhang_edges, "
+            "--[no_]ramp_in and --max_tilt_rate need --overhang_aware."
         )
     if args.ramp_in is False and args.max_tilt_rate is not None:
         raise SystemExit("--max_tilt_rate needs the ramp-in; it is refused with --no_ramp_in.")
@@ -246,6 +264,7 @@ def compute_overhang_aware(args, sdf, df_path, log_file):
             DEFAULT_MARGIN_DEG if args.overhang_margin is None else args.overhang_margin,
         )
     hold = DEFAULT_HOLD_OVERHANG if args.hold_overhang is None else args.hold_overhang
+    edges = args.overhang_edges is not False
     ramp = None
     if args.ramp_in is not False:
         ramp = RampSettings(
@@ -258,7 +277,8 @@ def compute_overhang_aware(args, sdf, df_path, log_file):
 
     t0 = time.perf_counter()
     result = atom.orientation_field.compute_direction_field(
-        sdf, args.maxslope, overhang=settings, solid_sdf=solid, hold_overhang=hold, ramp=ramp
+        sdf, args.maxslope, overhang=settings, solid_sdf=solid, hold_overhang=hold, ramp=ramp,
+        edges=edges,
     )
     duration = time.perf_counter() - t0
 
@@ -269,6 +289,10 @@ def compute_overhang_aware(args, sdf, df_path, log_file):
             f"{result.overhang_capped} of them capped by the tilt budget "
             f"(max overhang {settings.max_overhang_deg:g} degrees, margin "
             f"{settings.margin_deg:g}, hold {'on' if hold else 'off'})"
+        )
+        lines.append(
+            f"Overhang edges: {result.edge_cells} cells given the nearest overhang cell's constraint"
+            if edges else "Overhang edges: off"
         )
         if ramp is None:
             lines.append("Ramp-in: off")
