@@ -293,9 +293,34 @@ def test_summarize_prints_the_warning(repo_root, no_overrides, tmp_path, monkeyp
 
 
 def committed_reports(repo_root):
-    paths = sorted((repo_root / "reports" / "baseline_overhang").glob("*.json"))
+    """The 48 committed stock reports: the baseline.
+
+    Overhang-aware reports (build plan P2.5, `<part>_ms<deg>_aware.json`) sit in
+    the same folder; `committed_aware_reports` reads those.
+    """
+    paths = sorted(
+        p for p in (repo_root / "reports" / "baseline_overhang").glob("*.json")
+        if not p.stem.endswith(overhang_report.AWARE_SUFFIX)
+    )
     assert len(paths) == 48
     return [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+
+
+def committed_aware_reports(repo_root):
+    paths = sorted((repo_root / "reports" / "baseline_overhang").glob(f"*{overhang_report.AWARE_SUFFIX}.json"))
+    return [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+
+
+def test_the_committed_overhang_aware_runs_are_comparable_with_the_baseline(repo_root):
+    """Build plan P2.5: stock and overhang-aware in one provenance group."""
+    aware = committed_aware_reports(repo_root)
+    if not aware:
+        pytest.skip("no overhang-aware reports committed")
+    for report in aware:
+        assert report["overhang_aware"] is True, report["part"]
+        assert prov.problems(report.get("provenance")) == [], report["part"]
+    keys = {prov.comparability_key(r["provenance"]) for r in committed_reports(repo_root) + aware}
+    assert len(keys) == 1
 
 
 def test_every_committed_report_carries_complete_provenance(repo_root):

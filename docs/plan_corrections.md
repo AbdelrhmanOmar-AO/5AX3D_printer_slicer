@@ -2488,3 +2488,63 @@ machine's.*
   the maximum tilt rate along the toolpath. Both can be measured from the
   archived toolpaths and the mesh, so they can be added after the lab run and
   applied with `--reanalyse` without re-running anything.
+
+#### P2-17 Metrics version 3 was flawed; version 4 counts the points whose nearest surface is an overhang ★ METRIC CHANGE
+
+*Found in the lab machine's P2.5 data, 2026-10-01; the operator's decision
+the same day.* Version 3 (P2-14) counted a point only if the spot one layer
+height straight back along `-d` was outside the part. On an overhang of 45
+degrees or less, each bead hangs only half over the one below, so the spot
+under its centre is inside the bead below: version 3 called such beads
+supported and dropped them. On `ramp45_xs` it kept **none** of about 4 000
+samples at four of six budgets, so the table read "no overhang", hiding
+stock's known 51-degree failure at 30. Gentle overhangs became unmeasurable.
+
+**Version 4:** a point near an overhang face counts when its **nearest
+surface is an overhang face**, nearer by 0.05 mm than any other face
+(`overhang_metrics.nearest_surface_is_overhang`, exact point-to-triangle
+distances on the part's mesh, `triangle_distances`). A point against the wall
+below a corner is nearer the wall and is skipped; a point at the corner's
+shared edge is equally near both and is skipped; every bead along an
+underside counts, whatever its angle. Same as version 2 everywhere except
+next to other surfaces. Report key `skipped_samples` (was
+`supported_samples_skipped`).
+
+On the CPU `ramp60_xs` runs (exact SDF): stock 89.3 (unchanged), overhang-aware
+with ramp-in **45.3** (mean 43.2), keeping 5 923 of 6 834 samples. The
+version 3 code (`points_over_air`, `winding_number`) is removed.
+
+**The lab machine re-scores again** (archived toolpaths, seconds): the 48
+stock and 44 overhang-aware reports are version 3.
+
+#### P2-18 P2.5's first overhang-aware matrix (lab machine, 2026-10-01; metrics version 3)
+
+`run_matrix_parallel.py --sizes xs s --workers 8 --overhang-aware`, commit
+`3ce2cfe`, 3:42 for 48 runs; **44 completed, 4 failed**. Stock and
+overhang-aware in one provenance group (cad-p07-2065-9, stock mix, Taichi
+1.7.4, reference). Selected cells, worst effective overhang stock ->
+overhang-aware (`reports/baseline_overhang.md` has them all):
+
+| Part | 7 | 15 | 30 |
+|---|---|---|---|
+| `ramp45_s` | 45 -> 43 | 45 -> 43 | **51 -> 43** |
+| `ramp60_s` | 60 -> 53 | 65 -> 45 | **90 -> 45** |
+| `ramp70_s` | 70 -> 63 | 80 -> 55 | **90 -> 44** |
+| `ramp80_s` | 83 -> 73 | 90 -> 65 | 90 -> 50 |
+| `ramp90_s` | 90 -> 83 | 90 -> 75 | failed |
+
+* **The relation flips**, as P2.5 asks: wherever the budget is short of what
+  the rule wants, the effective angle is the geometric angle minus the budget
+  (60 - 7 = 53, 70 - 15 = 55, 80 - 30 = 50); where it is enough, 43-45.
+  Stock was the geometric angle **plus** its tilt.
+* **Printable: stock 3, overhang-aware 5** of the 44 pairs. Most
+  overhang-aware runs within 45 degrees still fail on **unsupported deposition
+  near the overhang, 0.8-2.4 % against the 1 % limit** (`ramp50` at every
+  budget, `ramp60_xs` and `ramp70_xs` at 30). Where those points are is not
+  known yet.
+* **The 4 failures** are all at 30 degrees on the flat undersides
+  (`ramp90_xs`, `ramp90_s`, `tshape_xs`, `tshape_s`): stage 9, `order_atoms`,
+  wrote no toolpath. Its only exit is the planner finding no valid next atom
+  ("maybe two adjacent atoms are constraining each other"). Being reproduced.
+* These numbers are version 3 (P2-17): `ramp45_xs`'s "no overhang" cells are
+  that flaw, not results.

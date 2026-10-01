@@ -517,7 +517,10 @@ part's worst points are elsewhere; `tools/overhang_where.py` shows where.
 
 **With the metric counting only points over the air** (version 3, the
 operator's decision, plan_corrections P2-14), the same CPU runs read: stock
-89.3, overhang-aware **43.2**, with the ramp-in **43.3**.
+89.3, overhang-aware **43.2**, with the ramp-in **43.3**. Version 3 turned
+out to drop the half-supported beads of gentle overhangs (P2-17); **version
+4** counts the points whose nearest surface is the overhang, and reads stock
+89.3, overhang-aware with ramp-in **45.3** (mean 43.2).
 
 **The laptop's remeshed part, re-measured with version 3** (the atoms of the
 ramp-in run, `--skip-pipeline`) and located with `tools/overhang_where.py`:

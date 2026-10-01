@@ -479,7 +479,8 @@ def test_the_radius_no_longer_binds_before_the_cone():
 
 
 # --------------------------------------------------------------------------
-# Only points out over the air (metrics version 3, plan_corrections P2-14)
+# Only points whose nearest surface is an overhang (metrics version 4,
+# plan_corrections P2-14 and P2-17)
 # --------------------------------------------------------------------------
 
 
@@ -493,45 +494,63 @@ def _cube_triangles(size=2.0):
     return v[np.array(tris)]
 
 
-def test_the_winding_number_tells_inside_from_outside():
+def test_triangle_distances_are_exact():
     triangles = _cube_triangles()
-    w = om.winding_number(np.array([[1.0, 1.0, 1.0], [3.0, 1.0, 1.0], [1.0, 1.0, -0.5]]), triangles)
-    np.testing.assert_allclose(w, [1.0, 0.0, 0.0], atol=1e-9)
+    points = np.array([[1.0, 1.0, 1.0], [1.0, 1.0, 3.0], [3.0, 3.0, 3.0], [1.0, 1.0, 1.9]])
+    nearest = om.triangle_distances(points, triangles).min(axis=1)
+    np.testing.assert_allclose(nearest, [1.0, 1.0, math.sqrt(3.0), 0.1], atol=1e-9)
 
 
-def test_a_point_is_over_air_when_the_layer_below_it_would_be_outside():
-    triangles = _cube_triangles()
-    up = np.array([[0.0, 0.0, 1.0]] * 3)
-    points = np.array([
-        [1.0, 1.0, 1.0],   # the layer below is inside the cube: printed onto it
-        [1.0, 1.0, 0.2],   # the layer below is under the cube's floor: the bed
-        [1.9, 1.0, 1.0],   # tilted out through the side wall: over air
-    ])
-    tilted = up.copy()
-    tilted[2] = [-0.9, 0.0, 0.436]
-    assert om.points_over_air(points, tilted, triangles, 0.45).tolist() == [False, False, True]
-
-
-def test_points_printed_onto_the_wall_below_a_corner_do_not_count():
-    """The case that made the metric change: a ramp where its column turns into the overhang."""
+def _ramp(angle):
     trimesh = pytest.importorskip("trimesh", reason="trimesh is a dev dependency")
     from atom import benchmark_meshes as bm
 
-    mesh = bm.make_ramp(60, length=30.0, depth=13.5, height=18.0)
+    mesh = bm.make_ramp(angle, length=30.0, depth=13.5, height=18.0)
     vertices, faces = trimesh.remesh.subdivide_to_size(mesh.vertices, mesh.faces, max_edge=0.9)
     sampled = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
-    # The ramp's column is 21 mm wide and 4.5 mm high; the underside rises from
-    # (21, 4.5) at 30 degrees from horizontal.
-    over_air = [25.0, 6.0, 4.5 + 4.0 / math.tan(math.radians(60)) + 0.2]
-    on_the_wall = [20.7, 6.0, 4.2]
-    toolpath = FakeToolpath([over_air, on_the_wall], [0.0, 0.0, 1.0])
-    arrays = (sampled.face_normals, sampled.triangles_center, sampled.area_faces)
+    return mesh, (sampled.face_normals, sampled.triangles_center, sampled.area_faces)
+
+
+def _underside_z(angle, x):
+    """The ramp's underside rises from (21, 4.5): column 21 mm wide, 4.5 mm high."""
+    return 4.5 + (x - 21.0) / math.tan(math.radians(angle))
+
+
+def test_points_against_the_wall_below_a_corner_do_not_count():
+    """The case that made the metric change: a ramp where its column turns into the overhang."""
+    mesh, arrays = _ramp(60)
+    by_the_underside = [25.0, 6.0, _underside_z(60, 25.0) + 0.2]
+    against_the_wall = [20.7, 6.0, 4.2]
+    toolpath = FakeToolpath([by_the_underside, against_the_wall], [0.0, 0.0, 1.0])
 
     old = om.effective_overhang_angles(*arrays, toolpath, 0.9)
-    new = om.effective_overhang_angles(*arrays, toolpath, 0.9, part_triangles=mesh.triangles, layer_height=0.45)
+    new = om.effective_overhang_angles(*arrays, toolpath, 0.9, part_triangles=mesh.triangles)
 
     assert old[0].sample_count > new[0].sample_count > 0
-    assert new[0].supported_samples_skipped > 0
-    assert old[0].supported_samples_skipped == 0
-    # With a vertical tool the point over air keeps the geometric angle.
+    assert new[0].skipped_samples > 0 and old[0].skipped_samples == 0
+    # With a vertical tool the counted point keeps the geometric angle.
     assert new[0].max_effective_deg == pytest.approx(60.0, abs=0.1)
+
+
+def test_a_half_supported_bead_on_a_gentle_overhang_still_counts():
+    """Version 3's flaw: on `ramp45_xs` it found nothing to measure (plan_corrections P2-17).
+
+    A bead 0.45 mm inside a 45-degree underside has material straight below
+    its centre, so version 3 called it supported. Its nearest surface is the
+    underside, so it counts.
+    """
+    mesh, arrays = _ramp(45)
+    x = 25.0
+    bead = [x, 6.0, _underside_z(45, x) + 0.45 * math.sqrt(2.0)]
+    groups = om.effective_overhang_angles(
+        *arrays, FakeToolpath([bead], [0.0, 0.0, 1.0]), 0.9, part_triangles=mesh.triangles
+    )
+    assert groups[0].sample_count > 0 and groups[0].skipped_samples == 0
+    assert groups[0].max_effective_deg == pytest.approx(45.0, abs=0.1)
+
+
+def test_a_point_at_the_shared_edge_of_a_wall_and_an_overhang_does_not_count():
+    """Equally near both: not out over the overhang."""
+    mesh, _ = _ramp(60)
+    corner_above = np.array([[20.9, 6.0, 4.6]])  # its nearest point is the corner edge itself
+    assert om.nearest_surface_is_overhang(corner_above, mesh.triangles).tolist() == [False]

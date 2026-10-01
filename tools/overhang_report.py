@@ -134,7 +134,11 @@ SCHEMA_VERSION = 1
 #:     layer back along the build direction is outside the part and above the
 #:     bed); points printed onto the wall below a corner no longer count
 #:     (the operator's decision, 2026-09-30, plan_corrections P2-14).
-METRICS_VERSION = 3
+#: 4 - instead, it counts the points whose nearest surface is an overhang
+#:     face. Version 3 also dropped the half-supported beads of gentle
+#:     overhangs and could find nothing to measure (`ramp45_xs`); the
+#:     operator's decision, 2026-10-01, plan_corrections P2-17.
+METRICS_VERSION = 4
 
 #: An append-only record of every run, written as each finishes. Survives a
 #: crash and gives a human-readable trail beside the per-run JSON.
@@ -380,7 +384,6 @@ def measure(
         toolpath,
         search_radius=SURFACE_SEARCH_WIDTHS * deposition_width,
         part_triangles=mesh.triangles,
-        layer_height=deposition_width / 2.0,
     )
     overall, near_fraction, near_count = om.unsupported_near_overhangs(
         toolpath,
@@ -455,7 +458,7 @@ def _surfaces_block(surfaces):
             "max_effective_deg": s.max_effective_deg,
             "mean_effective_deg": s.mean_effective_deg,
             "max_tilt_used_deg": s.max_tilt_used_deg,
-            "supported_samples_skipped": s.supported_samples_skipped,
+            "skipped_samples": s.skipped_samples,
         }
         for s in surfaces
     ]
@@ -521,7 +524,6 @@ def measure_field_only(
         atoms,
         search_radius=SURFACE_SEARCH_WIDTHS * deposition_width,
         part_triangles=mesh.triangles,
-        layer_height=deposition_width / 2.0,
     )
     near = om.points_near_overhangs(
         np.asarray(atoms.point, dtype=np.float64),

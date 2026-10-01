@@ -2,9 +2,9 @@
 
 `overhang_report.py` gives one worst effective overhang angle per part. This
 says where it comes from: for each overhang surface of the mesh, the
-deposition points near it that are out over the air (the ones the metric
-counts, metrics version 3) and the ones printed onto material or the bed
-(skipped), then the worst points with their position and tilt.
+deposition points near it whose nearest surface is an overhang (the ones the
+metric counts, metrics version 4) and the ones nearer a wall, a top or the
+bed (skipped), then the worst counted points with their position and tilt.
 
 Reads the atoms of a field-only run (``data/frame/<part>.npz``) by default, or
 a toolpath with ``--toolpath``. Nothing is written. Examples::
@@ -86,10 +86,13 @@ def main(argv=None):
             continue
         index = np.fromiter(samples, dtype=np.int64)
         effective = np.array([samples[i] for i in index])
-        air = om.points_over_air(points[index], directions[index], mesh.triangles, width / 2.0)
+        counted = om.nearest_surface_is_overhang(points[index], mesh.triangles)
 
         print(f"\nsurface {angle:g} deg ({len(faces)} faces)")
-        for name, m in (("over air (counted)", air), ("onto material (skipped)", ~air)):
+        for name, m in (
+            ("nearest the overhang (counted)", counted),
+            ("nearest another surface (skipped)", ~counted),
+        ):
             if m.any():
                 e = effective[m]
                 print(
@@ -98,11 +101,11 @@ def main(argv=None):
                 )
             else:
                 print(f"  {name}: none")
-        if air.any():
-            worst = np.argsort(effective[air])[::-1][: args.worst]
-            chosen = index[air][worst]
-            print(f"  worst {len(chosen)} over air:  theta_eff | x, y, z (mm) | tilt")
-            for i, e in zip(chosen, effective[air][worst]):
+        if counted.any():
+            worst = np.argsort(effective[counted])[::-1][: args.worst]
+            chosen = index[counted][worst]
+            print(f"  worst {len(chosen)} counted:  theta_eff | x, y, z (mm) | tilt")
+            for i, e in zip(chosen, effective[counted][worst]):
                 x, y, z = points[i]
                 print(f"    {e:5.1f} | {x:7.2f} {y:7.2f} {z:7.2f} | {tilts[i]:5.1f}")
     return 0

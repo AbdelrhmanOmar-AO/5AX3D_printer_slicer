@@ -303,10 +303,16 @@ def test_no_field_only_reports_leaves_the_summary_as_it_was():
 
 
 def test_the_committed_summary_is_unchanged_by_p2_0(repo_root):
-    """The 48 lab-machine reports still produce the committed summary exactly."""
-    assert orep.summarize(orep.load_reports(quiet=True)) == (
-        repo_root / "reports" / "baseline_overhang.md"
-    ).read_text(encoding="utf-8")
+    """The committed reports still produce the committed summary exactly.
+
+    Built as `--summarize` builds it: the stock runs, then (since P2.5) the
+    overhang-aware ones beside them, and any field-only runs.
+    """
+    assert orep.summarize(
+        orep.load_reports(quiet=True),
+        orep.load_reports(quiet=True, field_only=True, overhang_aware=None),
+        orep.load_reports(quiet=True, overhang_aware=True),
+    ) == (repo_root / "reports" / "baseline_overhang.md").read_text(encoding="utf-8")
 
 
 def test_a_report_in_the_wrong_folder_is_refused(tmp_path, monkeypatch, capsys):
