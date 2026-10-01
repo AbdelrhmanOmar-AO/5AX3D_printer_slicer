@@ -763,6 +763,22 @@ def test_a_failing_run_is_reported_and_does_not_stop_the_others(
     assert "log" in failed[0]
 
 
+def test_a_failed_run_still_brings_back_its_archived_toolpath(monkeypatch, tmp_path):
+    """`overhang_report.py` archives before scoring, so a run that sliced but
+    failed while scoring can be scored later instead of re-sliced."""
+    worker = rmp.create_worker(tmp_path / "workers", 0)
+    (worker / "reports" / "toolpaths" / "bad_ms7.npz").write_bytes(b"npz")
+    monkeypatch.setattr(rmp, "run_job", lambda w, j, d, t=None: (False, 0.01, tmp_path / "l.log"))
+    monkeypatch.setattr(orep, "TOOLPATH_ARCHIVE", tmp_path / "archive")
+
+    completed, failed = rmp.run_matrix(
+        [{"part": "bad", "slope": 7.0, "estimate_s": 1.0}], [worker], tmp_path
+    )
+
+    assert completed == [] and failed[0]["archived"] is True
+    assert (tmp_path / "archive" / "bad_ms7.npz").read_bytes() == b"npz"
+
+
 def test_a_run_that_exits_zero_but_writes_nothing_counts_as_failed(
     monkeypatch, tmp_path
 ):

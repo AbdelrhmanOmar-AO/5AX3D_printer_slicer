@@ -307,6 +307,22 @@ def test_the_command_line_writes_an_aware_report_apart(tiny_repo, capsys, extra,
     assert "ramp60_t at max_slope 60°, overhang-aware" in capsys.readouterr().out
 
 
+def test_the_toolpath_is_archived_before_it_is_scored(tiny_repo, monkeypatch):
+    """A scoring failure must not lose the run: the archive is written first."""
+    root, param = tiny_repo
+    monkeypatch.setattr(orep, "TOOLPATH_ARCHIVE", root / "reports" / "toolpaths")
+    monkeypatch.setattr(orep, "run_pipeline", lambda *a, **k: (1.0, json.loads(param.read_text()), {}))
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("scoring failed")
+
+    monkeypatch.setattr(orep, "measure", broken)
+    with pytest.raises(RuntimeError, match="scoring failed"):
+        orep.main([str(param), "--overhang-aware"])
+    assert (root / "reports" / "toolpaths" / "ramp60_t_ms60_aware.npz").is_file()
+    assert not (root / "reports" / "baseline_overhang" / "ramp60_t_ms60_aware.json").exists()
+
+
 def test_without_the_option_the_command_line_is_stock(tiny_repo):
     root, param = tiny_repo
     assert orep.main([str(param), "--skip-pipeline"]) == 0

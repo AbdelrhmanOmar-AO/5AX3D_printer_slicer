@@ -1724,25 +1724,28 @@ def main(argv=None):
     )
 
     init_taichi("cpu")
+    # Archive before scoring: should the scoring fail, the run's toolpath (or
+    # atoms) is already kept, and the run can be scored later without
+    # re-slicing (the matrix runner brings a failed job's archive back too).
     if args.field_only:
-        report = measure_field_only(
-            part, max_slope, float(params["deposition_width"]), runtime_s, stage_times,
-            provenance=provenance, overhang_aware=aware,
-        )
         if not args.skip_pipeline:
             archived = archive_frame(part, max_slope, aware)
             if archived is not None:
                 print(f"Archived the atoms to {archived}")
-        destination = field_only_report_path(part, max_slope, aware)
-    else:
-        report = measure(
+        report = measure_field_only(
             part, max_slope, float(params["deposition_width"]), runtime_s, stage_times,
             provenance=provenance, overhang_aware=aware,
         )
+        destination = field_only_report_path(part, max_slope, aware)
+    else:
         if not args.skip_pipeline:
             archived = archive_toolpath(part, max_slope, aware)
             if archived is not None:
                 print(f"Archived the toolpath to {archived}")
+        report = measure(
+            part, max_slope, float(params["deposition_width"]), runtime_s, stage_times,
+            provenance=provenance, overhang_aware=aware,
+        )
         destination = report_path(part, max_slope, aware)
 
     destination.parent.mkdir(parents=True, exist_ok=True)

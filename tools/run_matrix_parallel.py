@@ -590,6 +590,7 @@ def collect(worker, job):
     """
     worker = Path(worker)
     name = job_name(job)
+    collect_archive(worker, job)
 
     source = worker / "reports" / "baseline_overhang" / f"{name}.json"
     if not source.is_file():
@@ -597,15 +598,28 @@ def collect(worker, job):
     orep.REPORT_DIR.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, orep.REPORT_DIR / f"{name}.json")
 
-    archive = worker / "reports" / "toolpaths" / f"{name}.npz"
-    if archive.is_file():
-        orep.TOOLPATH_ARCHIVE.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(archive, orep.TOOLPATH_ARCHIVE / f"{name}.npz")
-
     try:
         return json.loads(source.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def collect_archive(worker, job):
+    """Bring one job's archived toolpath back into `reports/toolpaths/`, if it wrote one.
+
+    Done for failed jobs too: `overhang_report.py` archives the toolpath
+    before scoring it, so a job that sliced but failed while scoring still
+    has its toolpath, and it can be scored later instead of re-sliced (put it
+    at ``data/toolpath/<part>_smoothed.npz`` and run the report with
+    ``--skip-pipeline``). Returns the path written, or None.
+    """
+    archive = Path(worker) / "reports" / "toolpaths" / f"{job_name(job)}.npz"
+    if not archive.is_file():
+        return None
+    orep.TOOLPATH_ARCHIVE.mkdir(parents=True, exist_ok=True)
+    destination = orep.TOOLPATH_ARCHIVE / archive.name
+    shutil.copy2(archive, destination)
+    return destination
 
 
 def run_matrix(jobs, workers, log_dir, threads=None, on_event=None):
@@ -646,6 +660,8 @@ def run_matrix(jobs, workers, log_dir, threads=None, on_event=None):
             if not ok:
                 job.setdefault("error", f"exit code non-zero; see {log_path}")
                 job["log"] = str(log_path)
+                if collect_archive(worker, job) is not None:
+                    job["archived"] = True
                 failed.append(job)
             if on_event:
                 on_event("done" if ok else "fail",
