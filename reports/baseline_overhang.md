@@ -33,6 +33,33 @@ Measured on: machine cad-p07-2065-9, backend stock mix (cuda + x64), Taichi 1.7.
 
 Stock Atomizer printed overhangs up to **45°** from vertical within the thresholds. The shallowest ramp it failed was 45°, so the limit lies between those two angles. Across all runs it used between 4% and 99% of the tilt budget it was given, which says whether raising `max_slope` alone would achieve anything. Raising `max_slope` from 7° to 30° is the comparison to read across each row: the field constrains only the first layer and low-curvature top surfaces, so a larger budget need not produce more tilt where an overhang actually is. These are the numbers the overhang-aware field is measured against in P2.5, on the same parts with the same thresholds.
 
+## Stock vs overhang-aware (build plan P2.5)
+
+Each cell is **stock → overhang-aware** for the same part and max_slope: worst effective overhang angle / unsupported deposition near overhangs. Overhang-aware runs: `overhang_report.py --overhang-aware`, or `run_matrix_parallel.py --overhang-aware` for the matrix. `—` means that side has no run.
+
+Stock and overhang-aware runs share one provenance group: machine cad-p07-2065-9, backend stock mix (cuda + x64), Taichi 1.7.4, profile reference. Comparable.
+
+| Part | max_slope 7° | max_slope 15° | max_slope 30° |
+|---|---|---|---|
+| `ramp45_s` | ✅ 45° / 0.1% → ✅ 43° / 0.0% | ✅ 45° / 0.1% → ✅ 43° / 0.0% | ❌ 51° / 2.9% → ✅ 43° / 0.1% |
+| `ramp45_xs` | ✅ 45° / 0.2% → – no overhang | – no overhang → – no overhang | – no overhang → – no overhang |
+| `ramp50_s` | ❌ 50° / 4.3% → ❌ 45° / 1.6% | ❌ 50° / 4.4% → ❌ 45° / 2.0% | ❌ 67° / 8.5% → ❌ 45° / 1.8% |
+| `ramp50_xs` | ❌ 50° / 3.3% → ❌ 45° / 2.1% | ❌ 50° / 2.9% → ❌ 45° / 1.6% | ❌ 57° / 4.0% → ❌ 45° / 1.8% |
+| `ramp60_s` | ❌ 60° / 5.2% → ❌ 53° / 2.0% | ❌ 65° / 4.9% → ❌ 45° / 1.4% | ❌ 90° / 26.6% → ✅ 45° / 0.8% |
+| `ramp60_xs` | ❌ 60° / 5.4% → ❌ 53° / 2.4% | ❌ 65° / 7.9% → ❌ 45° / 0.9% | ❌ 89° / 21.2% → ❌ 45° / 1.7% |
+| `ramp70_s` | ❌ 70° / 9.8% → ❌ 63° / 3.5% | ❌ 80° / 17.1% → ❌ 55° / 4.4% | ❌ 90° / 27.2% → ✅ 44° / 0.7% |
+| `ramp70_xs` | ❌ 70° / 8.6% → ❌ 63° / 5.1% | ❌ 78° / 13.2% → ❌ 55° / 1.7% | ❌ 90° / 22.6% → ❌ 44° / 1.3% |
+| `ramp80_s` | ❌ 83° / 17.7% → ❌ 73° / 12.7% | ❌ 90° / 26.1% → ❌ 65° / 12.2% | ❌ 90° / 24.8% → ❌ 50° / 1.5% |
+| `ramp80_xs` | ❌ 84° / 16.8% → ❌ 73° / 11.1% | ❌ 90° / 21.4% → ❌ 65° / 7.0% | ❌ 90° / 21.3% → ❌ 50° / 2.0% |
+| `ramp90_s` | ❌ 90° / 24.9% → ❌ 83° / 23.5% | ❌ 90° / 24.5% → ❌ 75° / 24.0% | — |
+| `ramp90_xs` | ❌ 90° / 19.7% → ❌ 83° / 18.4% | ❌ 90° / 20.4% → ❌ 75° / 18.3% | — |
+| `tshape_s` | ❌ 90° / 24.7% → ❌ 85° / 23.9% | ❌ 90° / 24.4% → ❌ 79° / 23.9% | — |
+| `tshape_xs` | ❌ 90° / 20.9% → ❌ 83° / 21.1% | ❌ 90° / 21.2% → ❌ 75° / 20.4% | — |
+| `twin_domes_s` | – no overhang → – no overhang | – no overhang → – no overhang | – no overhang → – no overhang |
+| `twin_domes_xs` | – no overhang → – no overhang | – no overhang → – no overhang | – no overhang → – no overhang |
+
+Printable, over the 44 part and slope pair(s) with both runs: stock 3, overhang-aware 5.
+
 ## Runtime
 
 How the pipeline's cost scaled with part size. `order_atoms` is the stage that dominates, and it runs on the CPU.
