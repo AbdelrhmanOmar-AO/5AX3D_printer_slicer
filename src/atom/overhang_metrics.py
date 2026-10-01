@@ -808,6 +808,69 @@ def tilt_rate(toolpath, limit_deg_per_mm: float, stretch_mm: float = TILT_RATE_S
     )
 
 
+@dataclass(frozen=True)
+class OverhangStart:
+    """The tilt where an overhang starts (build plan P2.4's pipeline test)."""
+
+    #: The points counted, ``(N, 3)``, and their tilts, degrees.
+    points: np.ndarray = field(repr=False)
+    tilts_deg: np.ndarray = field(repr=False)
+    #: How far past the start they were taken, mm.
+    strip_mm: float
+
+    @property
+    def count(self) -> int:
+        return len(self.tilts_deg)
+
+
+def overhang_start_tilts(
+    points: np.ndarray,
+    directions: np.ndarray,
+    part_triangles: np.ndarray,
+    overhang_normal,
+    strip_mm: float,
+    search_radius: float,
+    bed_contact_height: float = 0.5,
+    angle_tolerance_deg: float = 1.0,
+) -> OverhangStart:
+    """The tilts of the points by one overhang, in the first ``strip_mm`` past its start.
+
+    The overhang is the part's overhang faces whose normal is within
+    ``angle_tolerance_deg`` of ``overhang_normal``. It **starts** at its
+    lowest point, where the wall below turns into it (on a ramp, the column's
+    edge), and the strip is measured from there horizontally, toward the
+    overhang (its normal's azimuth): out over the air. A point counts when it
+    is within ``search_radius`` of one of those faces and its nearest surface
+    is an overhang (`nearest_surface_is_overhang`, the effective angle's own
+    choice of points), so material on top of the wall below does not.
+    """
+    triangles = np.asarray(part_triangles, dtype=np.float64)
+    points = np.asarray(points, dtype=np.float64)
+    target = np.asarray(overhang_normal, dtype=np.float64)
+    target = target / np.linalg.norm(target)
+    normals = unit_face_normals(triangles)
+    faces = overhang_face_mask(normals, triangles.mean(axis=1), bed_contact_height) & (
+        normals @ target >= np.cos(np.radians(angle_tolerance_deg))
+    )
+    empty = OverhangStart(np.zeros((0, 3)), np.zeros(0), float(strip_mm))
+    horizontal = np.array([target[0], target[1], 0.0])
+    if not faces.any() or len(points) == 0 or np.linalg.norm(horizontal) < 1e-9:
+        return empty  # a flat underside has no direction to measure the strip in
+    outward = horizontal / np.linalg.norm(horizontal)
+    vertices = triangles[faces].reshape(-1, 3)
+    start = vertices[np.argmin(vertices[:, 2])]
+    past = (points - start) @ outward
+    candidates = np.flatnonzero((past > 0.0) & (past <= strip_mm))
+    if len(candidates) == 0:
+        return empty
+    close = triangle_distances(points[candidates], triangles[faces]).min(axis=1) <= search_radius
+    candidates = candidates[close]
+    if len(candidates) == 0:
+        return empty
+    counted = candidates[nearest_surface_is_overhang(points[candidates], triangles, bed_contact_height)]
+    return OverhangStart(points[counted], tilt_from_vertical_deg(directions[counted]), float(strip_mm))
+
+
 def overhang_face_mask(
     face_normals: np.ndarray,
     face_centres: np.ndarray,

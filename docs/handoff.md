@@ -10,12 +10,12 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 > ## ▶ START HERE: P2 handover, 2026-10-01 (evening)
 >
 > **Branch `claude/brave-ramanujan-7xolkm`** (`main` merged into it on
-> 2026-10-01, so a pull request from it is clean). 1054 unit tests pass
+> 2026-10-01, so a pull request from it is clean). 1056 unit tests pass
 > (`PYTHONPATH=src python -m pytest -q`, 1.5-5 min; `pip install pytest
 > numpy scipy trimesh taichi tqdm pyvista pillow` in a fresh container). The
 > golden test passed on the laptop on 2026-10-01 after every vendored edit
 > (`a042fbc`); nothing vendored has changed since. Details: section 0d below,
-> `plan_corrections.md` 7c (P2-1 to P2-23), `docs/orientation_field.md`
+> `plan_corrections.md` 7c (P2-1 to P2-24), `docs/orientation_field.md`
 > section 7.
 >
 > **How to work with the operator:** an undergraduate project; the operator is
@@ -74,8 +74,11 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 >
 > **Known residuals:** five atoms at `ramp60_xs`'s column corner by the side
 > walls at 45.3-46.5 (CPU) and 20 along the side walls at 45.3-45.4 (laptop);
-> the plan's P2.4 pipeline test (tilt at the first overhang layer >= t - 2) is
-> not written; the field-only reports do not get the two new numbers (the
+> the plan's P2.4 pipeline test is **written but reports only** (P2-24,
+> operator): run `pytest --run-pipeline tests/test_ramp_in_pipeline.py` on
+> the laptop (about 3-5 min, one laptop run at a time), show the operator the
+> printed tilts (CPU: first 0.5 mm mean 15.0, lowest 13.5, against a bar of
+> 15), and ask for the pass rule; the field-only reports do not get the two new numbers (the
 > tilt rate needs a print order; top-surface quality could be added on the
 > atoms if wanted). **Tools added this session:** `tools/overhang_where.py`
 > (where a part's worst points are), `tools/unsupported_where.py` (why points

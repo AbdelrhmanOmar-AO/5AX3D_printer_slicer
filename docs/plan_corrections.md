@@ -2846,3 +2846,26 @@ meanings kept**, with the lift.
   travel reach nothing; every tilt up to a cell's max is reachable; the lift
   is converged; the reference proxy agrees with the kinematics; cache round
   trip; the lookup's interpolation, azimuth and rounding on a hand-made map.
+
+#### P2-24 P2.4's pipeline test written; it reports, the pass rule waits for the laptop's numbers (operator's decision, 2026-10-01)
+
+*Written 2026-10-01; not yet run on the laptop.* `tests/test_ramp_in_pipeline.py`
+(`pipeline` marker): a field-only, overhang-aware run of `ramp60_xs` at 30,
+then the tilt of the atoms by the underside in the first 0.5 mm past the
+column's edge (`overhang_metrics.overhang_start_tilts`: the effective
+angle's own points, measured horizontally from where the underside starts,
+toward the overhang), and the same for one bead width (0.9 mm), with the five
+lowest atoms' positions. The plan's bar is `t - 2` = 15 (the rule's `t` is 17).
+The atoms stand for the toolpath: every orientation the toolpath deposits with
+is an atom's own (`test_field_only.py`), and a field-only run is a fraction of
+a full one.
+
+**Why it does not judge yet.** On the CPU (pipeline-like SDF, current code)
+the first 0.5 mm holds 13 atoms: mean 15.0, lowest 13.5, 62 % at 15 or over;
+the first 0.9 mm, 50 atoms: mean 16.2, lowest 13.5, 90 %. The lowest sit by
+the side walls (y within 1.3 mm of a wall), where P2-20 left residuals. Every
+point at 15 or more would fail; the mean would pass by a hair. The operator
+chose to see the laptop's numbers on the remeshed part first and set the pass
+rule then. Until then the test asserts only that there is something to
+measure. Laptop: `pytest --run-pipeline tests/test_ramp_in_pipeline.py`
+(about 3-5 minutes).

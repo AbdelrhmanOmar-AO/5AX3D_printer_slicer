@@ -708,3 +708,32 @@ def test_turning_during_a_travel_move_does_not_count():
     travel[3] = TRAVEL_TYPE_NO_DEPOSITION  # the move into point 3
     result = om.tilt_rate(_turning_run(0.5, [0.0, 0.0, 30.0, 0.0, 0.0], travel), 3.0)
     assert result.max_deg_per_mm == pytest.approx(0.0, abs=1e-4) and result.printing_moves == 4
+
+
+# --------------------------------------------------------------------------
+# The tilt where an overhang starts (build plan P2.4's pipeline test)
+# --------------------------------------------------------------------------
+
+
+def test_the_strip_where_an_overhang_starts_is_out_over_the_air():
+    """`ramp60_xs`'s underside starts at the column's edge, x = 21, z = 4.5."""
+    mesh, _ = _ramp(60)
+    normal = normal_of_overhang(60.0)
+    points = np.array([
+        [21.2, 6.0, _underside_z(60, 21.2) + 0.2],  # in the strip
+        [21.4, 6.0, _underside_z(60, 21.4) + 0.2],  # in the strip
+        [22.0, 6.0, _underside_z(60, 22.0) + 0.2],  # past it
+        [20.8, 6.0, 4.2],  # against the column's wall, before the start
+        [21.3, 6.0, _underside_z(60, 21.3) + 3.0],  # too deep inside to be by the underside
+    ])
+    directions = np.array([direction_tilted_toward(t) for t in (17.0, 13.0, 17.0, 17.0, 17.0)])
+    start = om.overhang_start_tilts(points, directions, mesh.triangles, normal, 0.5, 0.9)
+    assert start.count == 2
+    np.testing.assert_allclose(sorted(start.tilts_deg), [13.0, 17.0], atol=1e-6)
+    np.testing.assert_allclose(start.points[:, 0], [21.2, 21.4])
+
+
+def test_a_flat_underside_has_no_strip_to_measure():
+    mesh, _ = _ramp(60)
+    start = om.overhang_start_tilts([[25.0, 6.0, 9.0]], [[0.0, 0.0, 1.0]], mesh.triangles, [0.0, 0.0, -1.0], 0.5, 0.9)
+    assert start.count == 0
