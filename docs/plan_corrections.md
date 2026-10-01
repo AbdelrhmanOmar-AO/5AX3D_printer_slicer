@@ -2638,3 +2638,22 @@ it. On `ramp90_xs`: all azimuths within 90 degrees of +x, the field above the
 underside at 26.3 degrees of tilt (was 2.1). Key `flat_overhangs_outward`
 (default true), stage options `--flat_overhangs_outward` /
 `--no_flat_overhangs_outward`; the stage logs the count.
+
+**Confirmed on the pipeline-like SDFs (CPU, stages 4-9, `ramp90_xs` and
+`ramp60_xs` at 30, metrics version 4), before (`4563f68`) and after
+(`7cb5cbf`):**
+
+| | Before | After |
+|---|---|---|
+| `ramp90_xs`: `order_atoms` | deadlock at atom 25 233 | **completes, 27 036 atoms** |
+| `ramp90_xs`: atoms, worst / mean | 89.9 / 67.2 | **64.7 / 60.5** (the bound is 90 - 30 = 60) |
+| `ramp90_xs`: full toolpath, worst / mean / unsupported | - | 63.0 / 60.3 / 4.2 % |
+| `ramp60_xs`: atoms, worst / mean / over 45 | 45.1 / 43.3 / 16 of 495 | 46.5 / 43.0 / 5 of 504 |
+
+On `ramp60_xs` the tip (45.1, tilt 14.9) is fixed; the five atoms left over 45
+(45.3-46.5, tilt 13.5) sit where the underside starts at the column, by the
+side walls. There the rule marks the blended cells on the column side as
+overhang too, so the core test (distance from *non-overhang* surfaces)
+counts them as core and corrects nothing. **Left open**: 5 atoms of 504, 1.5
+degrees over. This pipeline-like SDF does not reproduce the laptop's tip
+atom (56.1), so the laptop's run of the same part is the test of that.
