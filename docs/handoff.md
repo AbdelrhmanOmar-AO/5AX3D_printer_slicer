@@ -5,7 +5,69 @@ with no prior conversation.
 
 **Keep this file updated as the work progresses.**
 
-Last updated: 2026-09-29.
+Last updated: 2026-10-01 (the P2 session's handover).
+
+> ## ▶ START HERE: P2 handover, 2026-10-01
+>
+> **Branch `claude/brave-ramanujan-7xolkm`** (`main` merged into it on
+> 2026-10-01, so a pull request from it is clean). 1017 unit tests pass
+> (`PYTHONPATH=src python -m pytest -q`, about 2.5 min; `pip install pytest
+> numpy scipy trimesh taichi tqdm pyvista pillow` in a fresh container). The
+> golden test passed on the laptop on 2026-10-01 after every vendored edit
+> (`a042fbc`). Details: section 0d below, `plan_corrections.md` 7c (P2-1 to
+> P2-20), `docs/orientation_field.md` section 7.
+>
+> **How to work with the operator:** an undergraduate project; the operator is
+> a mechanical engineer, not a programmer. Short answers, plain words, one
+> question at a time, exact PowerShell commands, **never assume, ask**. One
+> laptop run at a time. Never `--reanalyse` on the laptop (a guard now refuses
+> other machines' reports, but say it anyway).
+>
+> **P2 state:**
+>
+> | Task | State |
+> |---|---|
+> | P2.0 field-only mode, P2.1 field document + tilt bound | Done |
+> | P2.2 overhang rule | Built, laptop-verified. On by `"overhang_aware": true`; hold on; field on the pre-infill SDF |
+> | P2.4 ramp-in | Built (too little room: steepen, keep the tilt) |
+> | Edges + flat overhangs (P2-19, P2-20) | Built 2026-10-01: edge cells take the overhang core's lean; flat undersides lean outward. Laptop: `ramp60_xs` worst 56.1 -> 45.4; `ramp90_xs` at 30 no longer deadlocks |
+> | Metric | **Version 4** (points whose nearest surface is the overhang), P2-17. All 92 committed reports are v4 |
+> | P2.5 evaluation | Runner and side-by-side table built. First lab matrix (old code, before the edge/flat fixes): printable stock 4, overhang-aware 6 of 44; 4 runs failed (flat undersides at 30, now fixed). **Re-run owed on the lab machine** |
+> | P2.3 reachability map | Not started: needs the real machine's geometry; could be built now on the `reference` profile |
+> | P2.6 keys | Built with P2.2/P2.4 (`overhang_aware`, `max_overhang_deg`, `overhang_margin_deg`, `hold_overhang`, `flat_overhangs_outward`, `overhang_edges`, `ramp_in`, `max_tilt_rate_deg_per_mm`); `use_reachability_map` waits for P2.3; `overhang_priority` not needed (P2-12) |
+>
+> **Next, in order:**
+>
+> 1. **Lab machine, Sunday 2026-10-04** (the operator has no access before;
+>    a reminder fires in the P2 session at 08:00 Cairo): `git pull`, then
+>    `python tools/run_matrix_parallel.py --sizes xs s --workers 8
+>    --overhang-aware --dry-run`, then the same without `--dry-run` (no
+>    `--resume`: all 48 overhang-aware runs are redone; about 3.5-4 h), then
+>    commit and push `reports/baseline_overhang`, `reports/baseline_overhang.md`
+>    and `reports/matrix_progress.csv`. Review the new table with the operator.
+> 2. **Laptop housekeeping, before its next `git pull`:** `Remove-Item
+>    reports\baseline_overhang\ramp90_xs_ms30_aware.json` and `git restore
+>    reports/matrix_progress.csv` (a laptop run left them; the lab makes the
+>    official ones).
+> 3. **Session work that needs no lab** (the operator was offered these on
+>    2026-10-01 and had not chosen yet; ask): (a) check `tshape_xs` at 30, the
+>    other part that deadlocked, with `experiment/pipeline_like_run.py`;
+>    (b) P2.5's two missing numbers, top-surface quality and the maximum tilt
+>    rate along the toolpath, computable from archived toolpaths so
+>    `--reanalyse` applies them to the lab's runs; (c) where the unsupported
+>    deposition near overhangs (0.8-4 %, the second reason parts fail) comes
+>    from; (d) P2.3 on the `reference` profile.
+> 4. **Merge:** keep everything on this branch until the re-run matrix is in
+>    and reviewed, then open one pull request to `main` (the operator asked to
+>    be told; this is the recommendation they were given).
+>
+> **Known residuals:** five atoms at `ramp60_xs`'s column corner by the side
+> walls at 45.3-46.5 (CPU) and 20 along the side walls at 45.3-45.4 (laptop);
+> the plan's P2.4 pipeline test (tilt at the first overhang layer >= t - 2) is
+> not written. **Tools added this session:** `tools/overhang_where.py` (where a
+> part's worst points are), `experiment/pipeline_like_run.py` (the pipeline on
+> the CPU without Blender; reproduced the deadlock), and
+> `experiment/experiment_orientation_field_ramp.py` (the field on an exact ramp).
 
 > **Reference machines (decided by the operator, 2026-09-28):**
 >
