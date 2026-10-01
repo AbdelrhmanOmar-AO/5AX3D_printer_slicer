@@ -2879,5 +2879,6 @@ lowest sit at y = 1.3-3.5 and 12.3, not right against the side walls.
 more (the plan read strictly; 0.7 degrees to spare). The average was offered
 and not chosen (a few low points could hide behind it), and so was the 0.9
 mm strip (it fails today, 14.6). The 0.9 mm numbers are still printed. The
-test passes on the laptop with the rule as it stands; it fails on the CPU
-atoms (13.5), which is expected, since pipeline tests run only on the laptop.
+test fails on the CPU atoms (13.5), which is expected, since pipeline tests
+run only on the laptop. **Laptop, 2026-10-01, with the rule, on
+`1163851`:** **1 passed** in 176 s, the same numbers (lowest 15.7).
