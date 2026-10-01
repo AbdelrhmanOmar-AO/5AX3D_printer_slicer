@@ -24,11 +24,14 @@ What it adds:
    masks, so no later stage sees a direction in an infill void.
 3. **Holding the overhang constraints** through the 32 final smoothing passes
    (``hold_overhang``, on by default: the operator's decision, 2026-09-30).
-4. **The overhang's edges** (`atom.overhang_edges`, plan_corrections P2-19):
+4. **One lean direction for a flat overhang** (`atom.overhang_azimuth`,
+   plan_corrections P2-20): under a nearly flat underside the normal's
+   horizontal part is noise; those cells lean outward, smoothly, instead.
+5. **The overhang's edges** (`atom.overhang_edges`, plan_corrections P2-19):
    boundary cells next to an overhang that the rule skipped (high curvature,
    blended normals at a side wall or tip) take the nearest overhang cell's
    constraint, and are held with it.
-5. **The tilt ramp-in** (build plan P2.4, `atom.ramp_in`): constraints in the
+6. **The tilt ramp-in** (build plan P2.4, `atom.ramp_in`): constraints in the
    material printed before each overhang cell, so the tilt has built up where
    the overhang starts. Set between the initialisation and the solve, and
    smoothed in the final passes like upstream's own constraints ("soft"). Upstream smooths every constraint in those passes and
@@ -50,6 +53,7 @@ import numpy as np
 import taichi as ti
 
 from . import direction, fff3, grid3, solid3, toolpath3
+from .overhang_azimuth import aim_flat_overhangs_outward
 from .overhang_edges import fill_overhang_edges
 from .overhang_field import DEFAULT_HOLD_OVERHANG, OverhangSettings
 from .ramp_in import RampResult, RampSettings, apply_ramp_in
@@ -178,6 +182,10 @@ class FieldResult:
     ramp: Optional[RampResult] = None
     #: Edge cells given an overhang cell's constraint (`atom.overhang_edges`).
     edge_cells: int = 0
+    #: Overhang cells near an edge given the nearest core overhang cell's direction.
+    corrected_cells: int = 0
+    #: Flat overhang cells given the smoothed outward azimuth (`atom.overhang_azimuth`).
+    flat_cells: int = 0
 
 
 def compute_direction_field(
@@ -188,6 +196,7 @@ def compute_direction_field(
     hold_overhang: bool = DEFAULT_HOLD_OVERHANG,
     ramp: Optional[RampSettings] = RampSettings(),
     edges: bool = True,
+    flat_outward: bool = True,
 ) -> FieldResult:
     """Stage 4's field, with P2.2's options.
 
@@ -196,7 +205,9 @@ def compute_direction_field(
     before infill on the same grid, puts the field on the solid part, masked
     by ``sdf`` afterwards. ``hold_overhang`` (on by default; it only matters
     with ``overhang``) re-applies the overhang constraints after each final
-    smoothing pass. ``edges`` (on by default; only with ``overhang``) gives
+    smoothing pass. ``flat_outward`` (on by default; only with ``overhang``)
+    gives nearly flat overhang cells one smooth, outward azimuth. ``edges``
+    (on by default; only with ``overhang``) gives
     the edge cells next to an overhang its constraint. ``ramp`` (on by
     default, None switches it off; only with ``overhang``) adds the ramp-in
     constraints below the overhang cells. With ``overhang`` and ``solid_sdf`` off, this is
@@ -228,17 +239,22 @@ def compute_direction_field(
         field.direction, field.state, mark,
     )
     ramp_result = None
-    edge_count = 0
-    if overhang is not None and (edges or ramp is not None):
+    edge_count = flat_count = corrected_count = 0
+    if overhang is not None and (flat_outward or edges or ramp is not None):
         dirs, states, marks = field.direction.to_numpy(), field.state.to_numpy(), mark.to_numpy()
         source_sdf = source.sdf.to_numpy()
         layer_height = float(fff3.layer_height_from_cell_sides_length_kernel(cell))
+        if flat_outward:
+            flat_count = int(aim_flat_overhangs_outward(
+                source_sdf, dirs, marks != MARK_NONE, cell, layer_height
+            ).sum())
         if edges:
-            edge_mask = fill_overhang_edges(
+            edge_mask, corrected_mask = fill_overhang_edges(
                 source_sdf, dirs, states, marks != MARK_NONE, cell, layer_height
             )
             marks[edge_mask] = MARK_OVERHANG_EDGE
             edge_count = int(edge_mask.sum())
+            corrected_count = int(corrected_mask.sum())
         if ramp is not None:
             # The edge cells are overhang constraints too: the ramp starts below them as well.
             ramp_mask, ramp_result = apply_ramp_in(
@@ -283,4 +299,6 @@ def compute_direction_field(
         mark=marks,
         ramp=ramp_result,
         edge_cells=edge_count,
+        flat_cells=flat_count,
+        corrected_cells=corrected_count,
     )

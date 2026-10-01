@@ -96,11 +96,11 @@ def test_the_rule_is_written_out_in_full():
     assert of.DEFAULT_HOLD_OVERHANG is True
     assert of.overhang_arguments(True) == (
         " --overhang_aware --max_overhang 45 --overhang_margin 2 --hold_overhang"
-        " --overhang_edges --ramp_in --max_tilt_rate 3"
+        " --flat_overhangs_outward --overhang_edges --ramp_in --max_tilt_rate 3"
     )
-    assert of.overhang_arguments(True, 50, 1.5, False, None, 4.5, False) == (
+    assert of.overhang_arguments(True, 50, 1.5, False, None, 4.5, False, False) == (
         " --overhang_aware --max_overhang 50 --overhang_margin 1.5 --no_hold_overhang"
-        " --no_overhang_edges --ramp_in --max_tilt_rate 4.5"
+        " --no_flat_overhangs_outward --no_overhang_edges --ramp_in --max_tilt_rate 4.5"
     )
     assert of.overhang_arguments(True, ramp_in=False).endswith(" --overhang_edges --no_ramp_in")
 
@@ -116,6 +116,7 @@ def test_the_rule_is_written_out_in_full():
         ({"overhang_aware": True, "hold_overhang": 1}, "true or false"),
         ({"ramp_in": True}, "need"),
         ({"overhang_edges": False}, "need"),
+        ({"flat_overhangs_outward": True}, "need"),
         ({"overhang_aware": True, "overhang_edges": "no"}, "true or false"),
         ({"max_tilt_rate_deg_per_mm": 3}, "need"),
         ({"overhang_aware": True, "ramp_in": "no"}, "true or false"),

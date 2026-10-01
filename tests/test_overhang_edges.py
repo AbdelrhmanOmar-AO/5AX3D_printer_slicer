@@ -25,7 +25,7 @@ def test_boundary_cells_near_an_overhang_take_its_direction():
     direction[overhang] = (0.3, 1.2)
     state[overhang] |= 1
 
-    filled = oe.fill_overhang_edges(sdf, direction, state, overhang, CELL, LAYER)
+    filled, _ = oe.fill_overhang_edges(sdf, direction, state, overhang, CELL, LAYER)
 
     assert filled[10, 5, 10] and filled[4, 5, 10]  # next to it along the underside
     np.testing.assert_allclose(direction[filled], np.tile([0.3, 1.2], (filled.sum(), 1)))
@@ -44,7 +44,7 @@ def test_constraints_and_the_first_layer_are_left_alone():
     direction[6, 5, 3] = (0.1, 0.0)
     state[6, 5, 3] |= 1  # an existing constraint next to it
 
-    filled = oe.fill_overhang_edges(sdf, direction, state, overhang, CELL, LAYER)
+    filled, _ = oe.fill_overhang_edges(sdf, direction, state, overhang, CELL, LAYER)
 
     assert not filled[6, 5, 3]
     np.testing.assert_allclose(direction[6, 5, 3], (0.1, 0.0))
@@ -61,7 +61,7 @@ def test_the_material_behind_an_overhang_is_left_to_the_ramp_in():
     direction[overhang] = (0.0, 0.0)  # straight up
     state[overhang] |= 1
 
-    filled = oe.fill_overhang_edges(sdf, direction, state, overhang, CELL, LAYER)
+    filled, _ = oe.fill_overhang_edges(sdf, direction, state, overhang, CELL, LAYER)
 
     assert filled[10, 5, 22] and filled[12, 5, 20]  # above, and beside
     assert not filled[10, 5, 17]  # 0.6 mm below
@@ -69,4 +69,22 @@ def test_the_material_behind_an_overhang_is_left_to_the_ramp_in():
 
 def test_no_overhang_no_change():
     sdf, direction, state = _grid()
-    assert not oe.fill_overhang_edges(sdf, direction, state, np.zeros(sdf.shape, bool), CELL, LAYER).any()
+    filled, corrected = oe.fill_overhang_edges(sdf, direction, state, np.zeros(sdf.shape, bool), CELL, LAYER)
+    assert not filled.any() and not corrected.any()
+
+
+def test_overhang_cells_by_an_edge_take_the_core_direction():
+    """The tip's blended normal asks for too little tilt; the core's direction replaces it."""
+    sdf, direction, state = _grid()
+    overhang = np.zeros(sdf.shape, bool)
+    overhang[:, :, 10:12] = True  # the slab's underside band, z 2.1 and 2.3 mm, as the rule marks it
+    direction[overhang] = (0.30, 0.0)
+    direction[18:, :, 10:12] = (0.10, 0.5)  # by the slab's end at x = 4 mm: blended, too little tilt
+    state[overhang] |= 1
+    sdf[19, :, 10:20] = -0.05  # the end wall: another surface next to them
+
+    _, corrected = oe.fill_overhang_edges(sdf, direction, state, overhang, CELL, LAYER)
+
+    assert corrected[18, 5, 10]
+    np.testing.assert_allclose(direction[18, 5, 10], (0.30, 0.0))
+    assert not corrected[5, 5, 10]  # the core keeps its own

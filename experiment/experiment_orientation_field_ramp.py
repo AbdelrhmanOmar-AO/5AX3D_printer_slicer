@@ -96,6 +96,10 @@ def main():
     )
     parser.add_argument("--rate", type=float, default=3.0, help="Ramp-in rate, degrees per mm.")
     parser.add_argument(
+        "--flat-outward", action=argparse.BooleanOptionalAction, default=True,
+        help="One outward lean under flat overhangs (plan_corrections P2-20, default on).",
+    )
+    parser.add_argument(
         "--edges", action=argparse.BooleanOptionalAction, default=True,
         help="Carry the overhang constraint to its edges (plan_corrections P2-19, default on).",
     )
@@ -130,6 +134,7 @@ def main():
         hold_overhang=args.hold,
         ramp=RampSettings(args.rate) if args.ramp else None,
         edges=args.edges,
+        flat_outward=args.flat_outward,
     )
     final = result.field.direction.to_numpy()
     if args.save_direction:
@@ -181,6 +186,8 @@ def main():
         "solid": args.solid,
         "hold": bool(args.hold and args.overhang_aware),
         "edge_cells": result.edge_cells,
+        "corrected_cells": result.corrected_cells,
+        "flat_cells": result.flat_cells,
         "ramp_in": None if result.ramp is None else {
             "rate": args.rate,
             "cells": result.ramp.cells,

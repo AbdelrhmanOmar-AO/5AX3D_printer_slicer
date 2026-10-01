@@ -136,7 +136,7 @@ def effective_overhang_deg(normal, tilt_deg: float, azimuth_deg: float) -> float
 #: field. The others need ``overhang_aware: true``.
 PARAMETER_KEYS = (
     "overhang_aware", "max_overhang_deg", "overhang_margin_deg", "hold_overhang",
-    "overhang_edges", "ramp_in", "max_tilt_rate_deg_per_mm",
+    "flat_overhangs_outward", "overhang_edges", "ramp_in", "max_tilt_rate_deg_per_mm",
 )
 
 
@@ -177,13 +177,15 @@ def overhang_arguments(
     ramp_in=None,
     max_tilt_rate_deg_per_mm=None,
     overhang_edges=None,
+    flat_overhangs_outward=None,
 ) -> str:
     """The stage options for ``compute_tool_orientations.py`` from the parameter keys.
 
     Empty when ``overhang_aware`` is absent or false, so a parameter file
     without the keys runs exactly upstream's command. Otherwise the rule's
     values are written out in full (defaults included, hold as
-    ``--hold_overhang`` or ``--no_hold_overhang``, the edges as
+    ``--hold_overhang`` or ``--no_hold_overhang``, flat overhangs as
+    ``--flat_overhangs_outward`` or ``--no_flat_overhangs_outward``, the edges as
     ``--overhang_edges`` or ``--no_overhang_edges``, the ramp-in of build
     plan P2.4 as ``--ramp_in --max_tilt_rate R`` or ``--no_ramp_in``), so the
     log shows what ran. Values are checked here, when the parameter file is read; a rule key
@@ -197,6 +199,7 @@ def overhang_arguments(
                 ("overhang_margin_deg", overhang_margin_deg),
                 ("hold_overhang", hold_overhang),
                 ("overhang_edges", overhang_edges),
+                ("flat_overhangs_outward", flat_overhangs_outward),
                 ("ramp_in", ramp_in),
                 ("max_tilt_rate_deg_per_mm", max_tilt_rate_deg_per_mm),
             )
@@ -216,6 +219,8 @@ def overhang_arguments(
     )
     hold = DEFAULT_HOLD_OVERHANG if hold_overhang is None else _flag("hold_overhang", hold_overhang)
     arguments += " --hold_overhang" if hold else " --no_hold_overhang"
+    flat = True if flat_overhangs_outward is None else _flag("flat_overhangs_outward", flat_overhangs_outward)
+    arguments += " --flat_overhangs_outward" if flat else " --no_flat_overhangs_outward"
     edges = True if overhang_edges is None else _flag("overhang_edges", overhang_edges)
     arguments += " --overhang_edges" if edges else " --no_overhang_edges"
 

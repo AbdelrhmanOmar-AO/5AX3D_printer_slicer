@@ -266,7 +266,11 @@ def test_the_stage_runs_the_overhang_aware_field(stage_runs, request, name, fixt
         f"{field.overhang_capped} of them capped"
     ) in text
     assert f"hold {hold})" in text
-    assert f"Overhang edges: {field.edge_cells} cells given the nearest overhang cell's constraint" in text
+    assert f"Flat overhangs: {field.flat_cells} cells leaning outward along the smoothed direction" in text
+    assert (
+        f"Overhang edges: {field.edge_cells} cells given the nearest overhang cell's constraint, "
+        f"{field.corrected_cells} overhang cells by an edge given the nearest core cell's"
+    ) in text
     assert f"Ramp-in: {field.ramp.cells} cells below {field.ramp.walks_used} overhang cells" in text
     assert "Field computed on the solid SDF" in text
     assert "Direction computation took" in text  # the line the reports time

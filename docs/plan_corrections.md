@@ -2593,3 +2593,48 @@ On the test ramp (exact SDF): the boundary cells next to the underside within
 0.9 degrees further (25.9 -> 26.8 of the rule's 27). The exact SDF has
 cleaner edges than the remeshed one, so the laptop's remeshed `ramp60_xs`
 is the real test.
+
+**Update (2026-10-01, after the laptop's runs):** on the laptop's remeshed
+`ramp60_xs` the fill above changed nothing at the worst point (56.1, one atom
+at the tip's corner, tilt 4.0 before and after). The reason: at the tip the
+rule *does* fire, but on a normal blended with the end face, which it reads
+as a gentler overhang (about 50 degrees), so it asks for 9-13 degrees of tilt
+where the underside asks 17; the same at the column's corner (12-14). The fill
+only touches cells the rule skipped. **Revised:** `fill_overhang_edges` now
+also corrects the overhang cells near another surface. The overhang's
+**core** is its cells further than two layer heights from any other surface;
+both kinds of edge cell (skipped, and blended) take the direction of the
+nearest core cell within twice that distance. Spreading the strongest nearby
+lean instead was tried and rejected: on the remeshed surface it carried the
+noise peaks everywhere and raised the whole underside from 17.0 to 21.7
+degrees. With the core: the underside's middle is unchanged (17.0 on average),
+the edge strip 17.1 (was 16.8, with a tail down to 4), the tip corner 17.6-18.4.
+
+#### P2-20 One outward lean under a flat overhang; the four `order_atoms` failures
+
+*Found 2026-10-01, reproduced without the laptop.* **The reproduction:** a
+pipeline-like SDF built here without Blender: the STL subdivided to 0.12 mm
+triangles with vertex normals averaged across edges (as Blender's remesh and
+smooth shading round them), then the real stages 2, 3 and 3 bis on the CPU.
+Same grid as the laptop's (178 x 81 x 107 for the `xs` ramps). On it,
+`ramp90_xs` at 30 overhang-aware **deadlocks in `order_atoms` exactly as on
+the laptop** ("No more valid next atom ...", at atom 25 233 here, 25 672 on
+the laptop); the exact SDF did not.
+
+**The cause:** under a flat underside the normal's horizontal part is noise,
+so the rule's azimuth `atan2(n_y, n_x)` points every way (on `ramp90_xs`,
+evenly over all eight 45-degree sectors), and the field a millimetre above
+the underside averages to 2 degrees of tilt where the constraints ask for 30.
+Neighbours leaning apart can each wait for the other in the planner.
+
+**The fix, `atom.overhang_azimuth.aim_flat_overhangs_outward`:** overhang
+cells at least 80 degrees steep (horizontal normal at most 0.17) take the
+azimuth of the walls' and the overhang's own edge normals around them,
+smoothed with a 3 mm Gaussian: away from the material that holds the overhang
+up, toward its free edges. Their tilt stays the rule's. On a flat underside
+every lean lowers the effective angle equally, so only consistency matters,
+and outward is the direction in which each layer reaches past the one below
+it. On `ramp90_xs`: all azimuths within 90 degrees of +x, the field above the
+underside at 26.3 degrees of tilt (was 2.1). Key `flat_overhangs_outward`
+(default true), stage options `--flat_overhangs_outward` /
+`--no_flat_overhangs_outward`; the stage logs the count.

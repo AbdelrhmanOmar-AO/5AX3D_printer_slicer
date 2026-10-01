@@ -42,35 +42,69 @@ def fill_overhang_edges(
     layer_height_mm: float,
     reach_layers: float = DEFAULT_REACH_LAYERS,
 ):
-    """Give the edge cells near an overhang its constraint, in place.
+    """Give an overhang's edges its constraint, in place.
 
     ``sdf`` ``(X, Y, Z)`` (inside < 0), ``direction`` ``(X, Y, Z, 2)``
     spherical radians, ``state`` (bit 0: constrained), ``overhang`` the cells
     the rule constrained. Grid-local coordinates (origin 0), as the
-    initialisation uses. Returns the mask of the cells filled.
+    initialisation uses.
+
+    Two kinds of cell near the overhang's edge get the direction of the
+    nearest **core** overhang cell (one further than ``reach`` from any other
+    surface, whose normal is the overhang's own), when there is one within
+    twice ``reach``:
+
+    * boundary cells the rule skipped (unconstrained, not in the first layer),
+      unless they lie behind the overhang cell nearest them along its build
+      direction (the material printed before it: the ramp-in's);
+    * overhang cells within ``reach`` of another surface, where the rule read
+      a normal blended with that surface's and asked for too little tilt (at
+      `ramp60_xs`'s tip, 9-13 degrees where the underside asks 17).
+
+    Where an overhang has no core within reach (narrower than twice
+    ``reach``), a skipped cell takes the nearest overhang cell's direction and
+    an overhang cell keeps its own. Returns ``(filled, corrected)``: the masks
+    of the skipped cells filled and of the overhang cells corrected.
     """
     filled = np.zeros(sdf.shape, dtype=bool)
+    corrected = np.zeros(sdf.shape, dtype=bool)
     if not overhang.any():
-        return filled
+        return filled, corrected
+    reach = reach_layers * layer_height_mm
     z_centre = (np.arange(sdf.shape[2]) + 0.5) * cell_mm
     first_layer = np.broadcast_to(z_centre < layer_height_mm, sdf.shape)
     boundary = (sdf < 0.0) & (sdf > -layer_height_mm)
-    candidates = boundary & ((state & 1) == 0) & ~first_layer & ~overhang
-    if not candidates.any():
-        return filled
 
-    distance, nearest = ndimage.distance_transform_edt(
-        ~overhang, sampling=cell_mm, return_indices=True
-    )
-    filled = candidates & (distance <= reach_layers * layer_height_mm)
-    cells = np.argwhere(filled)
-    source = tuple(index[filled] for index in nearest)
-    theta, phi = direction[source][:, 0].astype(np.float64), direction[source][:, 1].astype(np.float64)
-    build = np.stack([np.cos(phi) * np.sin(theta), np.sin(phi) * np.sin(theta), np.cos(theta)], axis=1)
-    offset = (cells - np.stack(source, axis=1)) * cell_mm
-    beside_or_above = np.einsum("ij,ij->i", offset, build) >= -cell_mm
-    filled[tuple(cells[~beside_or_above].T)] = False
-    keep = tuple(index[beside_or_above] for index in source)
-    direction[filled] = direction[keep]
-    state[filled] |= 1
-    return filled
+    # The overhang's core: its cells further than `reach` from any other surface.
+    other_surfaces = boundary & ~overhang & ~first_layer
+    if other_surfaces.any():
+        to_other = ndimage.distance_transform_edt(~other_surfaces, sampling=cell_mm)
+    else:
+        to_other = np.full(sdf.shape, np.inf)
+    core = overhang & (to_other > reach)
+
+    # Skipped cells near the overhang, minus those behind it.
+    candidates = boundary & ((state & 1) == 0) & ~first_layer & ~overhang
+    to_overhang, nearest = ndimage.distance_transform_edt(~overhang, sampling=cell_mm, return_indices=True)
+    filled = candidates & (to_overhang <= reach)
+    if filled.any():
+        cells = np.argwhere(filled)
+        source = np.stack([index[filled] for index in nearest], axis=1)
+        theta = direction[tuple(source.T)][:, 0].astype(np.float64)
+        phi = direction[tuple(source.T)][:, 1].astype(np.float64)
+        build = np.stack([np.cos(phi) * np.sin(theta), np.sin(phi) * np.sin(theta), np.cos(theta)], axis=1)
+        behind = np.einsum("ij,ij->i", (cells - source) * cell_mm, build) < -cell_mm
+        filled[tuple(cells[behind].T)] = False
+        direction[filled] = direction[tuple(index[filled] for index in nearest)]
+        state[filled] |= 1
+
+    # Both kinds take the nearest core cell's direction, where there is one in reach.
+    if core.any():
+        to_core, nearest_core = ndimage.distance_transform_edt(~core, sampling=cell_mm, return_indices=True)
+        # Twice `reach`: a cell in a corner is `reach` from two surfaces, so the
+        # core is up to `reach` times the square root of two away diagonally.
+        near_core = to_core <= 2.0 * reach
+        corrected = overhang & ~core & near_core
+        retarget = (filled | corrected) & near_core
+        direction[retarget] = direction[tuple(index[retarget] for index in nearest_core)]
+    return filled, corrected
