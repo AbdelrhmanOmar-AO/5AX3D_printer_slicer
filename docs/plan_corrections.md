@@ -2657,3 +2657,12 @@ overhang too, so the core test (distance from *non-overhang* surfaces)
 counts them as core and corrects nothing. **Left open**: 5 atoms of 504, 1.5
 degrees over. This pipeline-like SDF does not reproduce the laptop's tip
 atom (56.1), so the laptop's run of the same part is the test of that.
+
+**Laptop, 2026-10-01, on `a042fbc`:** golden test passed (5 passed, 1 skipped,
+508 s). Field-only `ramp60_xs` at 30, overhang-aware: **worst 45.4** (was
+56.1), mean 42.7 over 519 counted atoms; the 20 over 45 are 45.3-45.4, along
+the side walls (tilt 14.6-14.7 where the underside asks 17). Full `ramp90_xs`
+at 30: **`order_atoms` completes** (27 068 atoms, 301 s; it deadlocked
+before), worst 65.0, unsupported 3.75 %, max tilt 30. A flat underside needs
+47 degrees of tilt for 45; at 30 the bound is 60, so the part is out of range
+there as P2.1's bound says, and is reported so, not passed.
