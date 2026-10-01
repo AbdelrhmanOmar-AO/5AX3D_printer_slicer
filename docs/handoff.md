@@ -36,7 +36,7 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 > | Edges + flat overhangs (P2-19, P2-20) | Built: edge cells take the overhang core's lean; flat undersides lean outward. `ramp90_xs` (laptop) and `tshape_xs` (CPU, P2-21) at 30 no longer deadlock |
 > | Metric | **Version 4** (points whose nearest surface is the overhang), P2-17. All 92 committed reports are v4 |
 > | P2.5 evaluation | Runner and side-by-side tables built, now with **top-surface quality and the tilt rate** (P2-21, from the toolpath, so `--reanalyse` adds them). First lab matrix (old code): printable stock 4, overhang-aware 6 of 44. **Re-run owed on the lab machine** |
-> | Unsupported deposition near overhangs | **Cause found** (P2-22): the outermost bead steps a whole width every few layers (stock: just inside the support cone; overhang-aware: often just outside), and the support test checks points, not bead lines. **Decision owed by the operator**, below |
+> | Unsupported deposition near overhangs | **Cause found** (P2-22): the outermost bead steps a whole width every few layers (stock: just inside the support cone; overhang-aware: often just outside), and the support test checks points, not bead lines. **Left as is for now** (operator); revisit with Sunday's table, below |
 > | P2.3 reachability map | **Built, map only** (P2-23, operator): `atom.reachability`, `tools/reachability_map.py`, on `reference`; not used by the field until the real machine's geometry exists |
 > | P2.6 keys | Built with P2.2/P2.4; `use_reachability_map` waits (operator); `overhang_priority` not needed (P2-12) |
 >
@@ -56,12 +56,13 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 >    reports\baseline_overhang\ramp90_xs_ms30_aware.json` and `git restore
 >    reports/matrix_progress.csv` (a laptop run left them; the lab makes the
 >    official ones).
-> 3. **Ask the operator about P2-22** (one question): change the support test
+> 3. **P2-22, after Sunday's table:** the operator chose (2026-10-01) to leave
+>    the metric and the slicer as they are for now, and to decide with the
+>    new table in hand. Then ask again (one question): change the support test
 >    to check bead lines rather than points (metrics version 5, a metric
 >    change that moves stock a little too; on the CPU it halves `ramp60_xs`'s
 >    share past the cone), work on the full-width jumps in the slicer, or
->    leave both and judge P2.5 knowing the 1 % turns on a few hundredths of a
->    millimetre. Best decided before Sunday so the lab scores once.
+>    keep both.
 > 4. **Merge:** keep everything on this branch until the re-run matrix is in
 >    and reviewed, then open one pull request to `main` (the operator asked to
 >    be told; this is the recommendation they were given).
@@ -400,7 +401,7 @@ Corrections found by this session go under its own heading,
 | P2.5 Evaluation against the baseline | **First matrix run** (2026-10-01, 7c P2-18; re-scored to metrics v4): the relation flips; the mean effective angle is 42.5-43.2 wherever the budget suffices, the geometric angle minus the budget elsewhere; the worst spots (edges and corners, P2-15) sit 4-11 degrees above the mean; printable stock 4, overhang-aware 6 of 44; most remaining failures are unsupported deposition 0.8-2.4 %; 4 runs (flat undersides at 30) failed in `order_atoms`. Metric v3 found flawed and replaced by v4 (7c P2-17); the lab re-scores. **Prepared** (2026-09-30, 7c P2-16): `run_matrix_parallel.py --overhang-aware` (files named `_aware`, never over the stock ones), and the summary's **Stock vs overhang-aware** table with provenance and metrics-version checks. Not yet: top-surface quality and max tilt rate (can be added after the run, from the archived toolpaths). **Lab machine:** below |
 | Overhang edges and flat overhangs (P2-15, P2-19, P2-20) | **Built** (2026-10-01). Edge cells (skipped by the rule, or read with a blended normal) take the overhang core's lean; flat undersides lean outward. Reproduced here without Blender (a pipeline-like SDF): the `ramp90_xs` deadlock in `order_atoms` is gone with the fix, its mean effective angle 67.2 -> 60.5 (bound 60). Golden test passed on the laptop after the edges commit; the flat-overhang commit `7cb5cbf` touches the same vendored files. **Laptop, on `a042fbc`:** golden passed; `ramp60_xs` field-only worst 56.1 -> 45.4; `ramp90_xs` at 30 completes (deadlocked before), worst 65.0 (bound 60). **Lab next:** the overhang-aware matrix again, without `--resume` |
 | P2.5's two missing numbers (P2-21) | **Built** (2026-10-01, the operator's definitions). Top-surface quality: the share of the top layer's points within 2 degrees of the top surface's smooth normal. Tilt rate: the largest turn within any 1 mm of continuous printing, plus the share of printing moves over 3 degrees per mm. Both from the toolpath, in every report and in the summary beside stock; `--reanalyse` adds them to archived runs. `tshape_xs` at 30 (CPU): `order_atoms` completes; worst 63.7 (out of range, bound 60), top 100 %, tilt rate 51 degrees per mm |
-| Unsupported deposition near overhangs (P2-22) | **Cause found** (2026-10-01, `tools/unsupported_where.py`). None of it is printed too early. The outermost bead steps a whole width every few layers: stock's jumps land at 0.8-0.9 mm sideways (inside the 65-degree cone), overhang-aware ones at 0.9-1.05 (often outside); and the support test checks points, not bead lines (measured to lines, `ramp60_xs`'s share past the cone halves). **The operator decides** what to do (START HERE item 3) |
+| Unsupported deposition near overhangs (P2-22) | **Cause found** (2026-10-01, `tools/unsupported_where.py`). None of it is printed too early. The outermost bead steps a whole width every few layers: stock's jumps land at 0.8-0.9 mm sideways (inside the 65-degree cone), overhang-aware ones at 0.9-1.05 (often outside); and the support test checks points, not bead lines (measured to lines, `ramp60_xs`'s share past the cone halves). **Left as is for now** (operator, 2026-10-01); revisit with Sunday's table (START HERE item 3) |
 | P2.3 reachability map (P2-23) | **Built, map only** (2026-10-01, operator). `atom.reachability`, `tools/reachability_map.py`. Both meanings kept: largest tilt with any platform and with none, plus the lift (iterated, P1-9). On `reference` near the bed: 28-30 with a platform, 10-15 without. Not used by the field: `use_reachability_map` waits for the real machine |
 | P2.6 | Keys built with P2.2 and P2.4; `use_reachability_map` waits (above) |
 

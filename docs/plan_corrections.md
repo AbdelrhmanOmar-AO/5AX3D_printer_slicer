@@ -2790,11 +2790,12 @@ overhang-aware runs often just outside (a margin of about 0.06 mm); (2) the
 support test checks points rather than bead lines, which counts some
 supported beads as unsupported when the points of successive layers are out
 of step, as they are with a tilted field. The 1 % criterion therefore turns
-on a difference of a few hundredths of a millimetre at the jumps. **What to
-do is the operator's decision** (handoff, START HERE): change the metric to
-test bead lines (a version 5, a ★ metric change, which moves stock too, a
-little), work on the jumps in the slicer, or leave both and judge P2.5 with
-this in mind.
+on a difference of a few hundredths of a millimetre at the jumps. The options were: change the metric to test bead
+lines (a version 5, a ★ metric change, which moves stock too, a little),
+work on the jumps in the slicer, or leave both. **The operator's decision,
+2026-10-01: leave both for now**, run the lab matrix on Sunday as planned,
+read its unsupported column with this in mind, and decide on a change with
+the full new table in hand.
 
 #### P2-23 P2.3 as built: the reachable-tilt map on `reference`, viewed only (operator's decisions, 2026-10-01)
 
