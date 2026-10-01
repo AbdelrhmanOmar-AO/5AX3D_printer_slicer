@@ -11,11 +11,14 @@ measured it). The atoms rather than the toolpath: a field-only run takes a
 fraction of a full one, and every orientation the toolpath deposits with is
 an atom's own (`test_field_only.py` checks that on this part).
 
-**It reports and does not yet judge the tilt** (the operator's decision,
-2026-10-01): on the CPU (the pipeline-like SDF, plan_corrections P2-20) the
-strip's 13 atoms average 15.0 degrees and the lowest is 13.5, right at the
-bar, so the pass rule is set once the operator has seen the laptop's numbers
-on the remeshed part. About 3-5 minutes on the laptop.
+**The pass rule, the operator's decision of 2026-10-01** (plan_corrections
+P2-24), taken after the first laptop run: **every** atom in the first 0.5 mm
+at ``t - 2`` or more. That run gave 12 atoms, mean 16.4, lowest **15.7**, so
+0.7 degrees to spare; a change that slows the tilt's build-up at the corner
+fails it. The 0.9 mm strip (lowest 14.6 there) is printed, not judged. The
+CPU's pipeline-like SDF gives a lowest of 13.5 and would fail: the laptop's
+remeshed part is the reference, and this test only runs there. About 3
+minutes on the laptop.
 
 No `from __future__ import annotations`: this drives Taichi through the tool.
 """
@@ -83,6 +86,11 @@ def test_the_tilt_where_the_overhang_starts(repo_root, capsys):
         for i in lowest:
             x, y, z = first.points[i]
             print(f"    {x:6.2f} {y:6.2f} {z:6.2f} | {first.tilts_deg[i]:5.1f}")
-        print("  No pass rule on the tilt yet: the operator sets it after these numbers (2026-10-01).\n")
+        print(f"  Pass rule: every atom in the first {STRIPS_MM[0]:g} mm at {bar:g} or more.\n")
 
     assert first.count > 0, "no atoms by the underside where it starts: nothing to measure"
+    # The operator's rule (2026-10-01): every atom, not the mean.
+    assert first.tilts_deg.min() >= bar, (
+        f"the tilt has not built up where the overhang starts: lowest {first.tilts_deg.min():.1f} "
+        f"in the first {STRIPS_MM[0]:g} mm, against t - {ALLOWANCE_DEG:g} = {bar:g}"
+    )

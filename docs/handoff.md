@@ -32,7 +32,7 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 > |---|---|
 > | P2.0 field-only mode, P2.1 field document + tilt bound | Done |
 > | P2.2 overhang rule | Built, laptop-verified. On by `"overhang_aware": true`; hold on; field on the pre-infill SDF |
-> | P2.4 ramp-in | Built (too little room: steepen, keep the tilt) |
+> | P2.4 ramp-in | Built (too little room: steepen, keep the tilt). The plan's pipeline test is written (P2-24): every atom in the first 0.5 mm of overhang at t - 2 or more; laptop 15.7 at the lowest |
 > | Edges + flat overhangs (P2-19, P2-20) | Built: edge cells take the overhang core's lean; flat undersides lean outward. `ramp90_xs` (laptop) and `tshape_xs` (CPU, P2-21) at 30 no longer deadlock |
 > | Metric | **Version 4** (points whose nearest surface is the overhang), P2-17. All 92 committed reports are v4 |
 > | P2.5 evaluation | Runner and side-by-side tables built, now with **top-surface quality and the tilt rate** (P2-21, from the toolpath, so `--reanalyse` adds them). First lab matrix (old code): printable stock 4, overhang-aware 6 of 44. **Re-run owed on the lab machine** |
@@ -70,15 +70,17 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 > **Done in the 2026-10-01 evening session** (the operator asked for all of
 > the four no-lab tasks): (a) `tshape_xs` at 30 completes (P2-21); (b) the
 > two P2.5 numbers, definitions chosen by the operator (P2-21); (c) the
-> unsupported-deposition cause (P2-22); (d) P2.3, map only (P2-23).
+> unsupported-deposition cause (P2-22); (d) P2.3, map only (P2-23). Then
+> **P2.4's pipeline test** (P2-24): `pytest --run-pipeline
+> tests/test_ramp_in_pipeline.py` on the laptop, about 3 min; every atom in the
+> first 0.5 mm of `ramp60_xs`'s overhang at 15 degrees or more (the
+> operator's rule). Laptop, `3d5a495`: lowest 15.7, mean 16.4. The pass rule
+> was added after that run, so its first run *with* the rule is still owed
+> (the numbers will not change: nothing else moved).
 >
 > **Known residuals:** five atoms at `ramp60_xs`'s column corner by the side
 > walls at 45.3-46.5 (CPU) and 20 along the side walls at 45.3-45.4 (laptop);
-> the plan's P2.4 pipeline test is **written but reports only** (P2-24,
-> operator): run `pytest --run-pipeline tests/test_ramp_in_pipeline.py` on
-> the laptop (about 3-5 min, one laptop run at a time), show the operator the
-> printed tilts (CPU: first 0.5 mm mean 15.0, lowest 13.5, against a bar of
-> 15), and ask for the pass rule; the field-only reports do not get the two new numbers (the
+> the field-only reports do not get the two new numbers (the
 > tilt rate needs a print order; top-surface quality could be added on the
 > atoms if wanted). **Tools added this session:** `tools/overhang_where.py`
 > (where a part's worst points are), `tools/unsupported_where.py` (why points

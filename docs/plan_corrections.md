@@ -2847,7 +2847,7 @@ meanings kept**, with the lift.
   is converged; the reference proxy agrees with the kinematics; cache round
   trip; the lookup's interpolation, azimuth and rounding on a hand-made map.
 
-#### P2-24 P2.4's pipeline test written; it reports, the pass rule waits for the laptop's numbers (operator's decision, 2026-10-01)
+#### P2-24 P2.4's pipeline test: every atom in the first 0.5 mm of overhang at t - 2 or more (operator's decisions, 2026-10-01)
 
 *Written 2026-10-01; not yet run on the laptop.* `tests/test_ramp_in_pipeline.py`
 (`pipeline` marker): a field-only, overhang-aware run of `ramp60_xs` at 30,
@@ -2869,3 +2869,15 @@ chose to see the laptop's numbers on the remeshed part first and set the pass
 rule then. Until then the test asserts only that there is something to
 measure. Laptop: `pytest --run-pipeline tests/test_ramp_in_pipeline.py`
 (about 3-5 minutes).
+
+**Laptop, 2026-10-01, on `3d5a495`** (181 s): the first 0.5 mm holds 12
+atoms, mean **16.4**, lowest **15.7**, all at 15 or over; the first 0.9 mm,
+57 atoms, mean 16.7, lowest 14.6, 98 % at 15 or over. The remeshed part does
+better than the CPU's pipeline-like one (lowest 15.7 against 13.5); the
+lowest sit at y = 1.3-3.5 and 12.3, not right against the side walls.
+**The operator's pass rule:** every atom in the first 0.5 mm at `t - 2` or
+more (the plan read strictly; 0.7 degrees to spare). The average was offered
+and not chosen (a few low points could hide behind it), and so was the 0.9
+mm strip (it fails today, 14.6). The 0.9 mm numbers are still printed. The
+test passes on the laptop with the rule as it stands; it fails on the CPU
+atoms (13.5), which is expected, since pipeline tests run only on the laptop.
