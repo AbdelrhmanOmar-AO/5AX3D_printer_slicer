@@ -2666,3 +2666,89 @@ at 30: **`order_atoms` completes** (27 068 atoms, 301 s; it deadlocked
 before), worst 65.0, unsupported 3.75 %, max tilt 30. A flat underside needs
 47 degrees of tilt for 45; at 30 the bound is 60, so the part is out of range
 there as P2.1's bound says, and is reported so, not passed.
+
+#### P2-21 P2.5's two missing numbers: top-surface quality and the tilt rate, from the toolpath (operator's decisions, 2026-10-01)
+
+*Built 2026-10-01.* Both are computed from the toolpath the report already
+measures and the part's mesh, so `--reanalyse` adds them to every archived
+run (stock and overhang-aware) in seconds, with no re-slicing. They change
+no existing number, so the metrics version stays 4; a report scored before
+them shows `not scored` in the summary.
+
+* **Top-surface quality** (`overhang_metrics.top_surface_quality`, report key
+  `metrics.top_surface`). The plan asks for "the fraction of ceiling cells
+  whose final direction is within 2 degrees of their target". The field is
+  not archived by the matrix runner, so the operator chose the toolpath
+  form: the share of the **top layer's deposition points** printed within 2
+  degrees of the top surface's normal. A top surface is a face whose normal
+  is within `max_slope` of vertical (capped by the nozzle cone: upstream's
+  `CEIL_MAX_ANGLE`); the top layer is the points within one layer height of
+  it, and a point counts only if a top face is nearer it than any other face
+  (as metrics version 4 does for overhangs). The target is the **smooth**
+  normal (each face's corner normals averaged with its neighbours within 30
+  degrees): `twin_domes`' facets are about 10 degrees apart, five times the
+  tolerance, so the facet normal is no target. Unlike upstream's ceiling rule
+  there is no curvature condition, so a small dome's top counts here. The
+  summary puts stock and overhang-aware side by side and flags a pair more
+  than 5 points below stock (P2.5's criterion; `TOP_SURFACE_ALLOWANCE_POINTS`,
+  a placeholder).
+* **Tilt rate** (`overhang_metrics.tilt_rate`, `metrics.tilt_rate`): the
+  largest turn of the tool within any **1 mm of continuous printing**, in
+  degrees per mm, and the share of printing moves whose 1 mm turns faster
+  than 3 degrees per mm (the D3 placeholder, the ramp-in's default). Travel
+  moves end a run. Per move (the plan's literal "max tilt rate along the
+  toolpath") the number depends on how finely the path is cut: on the
+  T-shape below, smoothing the points alone took it from 70 to 111 degrees
+  per mm with no more turning; over 1 mm, from 42 to 51. The operator asked
+  why per move was first recommended; on that evidence the 1 mm form was
+  chosen. Reported, not judged: P2.5 sets no limit on it.
+
+**`tshape_xs` at 30, overhang-aware, on the pipeline-like SDF (CPU, the
+answer to the handover's question (a)):** `order_atoms` **completes**
+(19 990 atoms, 235 s; it deadlocked in the lab's first matrix, P2-18), so the
+flat-underside fix (P2-20) cleared the T-shape as it did `ramp90_xs`. Worst
+effective angle 63.7, mean 60.3 (the bound at 30 degrees is 60: out of
+range, as P2.1 says), unsupported near the overhang 4.9 %, top surface 100 %
+within 2 degrees (mean 0.8), tilt rate 51 degrees per mm (26 % of printing
+moves over 3). The fast turns sit along the side walls just above the
+column, where the two arms' outward leans meet: about 100 single moves turn
+13-29 degrees in under half a millimetre. Development numbers, not
+comparable with the lab's.
+
+#### P2-22 Where the unsupported deposition near overhangs comes from: the outermost bead steps a whole width
+
+*Found 2026-10-01 with `tools/unsupported_where.py` (new).* In the first
+overhang-aware matrix most runs within 45 degrees still failed on
+unsupported deposition near the overhang, 0.8-2.4 % against 1 % (P2-18). The
+tool sorts each such point by cause: **printed too early** (material lies in
+its support cone but is printed later: an ordering problem) or **nothing
+beneath** (no material in the cone at all), and by depth, nearest surface,
+tilt and whether it starts a bead run.
+
+**`ramp50_xs` at 30, overhang-aware, pipeline-like SDF (CPU):** worst
+effective angle 46.0, mean 43.0, unsupported near the overhang **2.18 %**
+(the lab: 0.8-2.4 % across budgets). All 32 such points are **nothing
+beneath**, none printed too early; all are nearest the underside, within two
+layer heights of it, spread along the whole ramp, at the rule's tilt (median
+6.8). The material that holds them up *is* there, 44-50 degrees off the tool
+axis (inside the 65-degree cone), but 1.25-1.44 mm away, past the metric's
+reach of 2.5 layer heights (1.125 mm): it is **two layers down**. The layer
+directly below has no bead there.
+
+A cross-section shows why. The outermost bead of each layer, the one by the
+underside, sits 0.3-0.8 mm inside the surface: beads come on a spacing of
+about a width, so where the last one falls depends on the phase of that
+spacing against the surface. Most layers step out a little past the one
+below; every few layers one stalls (its last bead a width short of where it
+could be) and the next jumps a whole width. For all 32 points the nearest
+bead of the layer directly below is **0.97-1.08 mm sideways** (median 1.00),
+against 0.04 mm for supported points: the bead sits entirely past the one
+below it, over air. The cone allows at most about 0.96 mm sideways at 0.45
+mm layers (65 degrees). Across-bead spacing near the underside has median
+0.92 mm but runs 0.43-1.10 (10-90 %), so a full-width jump can land either
+side of that limit. **So the cause is the discretisation of the outermost
+beads at the overhang surface, not the tilt and not the print order.**
+
+*Still to settle (the comparison runs are going):* why the overhang-aware
+runs show it ten times more often than stock at a similar effective angle
+(stock `ramp45_xs` at 7: 0.24 %, the known answer).
