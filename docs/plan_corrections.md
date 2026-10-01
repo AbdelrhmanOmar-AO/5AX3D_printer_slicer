@@ -2548,3 +2548,17 @@ overhang-aware (`reports/baseline_overhang.md` has them all):
   ("maybe two adjacent atoms are constraining each other"). Being reproduced.
 * These numbers are version 3 (P2-17): `ramp45_xs`'s "no overhang" cells are
   that flaw, not results.
+
+**Update, re-scored with metrics version 4 on the lab machine (`a29df7f`,
+all 92 reports):** printable **stock 4, overhang-aware 6** of 44 (`ramp45_xs`
+is measured again: stock fails at 30 with 51 degrees, overhang-aware 44).
+Per surface, the **mean** effective angle of the overhang-aware runs is
+42.5-43.2 wherever the budget allows the rule's tilt (`ramp45` to `ramp70`
+at 30, `ramp50` at every budget), and exactly the geometric angle minus the
+budget where it does not (`ramp60` at 7: 53.0; `ramp70` at 15: 55.1; `ramp80`
+at 30: 50.1; `ramp90` at 15: 75.4). The **worst** point sits 4-11 degrees
+above the mean (`ramp60_s` at 30: 49 against 42.7; `ramp70_xs` 50 against
+43.1; `ramp80_xs` 61 against 50.2; the flat undersides 89-90 against 75-83):
+a few spots per part, the edge and corner effect of P2-15, which now decides
+whether a part passes. Unsupported deposition near the overhangs, where the
+budget suffices: 0.1-2.0 %.
