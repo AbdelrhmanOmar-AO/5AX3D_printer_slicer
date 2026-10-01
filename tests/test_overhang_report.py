@@ -190,6 +190,26 @@ def test_a_box_printed_vertically_has_its_whole_top_on_target(ti_cpu, tmp_path):
     rate = report["metrics"]["tilt_rate"]
     assert rate["max_deg_per_mm"] == pytest.approx(0.0, abs=1e-4) and rate["fraction_over_limit"] == 0.0
     assert rate["limit_deg_per_mm"] == overhang_report.TILT_RATE_LIMIT_DEG_PER_MM == 3.0
+    machine = report["metrics"]["machine"]
+    assert machine["unreachable_points"] == 0 and machine["platform_mm"] == 0.0
+    assert machine["profile"] == "reference"
+    layers = report["metrics"]["layers"]
+    assert layers["thin"] == 0 and layers["thick"] == 0 and layers["judged"] > 0
+    assert layers["median_mm"] == pytest.approx(0.45, abs=1e-4)
+    assert layers["near_overhangs"]["judged"] == 0  # a box has no overhang
+
+
+def test_a_run_from_another_profile_is_not_scored_against_this_one(ti_cpu, tmp_path):
+    mesh = bm.make_box(**bm.default_dimensions(60.0))
+    stl_path = tmp_path / "box.stl"
+    mesh.export(stl_path)
+    toolpath_path = tmp_path / "box_smoothed.npz"
+    SyntheticToolpath([[30.0, 13.5, 1.0], [30.0, 13.5, 1.45]], [0.0, 0.0, 1.0]).save(toolpath_path)
+    report = overhang_report.measure(
+        "box", 7.0, 0.9, toolpath_path=toolpath_path, stl_path=stl_path,
+        provenance={"machine_profile": "dev60"},
+    )
+    assert "ATOM_MACHINE=dev60" in report["metrics"]["machine"]["error"]
 
 
 @pytest.mark.parametrize(

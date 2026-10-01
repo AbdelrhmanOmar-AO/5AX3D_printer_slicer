@@ -2882,3 +2882,67 @@ mm strip (it fails today, 14.6). The 0.9 mm numbers are still printed. The
 test fails on the CPU atoms (13.5), which is expected, since pipeline tests
 run only on the laptop. **Laptop, 2026-10-01, with the rule, on
 `1163851`:** **1 passed** in 176 s, the same numbers (lowest 15.7).
+
+#### P2-25 P3.2 built early: the layer thickness is measured from the geometry, because a toolpath's `height` is the nominal everywhere ★ PLAN EDIT
+
+*Built 2026-10-01 at the operator's request, before the lab's Sunday run, so
+`--reanalyse` adds it to all 96 runs.* The plan's P3.2 flags "any deposition
+whose height is outside [0.5, 1.5] x nominal". **A toolpath's `height` is the
+nominal layer (0.45 mm for 0.9 mm beads) on every point**, in every toolpath
+checked (stock `ramp45_xs`, overhang-aware `ramp50_xs`, `ramp60_xs`,
+`tshape_xs`): Atomizer writes the nominal, not the real spacing. That check
+could never fire.
+
+`atom.layer_thickness` measures it instead: for each deposition point, the
+nearest deposition point below it along `-d` and within half a bead width
+sideways (the bead it sits on); the distance along `d` is the thickness
+there. Searched to 2.5 layers, so a bead over a one-layer gap is found;
+points within half a layer of the lowest one rest on the bed and are not
+judged; closer than a quarter layer is the same layer. Thin and thick at the
+plan's 0.5 and 1.5 (placeholders). Report key `metrics.layers`, overall and
+near the overhangs; a summary table beside stock.
+
+On the CPU toolpaths (development numbers): the real layers have a median of
+0.45-0.46 mm everywhere. **Thick** (mostly about 0.85-0.9 mm: the bead under
+it is missing, a one-layer gap, mostly in the solid shell about 1.4 mm in,
+where it meets the infill): stock `ramp45_xs` at 7 1.29 %, overhang-aware
+`ramp50_xs` and `ramp60_xs` at 30 1.24 and 1.31 %, `tshape_xs` at 30 2.44 %.
+**Thin**: 0.00-0.03 % on the ramps, 0.14 % on the T-shape (1.07 % near its
+underside, about 0.14 mm, where the tilted layers converge on the flat
+underside). So the tilted field leaves the ramps' layers as stock's; P3.2's
+feedback to P2.4 is not needed there.
+
+#### P2-26 The machine's reach and the platform in every report; archive before scoring
+
+*Built 2026-10-01 at the operator's request, before Sunday.*
+
+* **Reach and platform** (`atom.machine_reach`, report key
+  `metrics.machine`). P2.5 asks for "no new IK failures"; nothing counted
+  them. A run with points out of reach stops in `add_platform` (the
+  vendored `get_plaftorm_size` asserts), so every completed run has none, and
+  the report now says so explicitly. It also records the **platform**
+  `add_platform` prints under the part so the tilted bed's corners clear the
+  gantry, which no report gave. It follows the pipeline step for step: the
+  toolpath tesselated to 1 degree as stage 10 does, then the vendored lift
+  loop, both re-centrings (P1-9, P4-4), counting instead of asserting; the
+  layer height as the pipeline passes it (float32). Checked against the
+  vendored function: identical. On the CPU toolpaths: stock `ramp45_xs` at
+  7 and overhang-aware `ramp60_xs` at 30 need **no platform**; `tshape_xs` at
+  30 needs **42.75 mm**. A run made on another profile than the one scoring
+  it says so rather than being scored against the wrong machine.
+* **A hazard found doing it:** the vendored tesselation
+  (`toolpath3.tesselate_orientation`) sizes its output at three times its
+  input and writes past it, unchecked, when more points are needed; on the
+  CPU that is a protection fault that kills the process (seen with synthetic
+  random-tilt toolpaths). The pipeline's own stage has survived every real
+  toolpath so far, but `machine_reach` counts the points first and checks the
+  toolpath untesselated when they would not fit (`tesselated: false`), so
+  `--reanalyse` can never crash on it.
+* **Archive before scoring.** `overhang_report.py` scored a run before
+  archiving its toolpath, so a scoring error lost 30+ minutes of slicing for
+  good; it now archives first, and `run_matrix_parallel.py` brings a failed
+  job's archive back too.
+* **Checked before Sunday:** every matrix part (16) at 7 and 30 degrees,
+  scored from synthetic toolpaths with all the new numbers: no errors, at
+  most 2.5 s a run. `--reanalyse` on the lab's 96 reports should take a few
+  minutes.

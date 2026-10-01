@@ -10,12 +10,12 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 > ## ▶ START HERE: P2 handover, 2026-10-01 (evening)
 >
 > **Branch `claude/brave-ramanujan-7xolkm`** (`main` merged into it on
-> 2026-10-01, so a pull request from it is clean). 1056 unit tests pass
+> 2026-10-01, so a pull request from it is clean). 1073 unit tests pass
 > (`PYTHONPATH=src python -m pytest -q`, 1.5-5 min; `pip install pytest
 > numpy scipy trimesh taichi tqdm pyvista pillow` in a fresh container). The
 > golden test passed on the laptop on 2026-10-01 after every vendored edit
 > (`a042fbc`); nothing vendored has changed since. Details: section 0d below,
-> `plan_corrections.md` 7c (P2-1 to P2-24), `docs/orientation_field.md`
+> `plan_corrections.md` 7c (P2-1 to P2-26), `docs/orientation_field.md`
 > section 7.
 >
 > **How to work with the operator:** an undergraduate project; the operator is
@@ -35,7 +35,7 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 > | P2.4 ramp-in | Built (too little room: steepen, keep the tilt). The plan's pipeline test is written (P2-24): every atom in the first 0.5 mm of overhang at t - 2 or more; **passes on the laptop**, 15.7 at the lowest |
 > | Edges + flat overhangs (P2-19, P2-20) | Built: edge cells take the overhang core's lean; flat undersides lean outward. `ramp90_xs` (laptop) and `tshape_xs` (CPU, P2-21) at 30 no longer deadlock |
 > | Metric | **Version 4** (points whose nearest surface is the overhang), P2-17. All 92 committed reports are v4 |
-> | P2.5 evaluation | Runner and side-by-side tables built, now with **top-surface quality and the tilt rate** (P2-21, from the toolpath, so `--reanalyse` adds them). First lab matrix (old code): printable stock 4, overhang-aware 6 of 44. **Re-run owed on the lab machine** |
+> | P2.5 evaluation | Runner and side-by-side tables built, now with **top-surface quality, the tilt rate** (P2-21), **reach and platform** (P2-26) and **layer thickness** (P3.2, P2-25), all from the toolpath, so `--reanalyse` adds them. A run archives its toolpath before scoring it (P2-26). First lab matrix (old code): printable stock 4, overhang-aware 6 of 44. **Re-run owed on the lab machine** |
 > | Unsupported deposition near overhangs | **Cause found** (P2-22): the outermost bead steps a whole width every few layers (stock: just inside the support cone; overhang-aware: often just outside), and the support test checks points, not bead lines. **Left as is for now** (operator); revisit with Sunday's table, below |
 > | P2.3 reachability map | **Built, map only** (P2-23, operator): `atom.reachability`, `tools/reachability_map.py`, on `reference`; not used by the field until the real machine's geometry exists |
 > | P2.6 keys | Built with P2.2/P2.4; `use_reachability_map` waits (operator); `overhang_priority` not needed (P2-12) |
@@ -47,8 +47,8 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 >    `python tools/run_matrix_parallel.py --sizes xs s --workers 8
 >    --overhang-aware --dry-run`, then the same without `--dry-run` (no
 >    `--resume`: all 48 overhang-aware runs are redone; about 3.5-4 h), then
->    **`python tools/overhang_report.py --reanalyse`** (seconds: gives the 48
->    stock runs the two new numbers, and rewrites the summary), then commit
+>    **`python tools/overhang_report.py --reanalyse`** (a few minutes: gives
+>    the 48 stock runs the new numbers, and rewrites the summary), then commit
 >    and push `reports/baseline_overhang`, `reports/baseline_overhang.md` and
 >    `reports/matrix_progress.csv`. Review the new table with the operator,
 >    with P2-22 in mind for the unsupported column.
@@ -75,7 +75,13 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 > tests/test_ramp_in_pipeline.py` on the laptop, about 3 min; every atom in the
 > first 0.5 mm of `ramp60_xs`'s overhang at 15 degrees or more (the
 > operator's rule). **Passed on the laptop** with the rule (1 passed, 176 s):
-> lowest 15.7, mean 16.4, 0.7 degrees to spare.
+> lowest 15.7, mean 16.4, 0.7 degrees to spare. Then, asked what else could
+> be done before Sunday, the operator chose three scoring additions (they
+> change no slicing): **reach and platform** in every report (P2-26: the
+> T-shape at 30 needs a 42.75 mm platform), the **layer-thickness check**
+> (P3.2, measured from the geometry because the toolpath's `height` is the
+> nominal everywhere, P2-25), and **archive before scoring** (P2-26). The
+> side-wall edges (ramp60/70 at 30, 45.3-45.4) were left for after Sunday.
 >
 > **Known residuals:** five atoms at `ramp60_xs`'s column corner by the side
 > walls at 45.3-46.5 (CPU) and 20 along the side walls at 45.3-45.4 (laptop);

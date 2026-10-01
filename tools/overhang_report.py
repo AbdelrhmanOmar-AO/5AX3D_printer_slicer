@@ -88,6 +88,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from atom import frame_atoms  # noqa: E402
 from atom import overhang_metrics as om  # noqa: E402
+from atom import layer_thickness as lt  # noqa: E402
 from atom import provenance as prov  # noqa: E402
 from atom.ti_env import ARCH_LOG_ENV_VAR  # noqa: E402
 from atom.ramp_in import DEFAULT_MAX_TILT_RATE_DEG_PER_MM  # noqa: E402
@@ -410,6 +411,14 @@ def measure(
         LAYER_HEIGHT_WRT_DEPOSITION_WIDTH * deposition_width,
     )
     rate = om.tilt_rate(toolpath, TILT_RATE_LIMIT_DEG_PER_MM)
+    machine = _machine_block(toolpath, deposition_width, provenance)
+    layers = lt.layer_thickness(toolpath, LAYER_HEIGHT_WRT_DEPOSITION_WIDTH * deposition_width)
+    near_points = om.points_near_overhangs(
+        np.asarray(toolpath.point[: int(np.asarray(toolpath.point_count).item())], dtype=np.float64)[
+            om.deposition_mask(toolpath)
+        ],
+        normals, centres, NEAR_OVERHANG_WIDTHS * deposition_width,
+    )
 
     measured = [s for s in surfaces if s.measured]
     worst_effective = max((s.max_effective_deg for s in measured), default=float("nan"))
@@ -446,6 +455,8 @@ def measure(
             "surfaces": _surfaces_block(surfaces),
             "top_surface": _top_surface_block(top),
             "tilt_rate": _tilt_rate_block(rate),
+            "machine": machine,
+            "layers": _layers_block(layers, near_points),
         },
         "verdict": {
             "printable": printable,
@@ -507,6 +518,63 @@ def _tilt_rate_block(rate):
         "limit_deg_per_mm": rate.limit_deg_per_mm,
         "stretch_mm": rate.stretch_mm,
         "printing_moves": rate.printing_moves,
+    }
+
+
+def _layers_block(layers, near_points):
+    """A report's ``layers`` entry (build plan P3.2, `atom.layer_thickness`)."""
+
+    def counts(where):
+        judged = int(np.count_nonzero(layers.judged & where))
+        thin = int(np.count_nonzero(layers.thin & where))
+        thick = int(np.count_nonzero(layers.thick & where))
+        return {
+            "judged": judged,
+            "thin": thin,
+            "thick": thick,
+            "fraction_thin": thin / judged if judged else float("nan"),
+            "fraction_thick": thick / judged if judged else float("nan"),
+            "nothing_below": int(np.count_nonzero(layers.nothing_below & where)),
+        }
+
+    thickness = layers.thickness_mm[layers.judged]
+    block = counts(np.ones(len(layers.on_bed), dtype=bool))
+    block.update({
+        "nominal_mm": layers.nominal_mm,
+        "min_fraction": layers.min_fraction,
+        "max_fraction": layers.max_fraction,
+        "median_mm": float(np.median(thickness)) if len(thickness) else float("nan"),
+        "p1_mm": float(np.percentile(thickness, 1)) if len(thickness) else float("nan"),
+        "p99_mm": float(np.percentile(thickness, 99)) if len(thickness) else float("nan"),
+        "near_overhangs": counts(np.asarray(near_points, dtype=bool)),
+    })
+    return block
+
+
+def _machine_block(toolpath, deposition_width, provenance):
+    """A report's ``machine`` entry: points out of reach and the platform (`atom.machine_reach`).
+
+    The kinematics carry the profile they were imported with; a run made on
+    another profile is not scored against the wrong machine but says so.
+    """
+    from atom import kinematics3z, machine_reach
+
+    wanted = provenance.get("machine_profile") if isinstance(provenance, dict) else None
+    active = kinematics3z._PROFILE.name
+    if wanted and wanted != active:
+        return {"error": f"made on profile {wanted}; scoring loaded {active}. "
+                         f"Re-score with ATOM_MACHINE={wanted}."}
+    # As `tools/atomize.py` passes it to add_platform: a float32 (0.44999998...).
+    layer_height = float(np.float32(LAYER_HEIGHT_WRT_DEPOSITION_WIDTH * deposition_width))
+    reach = machine_reach.platform_and_reach(toolpath, deposition_width, layer_height)
+    return {
+        "profile": reach.profile,
+        "points_checked": reach.points_checked,
+        "unreachable_points": reach.unreachable_points,
+        "platform_mm": reach.platform_mm,
+        "lift_mm": reach.lift_mm,
+        "unsettled": reach.unsettled,
+        "tesselated": reach.tesselated,
     }
 
 
@@ -1137,7 +1205,94 @@ def _comparison_section(stock, aware):
     ]
     lines += [""] + _top_surface_section(parts, slopes, stock_by_key, aware_by_key)
     lines += [""] + _tilt_rate_section(parts, slopes, stock_by_key, aware_by_key)
+    lines += [""] + _machine_section(parts, slopes, stock_by_key, aware_by_key)
+    lines += [""] + _layers_section(parts, slopes, stock_by_key, aware_by_key)
     return lines
+
+
+def _layers_text(report):
+    if report is None:
+        return "—"
+    layers = report.get("metrics", {}).get("layers")
+    if layers is None:
+        return "not scored"
+    thin, thick = layers.get("fraction_thin"), layers.get("fraction_thick")
+    if thin is None or thick is None or math.isnan(thin) or math.isnan(thick):
+        return "n/m"
+    return f"{thin * 100:.1f}% / {thick * 100:.1f}%"
+
+
+def _layers_section(parts, slopes, stock_by_key, aware_by_key):
+    """Layer thickness, stock -> overhang-aware (build plan P3.2)."""
+    lines = [
+        "### Layer thickness",
+        "",
+        "Each cell is **stock → overhang-aware**: the share of deposition points "
+        f"whose layer is thinner than {lt.MIN_LAYER_FRACTION:g}x / thicker than "
+        f"{lt.MAX_LAYER_FRACTION:g}x the nominal (P3.2's placeholders), the "
+        "thickness measured from the toolpath's geometry, not its `height` "
+        "(`atom.layer_thickness`; plan_corrections P2-25). A thick one is "
+        "mostly a bead with the bead under it missing: a one-layer gap. The "
+        "reports also give these near the overhangs.",
+        "",
+        "| Part | " + " | ".join(f"max_slope {s:g}°" for s in slopes) + " |",
+        "|" + "---|" * (len(slopes) + 1),
+    ]
+    for part in parts:
+        cells = []
+        for slope in slopes:
+            aware = aware_by_key.get((part, slope))
+            if aware is None:
+                cells.append("—")
+            else:
+                cells.append(f"{_layers_text(stock_by_key.get((part, slope)))} → {_layers_text(aware)}")
+        lines.append(f"| `{part}` | " + " | ".join(cells) + " |")
+    return lines
+
+
+def _machine_text(report):
+    if report is None:
+        return "—"
+    machine = report.get("metrics", {}).get("machine")
+    if machine is None:
+        return "not scored"
+    if "error" in machine:
+        return "other profile"
+    if machine.get("unreachable_points"):
+        return f"⚠️ {machine['unreachable_points']} out of reach"
+    return f"{machine['platform_mm']:.0f} mm"
+
+
+def _machine_section(parts, slopes, stock_by_key, aware_by_key):
+    """Reach and platform, stock -> overhang-aware (build plan P2.5)."""
+    lines = [
+        "### Reach and platform",
+        "",
+        "Each cell is **stock → overhang-aware**: the platform `add_platform` "
+        "prints under the part so the tilted bed clears the gantry (`0 mm`: "
+        "none), or ⚠️ the number of toolpath points the machine cannot reach "
+        "at any lift (`atom.machine_reach`, the toolpath tesselated as the "
+        "pipeline does). P2.5 asks for no new points out of reach. A run whose "
+        "points are out of reach stops at `add_platform`, so it has no report "
+        "and does not appear here; `other profile`: made on another machine "
+        "profile than the one scoring it.",
+        "",
+        "| Part | " + " | ".join(f"max_slope {s:g}°" for s in slopes) + " |",
+        "|" + "---|" * (len(slopes) + 1),
+    ]
+    out_of_reach = 0
+    for part in parts:
+        cells = []
+        for slope in slopes:
+            aware = aware_by_key.get((part, slope))
+            if aware is None:
+                cells.append("—")
+                continue
+            machine = aware.get("metrics", {}).get("machine") or {}
+            out_of_reach += bool(machine.get("unreachable_points"))
+            cells.append(f"{_machine_text(stock_by_key.get((part, slope)))} → {_machine_text(aware)}")
+        lines.append(f"| `{part}` | " + " | ".join(cells) + " |")
+    return lines + ["", f"Overhang-aware runs with points out of reach: {out_of_reach}."]
 
 
 def _tilt_rate_text(report):

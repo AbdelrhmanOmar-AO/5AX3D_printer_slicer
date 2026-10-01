@@ -210,6 +210,28 @@ def test_tilt_rate_sits_beside_the_stock_run():
     assert "| `ramp60_s` | 4°/mm (1%) → 51°/mm (26%) |" in section
 
 
+def test_the_platform_and_any_points_out_of_reach_sit_beside_the_stock_run():
+    stock, aware = _paired()
+    stock["metrics"]["machine"] = {"unreachable_points": 0, "platform_mm": 0.0}
+    aware["metrics"]["machine"] = {"unreachable_points": 0, "platform_mm": 42.75}
+    section = orep.summarize([stock], (), [aware]).split("### Reach and platform")[1]
+    assert "| `ramp60_s` | 0 mm → 43 mm |" in section
+    assert "Overhang-aware runs with points out of reach: 0." in section
+
+    aware["metrics"]["machine"] = {"unreachable_points": 12, "platform_mm": float("nan")}
+    section = orep.summarize([stock], (), [aware]).split("### Reach and platform")[1]
+    assert "0 mm → ⚠️ 12 out of reach" in section
+    assert "Overhang-aware runs with points out of reach: 1." in section
+
+
+def test_layer_thickness_sits_beside_the_stock_run():
+    stock, aware = _paired()
+    stock["metrics"]["layers"] = {"fraction_thin": 0.0, "fraction_thick": 0.0129}
+    aware["metrics"]["layers"] = {"fraction_thin": 0.0003, "fraction_thick": 0.0131}
+    section = orep.summarize([stock], (), [aware]).split("### Layer thickness")[1]
+    assert "| `ramp60_s` | 0.0% / 1.3% → 0.0% / 1.3% |" in section
+
+
 def test_field_only_runs_split_stock_from_aware():
     field = [
         _report("ramp60_xs", 30.0, False, orep.MODE_FIELD_ONLY),

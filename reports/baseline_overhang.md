@@ -108,6 +108,54 @@ Each cell is **stock → overhang-aware**: the largest turn of the tool within a
 | `twin_domes_s` | not scored → not scored | not scored → not scored | not scored → not scored |
 | `twin_domes_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
 
+### Reach and platform
+
+Each cell is **stock → overhang-aware**: the platform `add_platform` prints under the part so the tilted bed clears the gantry (`0 mm`: none), or ⚠️ the number of toolpath points the machine cannot reach at any lift (`atom.machine_reach`, the toolpath tesselated as the pipeline does). P2.5 asks for no new points out of reach. A run whose points are out of reach stops at `add_platform`, so it has no report and does not appear here; `other profile`: made on another machine profile than the one scoring it.
+
+| Part | max_slope 7° | max_slope 15° | max_slope 30° |
+|---|---|---|---|
+| `ramp45_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp45_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp50_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp50_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp60_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp60_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp70_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp70_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp80_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp80_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp90_s` | not scored → not scored | not scored → not scored | — |
+| `ramp90_xs` | not scored → not scored | not scored → not scored | — |
+| `tshape_s` | not scored → not scored | not scored → not scored | — |
+| `tshape_xs` | not scored → not scored | not scored → not scored | — |
+| `twin_domes_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `twin_domes_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+
+Overhang-aware runs with points out of reach: 0.
+
+### Layer thickness
+
+Each cell is **stock → overhang-aware**: the share of deposition points whose layer is thinner than 0.5x / thicker than 1.5x the nominal (P3.2's placeholders), the thickness measured from the toolpath's geometry, not its `height` (`atom.layer_thickness`; plan_corrections P2-25). A thick one is mostly a bead with the bead under it missing: a one-layer gap. The reports also give these near the overhangs.
+
+| Part | max_slope 7° | max_slope 15° | max_slope 30° |
+|---|---|---|---|
+| `ramp45_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp45_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp50_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp50_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp60_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp60_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp70_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp70_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp80_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp80_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp90_s` | not scored → not scored | not scored → not scored | — |
+| `ramp90_xs` | not scored → not scored | not scored → not scored | — |
+| `tshape_s` | not scored → not scored | not scored → not scored | — |
+| `tshape_xs` | not scored → not scored | not scored → not scored | — |
+| `twin_domes_s` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `twin_domes_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+
 ## Runtime
 
 How the pipeline's cost scaled with part size. `order_atoms` is the stage that dominates, and it runs on the CPU.
