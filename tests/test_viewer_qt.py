@@ -154,6 +154,16 @@ def test_z_clip_slider_sets_the_height(window):
     assert window.z_label.text().endswith("mm")
 
 
+def test_the_below_button_looks_up_from_underneath(window):
+    """For an overhang's underside (the Overhang check mode)."""
+    buttons = {b.text(): b for b in window.findChildren(QtWidgets.QPushButton)}
+    buttons["Below"].click()
+    camera = window.plotter.camera
+    assert camera.position[2] < camera.focal_point[2]
+    buttons["Iso"].click()
+    assert window.plotter.camera.position[2] > window.plotter.camera.focal_point[2]
+
+
 def test_machine_view_switch(ti_cpu, window):
     window.switches["machine_view"].setChecked(True)
     assert window.viewer.machine_view

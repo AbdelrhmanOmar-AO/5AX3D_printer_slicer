@@ -8,6 +8,8 @@ No `from __future__ import annotations` here; reading G-code drives the
 Taichi kernels in `atom.kinematics3z`.
 """
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -428,3 +430,32 @@ def test_collision_mode_draws_the_flagged_points_and_reddens_the_bed(ti_cpu, tmp
     if machine_view:
         assert viewer._actors["bed"].prop.color == pv.Color("#5b6676")
     viewer.plotter.close()
+
+
+def test_the_below_camera_looks_up_at_the_underside():
+    calls = []
+    plotter = SimpleNamespace(
+        view_vector=lambda vector, viewup=None: calls.append(("view", tuple(vector), tuple(viewup))),
+        reset_camera=lambda: calls.append(("reset",)),
+        render=lambda: calls.append(("render",)),
+    )
+    vt.view_from_below(plotter)
+    assert calls[0] == ("view", vt.BELOW_VIEW_VECTOR, (0.0, 0.0, 1.0))
+    assert vt.BELOW_VIEW_VECTOR[2] < 0  # from underneath
+    assert calls[-1] == ("render",)
+
+
+@pytest.mark.skipif(_display.NO_DISPLAY, reason=_display.NO_DISPLAY_REASON)
+def test_the_overhang_check_renders_from_below(tmp_path):
+    pytest.importorskip("pyvista")
+    pytest.importorskip("trimesh")
+    from atom import benchmark_meshes as bm
+
+    bm.make_ramp(60, length=30.0, depth=13.5, height=18.0).export(tmp_path / "ramp60_t.stl")
+    column = [[x, y, z] for z in np.arange(0.225, 12.0, 0.45) for x in (22.0, 26.0) for y in (3.0, 9.0)]
+    _write_toolpath(tmp_path / "ramp60_t_smoothed.npz", column, tilt_deg=17)
+    output = tmp_path / "below.png"
+    assert vt.main([str(tmp_path / "ramp60_t_smoothed.npz"), "--screenshot", str(output),
+                    "--mode", "overhang", "--view", "below", "--no-nozzle",
+                    "--stl", str(tmp_path / "ramp60_t.stl")]) == 0
+    assert output.stat().st_size > 10_000

@@ -340,6 +340,97 @@ def shell_mask(
     return mask
 
 
+#: The P2.5 limits the "Overhang check" mode shows: placeholders pending gate
+#: D0, the same as `tools/overhang_report.py`'s ``MAX_EFFECTIVE_OVERHANG_DEG``
+#: and ``NEAR_OVERHANG_WIDTHS`` (this module cannot import a tool).
+OVERHANG_LIMIT_DEG = 45.0
+NEAR_OVERHANG_WIDTHS = 2.0
+
+#: The "Overhang check" mode's categories, in `COLOUR_MODES` order.
+OVERHANG_OTHER, OVERHANG_FINE, OVERHANG_STEEP, OVERHANG_INTO_AIR = 0, 1, 2, 3
+
+
+@dataclass
+class OverhangCheck:
+    """Where a toolpath meets P2.5's overhang targets and where it does not.
+
+    The two numbers each run is judged on, shown point by point: the
+    **effective overhang angle** (the overhang as the tool sees it, over
+    `OVERHANG_LIMIT_DEG` is a failure) and **unsupported deposition near the
+    overhang** (plastic printed into air within two bead widths of it).
+    """
+
+    #: ``(N,)`` one of the ``OVERHANG_*`` codes per point.
+    codes: np.ndarray
+    #: ``(N,)`` effective overhang angle where measured (points by an
+    #: overhang whose nearest surface it is), NaN elsewhere.
+    angle_deg: np.ndarray
+    #: Points within two bead widths of an overhang, the measured ones, those
+    #: over the limit and those printed into air.
+    near: int
+    measured: int
+    steep: int
+    into_air: int
+
+    def summary(self) -> list[str]:
+        if not self.near:
+            return ["Overhang check: no printed point near an overhang."]
+        worst = float(np.nanmax(self.angle_deg)) if self.measured else float("nan")
+        return [
+            f"Overhang check: {self.near:,} points within {NEAR_OVERHANG_WIDTHS:g} bead widths of an overhang;"
+            f" worst angle {worst:.1f}\N{DEGREE SIGN} (limit {OVERHANG_LIMIT_DEG:g})",
+            f"orange: {self.steep:,} over {OVERHANG_LIMIT_DEG:g}\N{DEGREE SIGN}   red: {self.into_air:,} printed "
+            f"into air ({100.0 * self.into_air / self.near:.2f} %, limit 1 %)",
+        ]
+
+
+def overhang_check(view: ViewData, vertices: np.ndarray, faces: np.ndarray,
+                   deposition_width: float) -> OverhangCheck:
+    """The per-point overhang check for the "Overhang check" mode.
+
+    ``vertices``/``faces`` are the part's STL in the view's frame. A point is
+    near an overhang within `NEAR_OVERHANG_WIDTHS` bead widths of an overhang
+    face (as the report's unsupported measure counts it); its angle is
+    measured when it lies within one bead width and its nearest surface is
+    the overhang (metrics version 4), against the nearest overhang face. Red
+    (printed into air, `unsupported_mask`) wins over orange. The report keeps
+    the worst over every face within reach rather than the nearest, so on a
+    part with several overhang faces meeting it can differ slightly at their
+    seams.
+    """
+    triangles = np.asarray(vertices, dtype=np.float64)[np.asarray(faces)]
+    bed = float(np.min(np.asarray(vertices)[:, 2])) + 0.5
+    normals = om.unit_face_normals(triangles)
+    overhang = om.overhang_face_mask(normals, triangles.mean(axis=1), bed)
+    codes = np.full(view.count, OVERHANG_OTHER, dtype=np.int64)
+    angle = np.full(view.count, np.nan)
+    empty = OverhangCheck(codes, angle, 0, 0, 0, 0)
+    candidates = np.flatnonzero(view.deposit & ~view.is_platform)
+    if not overhang.any() or len(candidates) == 0:
+        return empty
+    points = view.point[candidates].astype(np.float64)
+    distance, nearest, _ = om.nearest_triangle_within(
+        points, triangles[overhang], NEAR_OVERHANG_WIDTHS * deposition_width
+    )
+    near = np.isfinite(distance)
+    codes[candidates[near]] = OVERHANG_FINE
+    close = np.flatnonzero(distance <= deposition_width)
+    measured = close[om.nearest_surface_is_overhang(points[close], triangles, bed)] if len(close) else close
+    if len(measured):
+        face_normals = normals[overhang][nearest[measured]]
+        angle[candidates[measured]] = om.effective_overhang_angle_deg(
+            face_normals, view.direction[candidates[measured]]
+        )
+    steep = np.nan_to_num(angle, nan=-np.inf) > OVERHANG_LIMIT_DEG
+    codes[steep] = OVERHANG_STEEP
+    into_air = np.zeros(view.count, dtype=bool)
+    if view.height is not None:
+        into_air[candidates[near]] = unsupported_mask(view)[candidates[near]]
+    codes[into_air] = OVERHANG_INTO_AIR
+    return OverhangCheck(codes, angle, int(near.sum()), int(len(measured)),
+                         int(steep.sum()), int(into_air.sum()))
+
+
 def _spherical_from_directions(directions: np.ndarray) -> np.ndarray:
     directions = np.asarray(directions, dtype=np.float64)
     theta = np.arccos(np.clip(directions[:, 2], -1.0, 1.0))
@@ -408,6 +499,15 @@ COLOUR_MODES = (
         ("#4e79a7", "#f28e2b", "#9c9c9c"),
     ),
     ColourMode(
+        "overhang",
+        "Overhang check",
+        "Overhang check (P2.5)",
+        "",
+        ("not near an overhang", "overhang: fine", "overhang: angle over 45\N{DEGREE SIGN}",
+         "overhang: printed into air"),
+        ("#5b606b", "#59a14f", "#f28e2b", "#e31a1c"),
+    ),
+    ColourMode(
         "collision",
         "Collisions (P4)",
         "Collision check (P4.2 / P4.3)",
@@ -426,6 +526,11 @@ def mode_unavailable_reason(view: ViewData, key: str, has_mesh: bool) -> str | N
         return "needs a toolpath .npz (G-code has no bead sizes)"
     if key == "feed" and view.feed_mm_min is None:
         return "needs G-code (toolpath files have no feed rate)"
+    if key == "overhang":
+        if not has_mesh or view.mesh_offset is None:
+            return "needs the part's STL, aligned with this toolpath"
+        if view.height is None or typical_deposition_width(view) is None:
+            return "needs bead sizes (a toolpath .npz)"
     if key == "shell":
         if not has_mesh or view.mesh_offset is None:
             return "needs the part's STL, aligned with this toolpath"
@@ -434,11 +539,13 @@ def mode_unavailable_reason(view: ViewData, key: str, has_mesh: bool) -> str | N
     return None
 
 
-def point_scalars(view: ViewData, key: str, shell: np.ndarray | None = None) -> np.ndarray:
+def point_scalars(view: ViewData, key: str, shell: np.ndarray | None = None,
+                  overhang: OverhangCheck | None = None) -> np.ndarray:
     """The value each point is coloured by in mode ``key``, ``(N,)``.
 
     Categorical modes return integer codes indexing `ColourMode.categories`.
-    ``shell`` is the output of `shell_mask`, required for the ``shell`` mode.
+    ``shell`` is the output of `shell_mask`, required for the ``shell`` mode;
+    ``overhang`` that of `overhang_check`, for the ``overhang`` mode.
     """
     count = view.count
     if key == "progress":
@@ -463,6 +570,10 @@ def point_scalars(view: ViewData, key: str, shell: np.ndarray | None = None) -> 
         codes = np.where(shell, 1, 0)
         codes[view.is_platform] = 2
         return codes.astype(np.int64)
+    if key == "overhang":
+        if overhang is None:
+            raise ValueError("the overhang mode needs the result of overhang_check")
+        return overhang.codes
     if key == "collision":
         marks = view._cache.get("collisions")
         if marks is None:

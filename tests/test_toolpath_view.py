@@ -435,3 +435,60 @@ def test_the_current_point_names_its_collision():
     assert rows == ["material 0.20 mm inside the nozzle, 1.0 mm above the tip (P4.3)"]
     assert "COLLISION: material 0.20 mm" in tv.describe_point(view, 1)
     assert "COLLISION" not in tv.describe_point(view, 2)
+
+
+# --------------------------------------------------------------------------
+# The overhang check (build plan P2.5's two numbers, point by point)
+# --------------------------------------------------------------------------
+
+
+def _ramp60_mesh():
+    pytest.importorskip("trimesh", reason="trimesh is a dev dependency")
+    from atom import benchmark_meshes as bm
+
+    mesh = bm.make_ramp(60, length=30.0, depth=13.5, height=18.0)
+    return np.asarray(mesh.vertices, dtype=float), np.asarray(mesh.faces)
+
+
+def test_the_overhang_check_marks_fine_steep_and_into_air():
+    """`ramp60_xs`'s underside rises at 30 degrees from (21, 4.5); 60 degrees from vertical."""
+    vertices, faces = _ramp60_mesh()
+    points = [
+        [5.0, 6.0, 0.225],  # on the bed, far from the overhang
+        [5.0, 6.0, 10.0],  # inside the column, far from it
+        [24.6, 6.0, 6.6],  # by the underside, first there: nothing beneath -> into air
+        [25.0, 6.0, 7.0],  # by it, on the bead above, tilted 17 toward it: 43 degrees -> fine
+        [25.3, 6.0, 7.35],  # by it, on the bead above, vertical: 60 degrees -> over the limit
+    ]
+    view = make_view(points, tilts_deg=[0, 0, 0, 17, 0])
+    view.mesh_offset = np.zeros(3)
+    check = tv.overhang_check(view, vertices, faces, 0.9)
+    assert check.codes.tolist() == [tv.OVERHANG_OTHER, tv.OVERHANG_OTHER, tv.OVERHANG_INTO_AIR,
+                                    tv.OVERHANG_FINE, tv.OVERHANG_STEEP]
+    assert check.angle_deg[3] == pytest.approx(43.0, abs=0.1)
+    assert check.angle_deg[4] == pytest.approx(60.0, abs=0.1)
+    assert (check.near, check.measured, check.steep, check.into_air) == (3, 3, 2, 1)
+    assert "worst angle 60.0" in check.summary()[0]
+    np.testing.assert_array_equal(tv.point_scalars(view, "overhang", overhang=check), check.codes)
+
+
+def test_a_part_with_no_overhang_is_all_grey():
+    pytest.importorskip("trimesh", reason="trimesh is a dev dependency")
+    import trimesh
+
+    box = trimesh.creation.box(extents=(10, 10, 10))
+    vertices = np.asarray(box.vertices) + 5.0
+    view = make_view([[5.0, 5.0, 0.225], [5.0, 5.0, 9.8]])
+    view.mesh_offset = np.zeros(3)
+    check = tv.overhang_check(view, vertices, np.asarray(box.faces), 0.9)
+    assert check.codes.tolist() == [tv.OVERHANG_OTHER] * 2 and check.near == 0
+    assert "no printed point near an overhang" in check.summary()[0]
+
+
+def test_the_overhang_check_needs_the_stl_and_bead_sizes():
+    view = make_view([[0.0, 0.0, 0.2]])
+    assert "STL" in tv.mode_unavailable_reason(view, "overhang", has_mesh=False)
+    view.mesh_offset = np.zeros(3)
+    assert tv.mode_unavailable_reason(view, "overhang", has_mesh=True) is None
+    with pytest.raises(ValueError, match="overhang_check"):
+        tv.point_scalars(view, "overhang")

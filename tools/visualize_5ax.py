@@ -37,7 +37,7 @@ Controls
 Mouse: left-drag rotates, right-drag or scroll zooms, shift+left-drag pans.
 Left / Right arrow: one point back / forward.   , / . : 1 % back / forward.
 Space: play / pause.   Buttons on the left: colour mode and what is shown.
-v: isometric view.   q: quit.
+v: isometric view.   b: view from below.   q: quit.
 """
 
 # No `from __future__ import annotations`: reading G-code imports
@@ -297,6 +297,19 @@ def find_stl(part: str, near: Path) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+#: Where the "below" camera looks from, relative to the part: in front (-y),
+#: to the +x side and underneath, so an overhang's underside faces it.
+BELOW_VIEW_VECTOR = (0.9, -1.0, -0.75)
+
+
+def view_from_below(plotter, render=True):
+    """Look up at the part from underneath, where its overhangs' undersides are."""
+    plotter.view_vector(BELOW_VIEW_VECTOR, viewup=(0.0, 0.0, 1.0))
+    plotter.reset_camera()
+    if render:
+        plotter.render()
+
+
 def load_mesh(stl_path: Path, offset: np.ndarray):
     """The STL in the view's frame, as ``(vertices, faces)``.
 
@@ -507,6 +520,7 @@ class Viewer:
         self._last_tick = None
         self.message = ""
         self._shell = None
+        self._overhang = None
         self._machine = None
         self._profile = None
         self._mode_buttons = {}
@@ -515,6 +529,8 @@ class Viewer:
         self._progress_slider = None
         self._ready = False
         self.overlay = True
+        #: The starting camera: "iso", or "below" (`view_from_below`).
+        self.camera = "iso"
         #: Called after every refresh; the Qt window syncs its controls here.
         self.on_frame = None
         self.plotter = None
@@ -534,13 +550,24 @@ class Viewer:
             self._shell = tv.shell_mask(self.view, samples, width)
         return self._shell
 
+    def overhang(self):
+        """The P2.5 overhang check, point by point (computed once)."""
+        if self._overhang is None:
+            vertices, faces = self.mesh
+            print("Checking the overhangs (effective angle and plastic printed into air)...")
+            self._overhang = tv.overhang_check(
+                self.view, vertices, faces, tv.typical_deposition_width(self.view)
+            )
+        return self._overhang
+
     def scalars(self):
-        if self.mode == "unsupported" and "unsupported" not in self.view._cache:
+        if self.mode in ("unsupported", "overhang") and "unsupported" not in self.view._cache:
             print("Computing unsupported points (P0.8 metric); large parts take a while...")
         shell = self.shell() if self.mode == "shell" else None
+        overhang = self.overhang() if self.mode == "overhang" else None
         if self.mode == "collision":
             compute_collisions(self.view)
-        return tv.point_scalars(self.view, self.mode, shell=shell)
+        return tv.point_scalars(self.view, self.mode, shell=shell, overhang=overhang)
 
     def machine_state(self):
         if self._machine is None:
@@ -694,6 +721,7 @@ class Viewer:
         plotter.add_key_event("comma", lambda: self._step(-max(1, count // 100)))
         plotter.add_key_event("period", lambda: self._step(max(1, count // 100)))
         plotter.add_key_event("space", lambda: self._set_playing(not self.playing))
+        plotter.add_key_event("b", lambda: view_from_below(plotter))
 
     def start_timer(self):
         """Create the playback timer, bound to the on-screen window.
@@ -849,9 +877,10 @@ class Viewer:
     # is removed and re-added between frames, so the colour map, scalar bar
     # and tube shading stay put.
 
-    _DYNAMIC = ("deposit", "unsupported_dots", "travel", "mesh", "nozzle", "bed",
+    _DYNAMIC = ("deposit", "unsupported_dots", "steep_dots", "travel", "mesh", "nozzle", "bed",
                 "bed_outline", "balls", "gantry", "gantry_outline")
-    _ON_BED = ("deposit", "unsupported_dots", "travel", "mesh", "bed", "bed_outline", "balls")
+    _ON_BED = ("deposit", "unsupported_dots", "steep_dots", "travel", "mesh", "bed",
+               "bed_outline", "balls")
 
     def refresh(self, reset_camera=False, rebuild=True, render=True):
         # Sliders fire their callbacks while the controls are being created,
@@ -862,8 +891,11 @@ class Viewer:
             self._rebuild()
         self._update_frame()
         if reset_camera:
-            self.plotter.view_isometric()
-            self.plotter.reset_camera()
+            if self.camera == "below":
+                view_from_below(self.plotter, render=False)
+            else:
+                self.plotter.view_isometric()
+                self.plotter.reset_camera()
         if render:
             self.plotter.render()
         if self.on_frame is not None:
@@ -884,11 +916,17 @@ class Viewer:
             poly.cell_data["value"] = self._scalars[indices]
         return poly, indices
 
-    def _dots_poly(self):
+    def _dots_poly(self, steep=False):
         """Flagged points of the current mode as dots: unsupported deposition,
-        or anything the P4 collision checks found (travel included)."""
+        or anything the P4 collision checks found (travel included). In the
+        overhang check: the points printed into air near an overhang, or with
+        ``steep`` those over the angle limit."""
         view = self.view
-        if self.mode == "collision":
+        if self.mode == "overhang":
+            indices = tv.visible_segments(view, self.end, z_max=self.z_max, deposit=True)
+            code = tv.OVERHANG_STEEP if steep else tv.OVERHANG_INTO_AIR
+            flagged = indices[self.overhang().codes[indices] == code]
+        elif self.mode == "collision":
             indices = np.concatenate([
                 tv.visible_segments(view, self.end, z_max=self.z_max, deposit=kind)
                 for kind in (True, False)])
@@ -938,11 +976,17 @@ class Viewer:
 
         # A few red segments are easy to miss among thousands, so the
         # unsupported or colliding points are also drawn as dots.
-        if self.mode in ("unsupported", "collision"):
+        if self.mode in ("unsupported", "collision", "overhang"):
             self._polys["unsupported_dots"] = self._dots_poly()
             self._actors["unsupported_dots"] = plotter.add_mesh(
                 self._polys["unsupported_dots"], color="#ff3b30", point_size=9,
                 render_points_as_spheres=True, name="unsupported_dots",
+                reset_camera=False, render=False)
+        if self.mode == "overhang":
+            self._polys["steep_dots"] = self._dots_poly(steep=True)
+            self._actors["steep_dots"] = plotter.add_mesh(
+                self._polys["steep_dots"], color="#ff9f1c", point_size=11,
+                render_points_as_spheres=True, name="steep_dots",
                 reset_camera=False, render=False)
 
         if self.show_travel:
@@ -975,7 +1019,7 @@ class Viewer:
             self._status_actor = plotter.add_text("", position="upper_right", font_size=9,
                                                   color=TEXT, name="status")
             plotter.add_text(
-                "Left/Right: 1 point   , / . : 1 %   Space: play/pause   v: iso view   q: quit",
+                "Left/Right: 1 point   , / . : 1 %   Space: play/pause   v: iso view   b: from below   q: quit",
                 position="lower_left", font_size=8, color=TEXT_DIM, name="help")
 
     def _update_frame(self):
@@ -984,6 +1028,8 @@ class Viewer:
         self._polys["deposit"].copy_from(deposit_poly, deep=False)
         if "unsupported_dots" in self._polys:
             self._polys["unsupported_dots"].copy_from(self._dots_poly(), deep=False)
+        if "steep_dots" in self._polys:
+            self._polys["steep_dots"].copy_from(self._dots_poly(steep=True), deep=False)
         if "travel" in self._polys:
             self._polys["travel"].copy_from(self._segments_poly(False)[0], deep=False)
 
@@ -1113,6 +1159,8 @@ class Viewer:
                           "values outside take the end colours.")
         if self.mode == "shell":
             header.append("Shell/infill is a guess from distance to the surface.")
+        if self.mode == "overhang" and view.count:
+            header.extend(self.overhang().summary())
         if self.mode == "unsupported" and view.count:
             share = float(np.mean(tv.unsupported_mask(view)[view.deposit])) * 100.0
             header.append(f"Unsupported: {share:.2f} % of deposition points (P0.8 metric)")
@@ -1195,6 +1243,9 @@ def main(argv=None):
     parser.add_argument("--no-nozzle", action="store_true", help="Do not draw the nozzle cone.")
     parser.add_argument("--machine-view", action="store_true",
                         help="Start in the machine view: nozzle fixed, the bed tilting beneath it.")
+    parser.add_argument("--view", choices=("iso", "below"), default="iso",
+                        help="The starting camera: isometric, or from below (an overhang's "
+                        "underside; the b key, or the Below button).")
     parser.add_argument("--screenshot", help="Render to this PNG and exit, without a window.")
     parser.add_argument("--classic", action="store_true",
                         help="Use the classic pyvista window even if the Qt window is available.")
@@ -1226,6 +1277,7 @@ def main(argv=None):
                     z_max=args.z_max, show_travel=not args.hide_travel,
                     show_nozzle=not args.no_nozzle, machine_view=args.machine_view,
                     notes=notes)
+    viewer.camera = args.view
     if args.screenshot:
         plotter = viewer.build(off_screen=True)
         plotter.screenshot(args.screenshot)

@@ -521,7 +521,7 @@ def closest_points_on_triangles(points: np.ndarray, triangles: np.ndarray) -> tu
     return closest, barycentric
 
 
-def _nearest_within(points: np.ndarray, triangles: np.ndarray, reach: float):
+def nearest_triangle_within(points: np.ndarray, triangles: np.ndarray, reach: float):
     """For each point, its nearest triangle among those within ``reach``.
 
     Returns ``(distance, triangle, barycentric)``: ``inf``, -1 and NaN where no
@@ -691,12 +691,12 @@ def top_surface_quality(
         return result(0, 0, [], 0)
 
     top_index = np.flatnonzero(top)
-    to_top, nearest, barycentric = _nearest_within(points, triangles[top], layer_height)
+    to_top, nearest, barycentric = nearest_triangle_within(points, triangles[top], layer_height)
     in_top_layer = np.flatnonzero(np.isfinite(to_top))
     if len(in_top_layer) == 0:
         return result(0, 0, [], 0)
 
-    to_other, _, _ = _nearest_within(points[in_top_layer], triangles[~top], layer_height + margin)
+    to_other, _, _ = nearest_triangle_within(points[in_top_layer], triangles[~top], layer_height + margin)
     counted = in_top_layer[to_top[in_top_layer] + margin < to_other]
     skipped = len(in_top_layer) - len(counted)
     if len(counted) == 0:

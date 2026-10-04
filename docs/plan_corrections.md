@@ -3037,3 +3037,24 @@ layer thickness yet (owed on the lab machine).
 By the plan's own words P2.5 is now done ("the table is committed and the
 operator is asked to take it to D2"); P2 ends with the first criterion met,
 or a recorded D2 decision.
+
+#### P2-28 The viewer shows P2.5's two problems: an "Overhang check" colour mode and a view from below
+
+*Built 2026-10-04 at the operator's request ("I want to see the issue on the
+GUI").* `tools/visualize_5ax.py` and the Qt window gain a colour mode,
+**Overhang check** (`atom.toolpath_view.overhang_check`), that marks the
+points P2.5 judges: dim grey not near an overhang; green within two bead
+widths of one and fine; **orange** where the effective overhang angle is over
+45 degrees; **red** where the plastic is printed into air (red wins). The
+orange and red points are also drawn as dots, and the notes give the counts
+(worst angle, share printed into air). A camera **Below** (button, `b` key,
+`--view below`) looks up at an overhang's underside. Same definitions as the
+report (metrics version 4); the angle is taken against the nearest overhang
+face, so it can differ slightly from the report's where overhang faces meet.
+On the CPU `ramp60_xs` at 30: worst 46.5 (as its report), 3 orange points at
+the column's corner by the side wall, 14 red along the underside (1.03 %).
+
+Seen in a slice (`ramp50_xs` at 30, y = 10.25 mm), the red points are the
+first bead of a new column of beads: the beads stack in columns about 1.1-1.2
+mm apart there, and where the underside steps outward a new column starts with
+nothing under its first bead closer than the neighbouring column (P2-22).

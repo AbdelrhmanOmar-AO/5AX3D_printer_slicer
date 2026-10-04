@@ -10,12 +10,12 @@ Last updated: 2026-10-04 (the second overhang-aware matrix is in, P2-27).
 > ## ▶ START HERE: P2 handover, 2026-10-01 (evening)
 >
 > **Branch `claude/brave-ramanujan-7xolkm`** (`main` merged into it on
-> 2026-10-01, so a pull request from it is clean). 1073 unit tests pass
+> 2026-10-01, so a pull request from it is clean). 1077 unit tests pass
 > (`PYTHONPATH=src python -m pytest -q`, 1.5-5 min; `pip install pytest
 > numpy scipy trimesh taichi tqdm pyvista pillow` in a fresh container). The
 > golden test passed on the laptop on 2026-10-01 after every vendored edit
 > (`a042fbc`); nothing vendored has changed since. Details: section 0d below,
-> `plan_corrections.md` 7c (P2-1 to P2-27), `docs/orientation_field.md`
+> `plan_corrections.md` 7c (P2-1 to P2-28), `docs/orientation_field.md`
 > section 7.
 >
 > **How to work with the operator:** an undergraduate project; the operator is
@@ -85,7 +85,7 @@ Last updated: 2026-10-04 (the second overhang-aware matrix is in, P2-27).
 > atoms if wanted). **Tools added this session:** `tools/overhang_where.py`
 > (where a part's worst points are), `tools/unsupported_where.py` (why points
 > near an overhang are unsupported), `tools/reachability_map.py` (the P2.3
-> map), `experiment/pipeline_like_run.py` (the pipeline on the CPU without
+> map), the viewer's **Overhang check** mode and **Below** camera (P2-28), `experiment/pipeline_like_run.py` (the pipeline on the CPU without
 > Blender; stops after `order_atoms`, then run `tools/smooth_toolpath_point.py
 > <in> <out> 8` to get the toolpath the report measures), and
 > `experiment/experiment_orientation_field_ramp.py` (the field on an exact

@@ -394,9 +394,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             ("Top", "view_xy", "Look down the Z axis"),
             ("Front", "view_xz", "Look along the Y axis"),
             ("Side", "view_yz", "Look along the X axis"),
+            ("Below", "below", "Look up from underneath, at the overhangs' undersides"),
         ):
             button = QtWidgets.QPushButton(text)
-            # Let the four share the row rather than set the panel's width.
+            # Let the buttons share the row rather than set the panel's width.
             button.setSizePolicy(QtWidgets.QSizePolicy.Policy.Ignored,
                                  QtWidgets.QSizePolicy.Policy.Fixed)
             button.setToolTip(tip)
@@ -539,6 +540,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.viewer.set_z_max(z + (1e-6 if value == 1000 else 0.0))
 
     def _camera(self, method):
+        if method == "below":
+            vt.view_from_below(self.plotter)
+            return
         getattr(self.plotter, method)()
         self.plotter.reset_camera()
         self.plotter.render()
