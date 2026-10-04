@@ -46,6 +46,11 @@ Last updated: 2026-10-04 (the second overhang-aware matrix is in, P2-27).
 >    (`2150258`); P2-27 has the results and the criteria table. All P2.5
 >    criteria are met except the central one (6 of 16 inside the bound pass;
 >    10 fail narrowly). By the plan, P2.5 is done and goes to the team for D2.
+> 1b. **D2 summary for the team** (written 2026-10-04 at the operator's
+>    request, a shared doc: "P2.5 results for the D2 decision",
+>    https://claude.ai/code/artifact/655b574a-d51b-486b-bca0-43818295de34).
+>    The operator takes it to the team; no slicer changes until D2 is decided
+>    (the operator's choice).
 > 2. **Review with the operator** (P2-27): printable stock 4, overhang-aware
 >    6 of 48; of the 16 runs inside the tilt bound, 6 pass, 10 fail narrowly
 >    (edge points 45.3-48.3; unsupported deposition 0.9-4.5 %).
