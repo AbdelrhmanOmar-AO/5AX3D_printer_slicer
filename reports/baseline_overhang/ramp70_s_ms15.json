@@ -46,7 +46,60 @@
         "max_tilt_used_deg": 9.680584205009975,
         "skipped_samples": 876
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 5145,
+      "on_target_count": 5145,
+      "mean_deviation_deg": 0.08980105226239586,
+      "max_deviation_deg": 0.7763210619718792,
+      "skipped_samples": 288,
+      "top_max_angle_deg": 15.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 1.3845755491961924,
+      "max_at_mm": [
+        35.64425696963559,
+        2.5249214010341974,
+        8.355258774864225
+      ],
+      "fraction_over_limit": 0.0,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 105428
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 153467,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 100058,
+      "thin": 10,
+      "thick": 953,
+      "fraction_thin": 9.994203362050011e-05,
+      "fraction_thick": 0.00952447580403366,
+      "nothing_below": 3466,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.4504314177126335,
+      "p1_mm": 0.41977995160413833,
+      "p99_mm": 0.5899461347202212,
+      "near_overhangs": {
+        "judged": 2384,
+        "thin": 0,
+        "thick": 22,
+        "fraction_thin": 0.0,
+        "fraction_thick": 0.009228187919463088,
+        "nothing_below": 826
+      }
+    }
   },
   "verdict": {
     "printable": false,
@@ -88,9 +141,9 @@
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "5f1fe9d626a881f296f4d3663824f4340d5e4de0",
       "code_modified": false,
-      "utc": "2026-10-01T10:33:58+00:00",
+      "utc": "2026-10-04T11:35:57+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,

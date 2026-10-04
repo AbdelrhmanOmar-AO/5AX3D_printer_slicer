@@ -46,7 +46,60 @@
         "max_tilt_used_deg": 10.205249454972744,
         "skipped_samples": 927
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 1029,
+      "on_target_count": 1029,
+      "mean_deviation_deg": 0.20546320465553128,
+      "max_deviation_deg": 0.6280729799756527,
+      "skipped_samples": 27,
+      "top_max_angle_deg": 15.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 2.8612471824717267,
+      "max_at_mm": [
+        21.069730758666992,
+        1.4750299453735352,
+        4.993730545043945
+      ],
+      "fraction_over_limit": 0.0,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 26191
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 39436,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 24564,
+      "thin": 1,
+      "thick": 289,
+      "fraction_thin": 4.0709982087607885e-05,
+      "fraction_thick": 0.011765184823318679,
+      "nothing_below": 947,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.452945288802616,
+      "p1_mm": 0.4165744928790889,
+      "p99_mm": 0.8833936780743107,
+      "near_overhangs": {
+        "judged": 1005,
+        "thin": 0,
+        "thick": 12,
+        "fraction_thin": 0.0,
+        "fraction_thick": 0.011940298507462687,
+        "nothing_below": 310
+      }
+    }
   },
   "verdict": {
     "printable": false,
@@ -88,9 +141,9 @@
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "5f1fe9d626a881f296f4d3663824f4340d5e4de0",
       "code_modified": false,
-      "utc": "2026-10-01T10:34:56+00:00",
+      "utc": "2026-10-04T11:37:08+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 16,

@@ -46,7 +46,60 @@
         "max_tilt_used_deg": 13.044514696717428,
         "skipped_samples": 1234
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 5168,
+      "on_target_count": 5168,
+      "mean_deviation_deg": 0.14797690512231057,
+      "max_deviation_deg": 1.8576210627203151,
+      "skipped_samples": 288,
+      "top_max_angle_deg": 30.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 3.997614638667024,
+      "max_at_mm": [
+        34.46073913574219,
+        20.27813720703125,
+        8.733341217041016
+      ],
+      "fraction_over_limit": 3.7276920926331484e-05,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 107305
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 159401,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 101832,
+      "thin": 5,
+      "thick": 1083,
+      "fraction_thin": 4.910047922067719e-05,
+      "fraction_thick": 0.01063516379919868,
+      "nothing_below": 3561,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.45019104140741256,
+      "p1_mm": 0.4187670834008715,
+      "p99_mm": 0.8743576660806066,
+      "near_overhangs": {
+        "judged": 2362,
+        "thin": 0,
+        "thick": 16,
+        "fraction_thin": 0.0,
+        "fraction_thick": 0.006773920406435224,
+        "nothing_below": 865
+      }
+    }
   },
   "verdict": {
     "printable": false,
@@ -88,9 +141,9 @@
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "5f1fe9d626a881f296f4d3663824f4340d5e4de0",
       "code_modified": false,
-      "utc": "2026-10-01T10:34:40+00:00",
+      "utc": "2026-10-04T11:36:47+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,

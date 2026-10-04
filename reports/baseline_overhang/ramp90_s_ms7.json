@@ -46,7 +46,60 @@
         "max_tilt_used_deg": 0.6946433653603121,
         "skipped_samples": 1374
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 5166,
+      "on_target_count": 5166,
+      "mean_deviation_deg": 0.05187364190591499,
+      "max_deviation_deg": 0.6555128914400831,
+      "skipped_samples": 295,
+      "top_max_angle_deg": 7.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 0.4912944540186641,
+      "max_at_mm": [
+        0.6665390729904175,
+        1.6036126613616943,
+        29.988265991210938
+      ],
+      "fraction_over_limit": 0.0,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 109423
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 156198,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 104048,
+      "thin": 0,
+      "thick": 920,
+      "fraction_thin": 0.0,
+      "fraction_thick": 0.008842072889435644,
+      "nothing_below": 3475,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.4640045166015625,
+      "p1_mm": 0.42184634943674604,
+      "p99_mm": 0.4646455111938944,
+      "near_overhangs": {
+        "judged": 2328,
+        "thin": 0,
+        "thick": 10,
+        "fraction_thin": 0.0,
+        "fraction_thick": 0.00429553264604811,
+        "nothing_below": 832
+      }
+    }
   },
   "verdict": {
     "printable": false,
@@ -88,9 +141,9 @@
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "5f1fe9d626a881f296f4d3663824f4340d5e4de0",
       "code_modified": false,
-      "utc": "2026-10-01T10:35:18+00:00",
+      "utc": "2026-10-04T11:37:38+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,

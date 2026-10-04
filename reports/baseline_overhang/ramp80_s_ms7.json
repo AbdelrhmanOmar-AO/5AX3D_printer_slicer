@@ -46,7 +46,60 @@
         "max_tilt_used_deg": 2.999896136541166,
         "skipped_samples": 935
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 5156,
+      "on_target_count": 5156,
+      "mean_deviation_deg": 0.054299003291230864,
+      "max_deviation_deg": 0.6555128914400831,
+      "skipped_samples": 291,
+      "top_max_angle_deg": 7.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 0.5055644092025355,
+      "max_at_mm": [
+        48.88735672374014,
+        0.6612898413805564,
+        30.005272781164408
+      ],
+      "fraction_over_limit": 0.0,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 107527
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 158159,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 102143,
+      "thin": 2,
+      "thick": 911,
+      "fraction_thin": 1.958039219525567e-05,
+      "fraction_thick": 0.008918868644938958,
+      "nothing_below": 3482,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.4553690389432211,
+      "p1_mm": 0.4204866986582244,
+      "p99_mm": 0.46880032317366277,
+      "near_overhangs": {
+        "judged": 2473,
+        "thin": 0,
+        "thick": 22,
+        "fraction_thin": 0.0,
+        "fraction_thick": 0.008896077638495753,
+        "nothing_below": 822
+      }
+    }
   },
   "verdict": {
     "printable": false,
@@ -88,9 +141,9 @@
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "5f1fe9d626a881f296f4d3663824f4340d5e4de0",
       "code_modified": false,
-      "utc": "2026-10-01T10:34:48+00:00",
+      "utc": "2026-10-04T11:36:58+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,

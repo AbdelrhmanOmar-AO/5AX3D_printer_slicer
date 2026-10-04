@@ -46,7 +46,60 @@
         "max_tilt_used_deg": 0.0,
         "skipped_samples": 569
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 985,
+      "on_target_count": 985,
+      "mean_deviation_deg": 0.11912922113153966,
+      "max_deviation_deg": 0.6299394892487407,
+      "skipped_samples": 3,
+      "top_max_angle_deg": 15.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 0.3602553320735664,
+      "max_at_mm": [
+        0.7335651023064378,
+        1.1856020998256618,
+        18.007022857666016
+      ],
+      "fraction_over_limit": 0.0,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 24766
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 35846,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 23203,
+      "thin": 0,
+      "thick": 279,
+      "fraction_thin": 0.0,
+      "fraction_thick": 0.012024307201654958,
+      "nothing_below": 884,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.4640385298763115,
+      "p1_mm": 0.4216664694744337,
+      "p99_mm": 0.8859367179870605,
+      "near_overhangs": {
+        "judged": 1248,
+        "thin": 0,
+        "thick": 12,
+        "fraction_thin": 0.0,
+        "fraction_thick": 0.009615384615384616,
+        "nothing_below": 268
+      }
+    }
   },
   "verdict": {
     "printable": false,
@@ -88,9 +141,9 @@
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "5f1fe9d626a881f296f4d3663824f4340d5e4de0",
       "code_modified": false,
-      "utc": "2026-10-01T10:33:16+00:00",
+      "utc": "2026-10-04T11:35:07+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 16,

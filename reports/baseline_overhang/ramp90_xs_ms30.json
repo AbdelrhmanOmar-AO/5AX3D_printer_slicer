@@ -46,7 +46,60 @@
         "max_tilt_used_deg": 6.5023417973994055,
         "skipped_samples": 932
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 991,
+      "on_target_count": 991,
+      "mean_deviation_deg": 0.2937097498130869,
+      "max_deviation_deg": 1.9443059816846695,
+      "skipped_samples": 0,
+      "top_max_angle_deg": 30.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 3.78879321938663,
+      "max_at_mm": [
+        19.421077885936278,
+        4.115339699437511,
+        6.479964193329088
+      ],
+      "fraction_over_limit": 0.000937875150060024,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 26656
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 39819,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 25063,
+      "thin": 2,
+      "thick": 345,
+      "fraction_thin": 7.979890675497746e-05,
+      "fraction_thick": 0.013765311415233612,
+      "nothing_below": 914,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.45944522401210053,
+      "p1_mm": 0.4188448369305427,
+      "p99_mm": 0.8855700041695747,
+      "near_overhangs": {
+        "judged": 1082,
+        "thin": 0,
+        "thick": 24,
+        "fraction_thin": 0.0,
+        "fraction_thick": 0.022181146025878003,
+        "nothing_below": 300
+      }
+    }
   },
   "verdict": {
     "printable": false,
@@ -88,9 +141,9 @@
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "5f1fe9d626a881f296f4d3663824f4340d5e4de0",
       "code_modified": false,
-      "utc": "2026-10-01T10:35:29+00:00",
+      "utc": "2026-10-04T11:37:52+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,

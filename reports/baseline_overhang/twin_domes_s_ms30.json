@@ -35,7 +35,60 @@
     "unsupported_fraction_overall": 0.0031367920865878847,
     "unsupported_fraction_near_overhangs": NaN,
     "deposition_points_near_overhangs": 0,
-    "surfaces": []
+    "surfaces": [],
+    "top_surface": {
+      "fraction_on_target": 0.6152450090744102,
+      "sample_count": 2204,
+      "on_target_count": 1356,
+      "mean_deviation_deg": 2.2345253277082655,
+      "max_deviation_deg": 9.827693673127376,
+      "skipped_samples": 535,
+      "top_max_angle_deg": 30.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 8.261281324447573,
+      "max_at_mm": [
+        41.77425765991211,
+        12.16868782043457,
+        19.886112213134766
+      ],
+      "fraction_over_limit": 0.0375017469757908,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 64397
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 104607,
+      "unreachable_points": 0,
+      "platform_mm": 1.7999999523162842,
+      "lift_mm": 1.3672943115234375,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 59562,
+      "thin": 8,
+      "thick": 639,
+      "fraction_thin": 0.00013431382425036097,
+      "fraction_thick": 0.010728316711997582,
+      "nothing_below": 2104,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.4489269379350761,
+      "p1_mm": 0.4030606137687647,
+      "p99_mm": 0.872834610556541,
+      "near_overhangs": {
+        "judged": 0,
+        "thin": 0,
+        "thick": 0,
+        "fraction_thin": NaN,
+        "fraction_thick": NaN,
+        "nothing_below": 0
+      }
+    }
   },
   "verdict": {
     "printable": false,
@@ -77,9 +130,9 @@
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "5f1fe9d626a881f296f4d3663824f4340d5e4de0",
       "code_modified": false,
-      "utc": "2026-10-01T10:36:04+00:00",
+      "utc": "2026-10-04T11:38:39+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,
