@@ -2946,3 +2946,58 @@ feedback to P2.4 is not needed there.
   scored from synthetic toolpaths with all the new numbers: no errors, at
   most 2.5 s a run. `--reanalyse` on the lab's 96 reports should take a few
   minutes.
+
+#### P2-27 P2.5's second overhang-aware matrix (lab machine, 2026-10-04, `e3f3e4f`)
+
+`run_matrix_parallel.py --sizes xs s --workers 8 --overhang-aware`, 3:40:35,
+**48 of 48 completed** (the first matrix: 44). Stock and overhang-aware in one
+provenance group (cad-p07-2065-9, stock mix, Taichi 1.7.4, `reference`,
+metrics version 4). `--reanalyse` was not run after it, so the 48 stock
+reports do not have top-surface quality, the tilt rate, reach and platform or
+layer thickness yet (owed on the lab machine).
+
+* **The flat undersides complete** at 30 (`ramp90`, `tshape`, both sizes; all
+  four failed in `order_atoms` in the first matrix): worst 62.1-65.1, mean
+  60.2-60.3 against P2.1's bound of 60, so out of range and reported so.
+* **Printable: stock 4, overhang-aware 6 of 48** (unchanged from the first
+  matrix): `ramp45` at every budget, both sizes. At 30 stock fails it (51°,
+  2.7-2.9 %) and overhang-aware passes (43.5°, 0.2-0.5 %): P2.5's minimum bar.
+* **The edge fixes (P2-19, P2-20) lowered the worst points**, worst
+  effective angle first matrix -> second: `ramp60_s` at 30 48.7 -> 45.7,
+  `ramp60_s` at 15 50.5 -> 46.3, `ramp60_xs` at 30 46.4 -> 45.4, `ramp70_xs`
+  at 30 50.0 -> 48.1, the flat undersides at 7 and 15 89.5 -> 83.7 (now the
+  geometric angle minus the budget). Not everywhere: `ramp80` at 7 and 15
+  rose by 2.6-4.8 (73.5 -> 76.1, 66.3 -> 69.6 on `xs`), and `ramp70_s` at 30
+  47.2 -> 48.3.
+* **Inside the tilt bound** (`theta_geo <= 45 + budget - 2`: `ramp45` and
+  `ramp50` at every budget, `ramp60` and `ramp70` at 30; 16 runs), 6 pass
+  and 10 fail, all narrowly: `ramp60_s` at 30 on the angle alone (45.7,
+  unsupported 0.9 %); `ramp60_xs` at 30 on both (45.4, 1.1 %); `ramp50_s`
+  on both (45.3, 1.1-1.3 %); `ramp50_xs` on unsupported deposition alone
+  (44.5, 2.3-4.5 %, worse than the first matrix's 1.6-2.1); `ramp70` at 30
+  on both (48.1-48.3, 1.1-2.0 %). The worst points are the edge residuals
+  (handoff, known residuals); the unsupported share is P2-22's full-width
+  bead jumps.
+* **The relation flips**: where the budget falls short, the mean effective
+  angle is the geometric angle minus the budget (`ramp60` at 7: 53.0;
+  `ramp70` at 15: 55.0; `ramp80` at 30: 50.8-51.3; flat undersides at 30:
+  60.2-60.3). Fit over the 36 overhang-aware ramp runs using more than 2
+  degrees of tilt and not horizontal, predicted `theta_geo - tilt_used`
+  (each surface's largest tilt): r = 0.986 against the mean angle (mean
+  absolute deviation 1.5), 0.969 against the worst (3.8). Stock's 0.992 was
+  P0.8's 18 runs under metrics version 2, so not strictly the same
+  measurement; the reports carry each surface's largest tilt, not its
+  typical one, which loosens this fit.
+* **Reach and platform** (P2-26): no point out of reach in any run (P2.5's
+  "no new IK failures": met). Platforms only at 30 on the steep parts:
+  `ramp70_xs` 6.3 mm, `ramp80` 38.7-46.8 mm, the flat undersides 33.7-47.2
+  mm; `ramp45` to `ramp60` need none at any budget.
+* **Top-surface quality** (overhang-aware only, until stock is re-scored):
+  the ramps and T-shape 97-100 % (T-shape `xs` at 30: 90 %); `twin_domes`
+  falls with the budget, `xs` 98 / 57 / 28 % and `s` 96 / 84 / 61 % at 7 /
+  15 / 30, because a larger `max_slope` makes more of the domes count as top
+  surface. Whether that is worse than stock is the criterion, and needs the
+  stock numbers.
+* **Tilt rate**: 1 degree per mm on `ramp45`, rising with the slope and the
+  budget to 79-85 on `ramp80` at 30. **Layer thickness**: 0.9-1.7 % thick
+  (beads over a one-layer gap), `tshape_xs` at 30 2.4 %.

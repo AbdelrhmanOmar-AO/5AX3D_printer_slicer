@@ -5,7 +5,7 @@ with no prior conversation.
 
 **Keep this file updated as the work progresses.**
 
-Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-lab tasks).
+Last updated: 2026-10-04 (the second overhang-aware matrix is in, P2-27).
 
 > ## ▶ START HERE: P2 handover, 2026-10-01 (evening)
 >
@@ -15,7 +15,7 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 > numpy scipy trimesh taichi tqdm pyvista pillow` in a fresh container). The
 > golden test passed on the laptop on 2026-10-01 after every vendored edit
 > (`a042fbc`); nothing vendored has changed since. Details: section 0d below,
-> `plan_corrections.md` 7c (P2-1 to P2-26), `docs/orientation_field.md`
+> `plan_corrections.md` 7c (P2-1 to P2-27), `docs/orientation_field.md`
 > section 7.
 >
 > **How to work with the operator:** an undergraduate project; the operator is
@@ -35,37 +35,32 @@ Last updated: 2026-10-01 evening (the P2 session's handover, after the four no-l
 > | P2.4 ramp-in | Built (too little room: steepen, keep the tilt). The plan's pipeline test is written (P2-24): every atom in the first 0.5 mm of overhang at t - 2 or more; **passes on the laptop**, 15.7 at the lowest |
 > | Edges + flat overhangs (P2-19, P2-20) | Built: edge cells take the overhang core's lean; flat undersides lean outward. `ramp90_xs` (laptop) and `tshape_xs` (CPU, P2-21) at 30 no longer deadlock |
 > | Metric | **Version 4** (points whose nearest surface is the overhang), P2-17. All 92 committed reports are v4 |
-> | P2.5 evaluation | Runner and side-by-side tables built, now with **top-surface quality, the tilt rate** (P2-21), **reach and platform** (P2-26) and **layer thickness** (P3.2, P2-25), all from the toolpath, so `--reanalyse` adds them. A run archives its toolpath before scoring it (P2-26). First lab matrix (old code): printable stock 4, overhang-aware 6 of 44. **Re-run owed on the lab machine** |
+> | P2.5 evaluation | Tables built with top-surface quality, tilt rate (P2-21), reach and platform (P2-26), layer thickness (P2-25). **Second lab matrix done** (2026-10-04, P2-27): 48 of 48; printable stock 4, overhang-aware 6; inside the bound 6 of 16 pass, 10 fail narrowly. **`--reanalyse` owed on the lab machine** for the stock runs' new numbers |
 > | Unsupported deposition near overhangs | **Cause found** (P2-22): the outermost bead steps a whole width every few layers (stock: just inside the support cone; overhang-aware: often just outside), and the support test checks points, not bead lines. **Left as is for now** (operator); revisit with Sunday's table, below |
 > | P2.3 reachability map | **Built, map only** (P2-23, operator): `atom.reachability`, `tools/reachability_map.py`, on `reference`; not used by the field until the real machine's geometry exists |
 > | P2.6 keys | Built with P2.2/P2.4; `use_reachability_map` waits (operator); `overhang_priority` not needed (P2-12) |
 >
 > **Next, in order:**
 >
-> 1. **Lab machine, Sunday 2026-10-04** (the operator has no access before;
->    a reminder fires in the P2 session at 08:00 Cairo): `git pull`, then
->    `python tools/run_matrix_parallel.py --sizes xs s --workers 8
->    --overhang-aware --dry-run`, then the same without `--dry-run` (no
->    `--resume`: all 48 overhang-aware runs are redone; about 3.5-4 h), then
->    **`python tools/overhang_report.py --reanalyse`** (a few minutes: gives
->    the 48 stock runs the new numbers, and rewrites the summary), then commit
->    and push `reports/baseline_overhang`, `reports/baseline_overhang.md` and
->    `reports/matrix_progress.csv`. Review the new table with the operator,
->    with P2-22 in mind for the unsupported column.
-> 2. **Laptop housekeeping, before its next `git pull`:** `Remove-Item
->    reports\baseline_overhang\ramp90_xs_ms30_aware.json` and `git restore
->    reports/matrix_progress.csv` (a laptop run left them; the lab makes the
->    official ones).
-> 3. **P2-22, after Sunday's table:** the operator chose (2026-10-01) to leave
->    the metric and the slicer as they are for now, and to decide with the
->    new table in hand. Then ask again (one question): change the support test
->    to check bead lines rather than points (metrics version 5, a metric
->    change that moves stock a little too; on the CPU it halves `ramp60_xs`'s
->    share past the cone), work on the full-width jumps in the slicer, or
->    keep both.
-> 4. **Merge:** keep everything on this branch until the re-run matrix is in
->    and reviewed, then open one pull request to `main` (the operator asked to
->    be told; this is the recommendation they were given).
+> 1. **Lab machine: `--reanalyse` is owed.** The second overhang-aware matrix
+>    ran on 2026-10-04 (P2-27: 48 of 48, `007685f`), but `python
+>    tools/overhang_report.py --reanalyse` was not run after it, so the 48
+>    stock reports lack the four new numbers (top-surface quality, tilt rate,
+>    reach and platform, layer thickness) and the top-surface criterion
+>    (overhang-aware >= stock - 5 points) cannot be judged. On the lab
+>    machine: `git pull`, `python tools/overhang_report.py --reanalyse` (a
+>    few minutes), then commit and push `reports/baseline_overhang` and
+>    `reports/baseline_overhang.md`.
+> 2. **Review with the operator** (P2-27): printable stock 4, overhang-aware
+>    6 of 48; of the 16 runs inside the tilt bound, 6 pass, 10 fail narrowly
+>    (edge points 45.3-48.3; unsupported deposition 0.9-4.5 %).
+> 3. **Decisions, one question at a time:** P2-22 (the unsupported deposition:
+>    a bead-line support test as metrics version 5, work on the full-width
+>    jumps in the slicer, or leave both); the side-wall edges; then D2, which
+>    closes P2 if the criteria are not met.
+> 4. **Laptop housekeeping** is done (2026-10-01).
+> 5. **Merge:** after the review, one pull request from this branch to
+>    `main` (the operator asked to be told).
 >
 > **Done in the 2026-10-01 evening session** (the operator asked for all of
 > the four no-lab tasks): (a) `tshape_xs` at 30 completes (P2-21); (b) the
