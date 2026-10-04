@@ -35,22 +35,17 @@ Last updated: 2026-10-04 (the second overhang-aware matrix is in, P2-27).
 > | P2.4 ramp-in | Built (too little room: steepen, keep the tilt). The plan's pipeline test is written (P2-24): every atom in the first 0.5 mm of overhang at t - 2 or more; **passes on the laptop**, 15.7 at the lowest |
 > | Edges + flat overhangs (P2-19, P2-20) | Built: edge cells take the overhang core's lean; flat undersides lean outward. `ramp90_xs` (laptop) and `tshape_xs` (CPU, P2-21) at 30 no longer deadlock |
 > | Metric | **Version 4** (points whose nearest surface is the overhang), P2-17. All 92 committed reports are v4 |
-> | P2.5 evaluation | Tables built with top-surface quality, tilt rate (P2-21), reach and platform (P2-26), layer thickness (P2-25). **Second lab matrix done** (2026-10-04, P2-27): 48 of 48; printable stock 4, overhang-aware 6; inside the bound 6 of 16 pass, 10 fail narrowly. **`--reanalyse` owed on the lab machine** for the stock runs' new numbers |
+> | P2.5 evaluation | Tables built with top-surface quality, tilt rate (P2-21), reach and platform (P2-26), layer thickness (P2-25). **Second lab matrix done and re-scored** (2026-10-04, P2-27): 48 of 48; printable stock 4, overhang-aware 6; inside the bound 6 of 16 pass, 10 fail narrowly; every other P2.5 criterion met. **Goes to D2** |
 > | Unsupported deposition near overhangs | **Cause found** (P2-22): the outermost bead steps a whole width every few layers (stock: just inside the support cone; overhang-aware: often just outside), and the support test checks points, not bead lines. **Left as is for now** (operator); revisit with Sunday's table, below |
 > | P2.3 reachability map | **Built, map only** (P2-23, operator): `atom.reachability`, `tools/reachability_map.py`, on `reference`; not used by the field until the real machine's geometry exists |
 > | P2.6 keys | Built with P2.2/P2.4; `use_reachability_map` waits (operator); `overhang_priority` not needed (P2-12) |
 >
 > **Next, in order:**
 >
-> 1. **Lab machine: `--reanalyse` is owed.** The second overhang-aware matrix
->    ran on 2026-10-04 (P2-27: 48 of 48, `007685f`), but `python
->    tools/overhang_report.py --reanalyse` was not run after it, so the 48
->    stock reports lack the four new numbers (top-surface quality, tilt rate,
->    reach and platform, layer thickness) and the top-surface criterion
->    (overhang-aware >= stock - 5 points) cannot be judged. On the lab
->    machine: `git pull`, `python tools/overhang_report.py --reanalyse` (a
->    few minutes), then commit and push `reports/baseline_overhang` and
->    `reports/baseline_overhang.md`.
+> 1. **Done 2026-10-04:** the second matrix (`007685f`) and the re-score
+>    (`2150258`); P2-27 has the results and the criteria table. All P2.5
+>    criteria are met except the central one (6 of 16 inside the bound pass;
+>    10 fail narrowly). By the plan, P2.5 is done and goes to the team for D2.
 > 2. **Review with the operator** (P2-27): printable stock 4, overhang-aware
 >    6 of 48; of the 16 runs inside the tilt bound, 6 pass, 10 fail narrowly
 >    (edge points 45.3-48.3; unsupported deposition 0.9-4.5 %).

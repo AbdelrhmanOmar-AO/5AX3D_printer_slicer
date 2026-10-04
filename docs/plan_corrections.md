@@ -3001,3 +3001,39 @@ layer thickness yet (owed on the lab machine).
 * **Tilt rate**: 1 degree per mm on `ramp45`, rising with the slope and the
   budget to 79-85 on `ramp80` at 30. **Layer thickness**: 0.9-1.7 % thick
   (beads over a one-layer gap), `tshape_xs` at 30 2.4 %.
+
+**Update, 2026-10-04: the lab re-scored all 96 reports (`--reanalyse`,
+`2150258`), so stock has the new numbers too:**
+
+* **Top-surface quality: 47 of 48 pairs within 5 points of stock.** The one
+  miss is `tshape_xs` at 30 (100 -> 90.4 %), a part out of range there.
+  `twin_domes` is the same as stock at every budget (`xs` 98.2 -> 98.2, 55.2 ->
+  56.7, 26.7 -> 28.1; `s` 95.6 -> 95.8, 82.7 -> 84.0, 61.5 -> 60.9): its fall
+  with the budget is the measure's (more of the domes count as top surface at
+  a larger `max_slope`), not the overhang-aware field's.
+* **Tilt rate: much higher than stock.** Stock turns at most 17 degrees per
+  mm (mostly 0-8); overhang-aware up to 85 (`ramp80_s` at 30), and
+  `tshape_xs` at 30 turns faster than 3 degrees per mm on 25 % of its
+  printing moves. P2.5 sets no limit; it is gate D3's question.
+* **Platform:** stock needs one at `ramp60` at 30 (9.4 and 10.8 mm, because
+  it tilts away by 30 degrees there), overhang-aware none; overhang-aware
+  needs one on the steep parts at 30 (above). No point out of reach on either
+  side.
+* **Layer thickness:** much the same; thick 0.8-1.5 % stock, 0.9-1.7 %
+  overhang-aware (`tshape_xs` at 30 2.4 %); thin under 0.15 % everywhere.
+
+**P2.5's success criteria on this matrix:**
+
+| Criterion | Result |
+|---|---|
+| Every ramp inside the bound: worst <= 45 and unsupported < 1 % | **Not met**: 6 of 16 (10 narrow failures, above) |
+| Ramps beyond the bound reported out of range, never passed | Met |
+| Top-surface quality >= stock - 5 points | Met on 47 of 48; the miss is out of range |
+| No new IK failures | Met (0 points out of reach) |
+| `twin_domes` not worse than stock on any metric | Met within noise (top surface equal; thick layers +0.1-0.3 points) |
+| `ramp45` passes at every budget, 30 included | Met |
+| The relation flips, fit at least as tight as stock's r = 0.992 | Flips; r = 0.986 (mean angle), not strictly comparable (above) |
+
+By the plan's own words P2.5 is now done ("the table is committed and the
+operator is asked to take it to D2"); P2 ends with the first criterion met,
+or a recorded D2 decision.
