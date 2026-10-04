@@ -20,14 +20,14 @@
     "deposition_count": 15796
   },
   "runtime": {
-    "total_s": 773.7878522998653,
+    "total_s": 772.2195390001871,
     "stages": {
-      "Direction computation": 52.0,
-      "Implicit layer computation": 56.1,
-      "Tangent computation": 45.0,
-      "Atoms alignment": 155.3,
-      "Extracting explicit atoms": 3.2,
-      "Toolpath planner": 278.7
+      "Direction computation": 52.9,
+      "Implicit layer computation": 56.8,
+      "Tangent computation": 45.4,
+      "Atoms alignment": 154.1,
+      "Extracting explicit atoms": 3.1,
+      "Toolpath planner": 277.8
     }
   },
   "metrics": {
@@ -35,7 +35,60 @@
     "unsupported_fraction_overall": 0.0024689794884780957,
     "unsupported_fraction_near_overhangs": NaN,
     "deposition_points_near_overhangs": 0,
-    "surfaces": []
+    "surfaces": [],
+    "top_surface": {
+      "fraction_on_target": 0.28113879003558717,
+      "sample_count": 562,
+      "on_target_count": 158,
+      "mean_deviation_deg": 3.9868855909432175,
+      "max_deviation_deg": 16.719966967835187,
+      "skipped_samples": 173,
+      "top_max_angle_deg": 30.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 16.495425266135733,
+      "max_at_mm": [
+        21.489669126682102,
+        8.04702727548595,
+        11.648461456196367
+      ],
+      "fraction_over_limit": 0.0756520638136237,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 15796
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 27177,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 14288,
+      "thin": 1,
+      "thick": 239,
+      "fraction_thin": 6.998880179171333e-05,
+      "fraction_thick": 0.016727323628219486,
+      "nothing_below": 527,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.4516572083107329,
+      "p1_mm": 0.3937036014735686,
+      "p99_mm": 0.8942967215184275,
+      "near_overhangs": {
+        "judged": 0,
+        "thin": 0,
+        "thick": 0,
+        "fraction_thin": NaN,
+        "fraction_thick": NaN,
+        "nothing_below": 0
+      }
+    }
   },
   "verdict": {
     "printable": false,
@@ -71,15 +124,15 @@
       "toolpath_to_gcode": "cuda"
     },
     "machine_profile": "reference",
-    "git_commit": "c22829edb4eb3779e62388a1d95793ae54daddd2",
+    "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
     "code_modified": false,
-    "recorded_utc": "2026-10-01T09:28:33+00:00",
+    "recorded_utc": "2026-10-04T10:40:08+00:00",
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
       "code_modified": false,
-      "utc": "2026-10-01T10:36:17+00:00",
+      "utc": "2026-10-04T10:40:08+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,

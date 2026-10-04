@@ -16,42 +16,95 @@
     ]
   },
   "toolpath": {
-    "point_count": 28429,
-    "deposition_count": 20064
+    "point_count": 31170,
+    "deposition_count": 19649
   },
   "runtime": {
-    "total_s": 446.00064910016954,
+    "total_s": 809.0563616999425,
     "stages": {
-      "Direction computation": 9.4,
-      "Implicit layer computation": 11.1,
-      "Tangent computation": 16.6,
-      "Atoms alignment": 32.6,
-      "Extracting explicit atoms": 1.0,
-      "Toolpath planner": 303.6
+      "Direction computation": 53.5,
+      "Implicit layer computation": 55.2,
+      "Tangent computation": 44.1,
+      "Atoms alignment": 157.7,
+      "Extracting explicit atoms": 3.2,
+      "Toolpath planner": 308.5
     }
   },
   "metrics": {
     "max_tool_tilt_deg": 15.000000417413018,
-    "unsupported_fraction_overall": 0.034190590111642744,
-    "unsupported_fraction_near_overhangs": 0.20396694214876032,
-    "deposition_points_near_overhangs": 3025,
+    "unsupported_fraction_overall": 0.031350195938724616,
+    "unsupported_fraction_near_overhangs": 0.18853323953570172,
+    "deposition_points_near_overhangs": 2843,
     "surfaces": [
       {
         "geometric_angle_deg": 90.0,
         "area_mm2": 283.5,
         "face_count": 2048,
-        "sample_count": 7489,
-        "max_effective_deg": 88.67145680961123,
-        "mean_effective_deg": 75.06856824128658,
+        "sample_count": 8512,
+        "max_effective_deg": 76.78295301730074,
+        "mean_effective_deg": 75.06577018979127,
         "max_tilt_used_deg": 15.000000417413018,
-        "skipped_samples": 2200
+        "skipped_samples": 998
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 985,
+      "on_target_count": 985,
+      "mean_deviation_deg": 0.512968771901391,
+      "max_deviation_deg": 1.285574790485143,
+      "skipped_samples": 0,
+      "top_max_angle_deg": 15.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 27.69874915784688,
+      "max_at_mm": [
+        11.005788803100586,
+        13.059713363647461,
+        9.527522087097168
+      ],
+      "fraction_over_limit": 0.045651178177006466,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 19649
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 33465,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 18189,
+      "thin": 26,
+      "thick": 285,
+      "fraction_thin": 0.001429435373027654,
+      "fraction_thick": 0.01566881081972621,
+      "nothing_below": 1179,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.45126873118650257,
+      "p1_mm": 0.35037399257673635,
+      "p99_mm": 0.8876196343307968,
+      "near_overhangs": {
+        "judged": 2234,
+        "thin": 20,
+        "thick": 34,
+        "fraction_thin": 0.008952551477170993,
+        "fraction_thick": 0.01521933751119069,
+        "nothing_below": 609
+      }
+    }
   },
   "verdict": {
     "printable": false,
     "assessable": true,
-    "worst_effective_deg": 88.67145680961123,
+    "worst_effective_deg": 76.78295301730074,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
       "max_unsupported_fraction": 0.01,
@@ -82,18 +135,18 @@
       "toolpath_to_gcode": "cuda"
     },
     "machine_profile": "reference",
-    "git_commit": "c22829edb4eb3779e62388a1d95793ae54daddd2",
+    "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
     "code_modified": false,
-    "recorded_utc": "2026-10-01T09:46:53+00:00",
+    "recorded_utc": "2026-10-04T07:32:48+00:00",
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
       "code_modified": false,
-      "utc": "2026-10-01T10:35:53+00:00",
+      "utc": "2026-10-04T07:32:48+00:00",
       "metrics_version": 4
     },
-    "parallel_workers": 8,
+    "parallel_workers": 1,
     "taichi_cpu_threads": null
   }
 }

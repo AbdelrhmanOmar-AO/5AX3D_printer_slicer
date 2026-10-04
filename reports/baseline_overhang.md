@@ -41,24 +41,24 @@ Stock and overhang-aware runs share one provenance group: machine cad-p07-2065-9
 
 | Part | max_slope 7° | max_slope 15° | max_slope 30° |
 |---|---|---|---|
-| `ramp45_s` | ✅ 45° / 0.1% → ✅ 44° / 0.0% | ✅ 45° / 0.1% → ✅ 44° / 0.0% | ❌ 51° / 2.9% → ✅ 44° / 0.1% |
-| `ramp45_xs` | ✅ 45° / 0.2% → ✅ 44° / 0.1% | ✅ 45° / 0.0% → ✅ 44° / 0.1% | ❌ 51° / 2.7% → ✅ 44° / 0.2% |
-| `ramp50_s` | ❌ 50° / 4.3% → ❌ 45° / 1.6% | ❌ 50° / 4.4% → ❌ 45° / 2.0% | ❌ 67° / 8.5% → ❌ 45° / 1.8% |
-| `ramp50_xs` | ❌ 50° / 3.3% → ❌ 45° / 2.1% | ❌ 50° / 2.9% → ❌ 45° / 1.6% | ❌ 58° / 4.0% → ❌ 45° / 1.8% |
-| `ramp60_s` | ❌ 60° / 5.2% → ❌ 53° / 2.0% | ❌ 65° / 4.9% → ❌ 51° / 1.4% | ❌ 90° / 26.6% → ❌ 49° / 0.8% |
-| `ramp60_xs` | ❌ 60° / 5.4% → ❌ 54° / 2.4% | ❌ 65° / 7.9% → ❌ 50° / 0.9% | ❌ 89° / 21.2% → ❌ 46° / 1.7% |
-| `ramp70_s` | ❌ 70° / 9.8% → ❌ 64° / 3.5% | ❌ 80° / 17.1% → ❌ 56° / 4.4% | ❌ 90° / 27.2% → ❌ 47° / 0.7% |
-| `ramp70_xs` | ❌ 70° / 8.6% → ❌ 65° / 5.1% | ❌ 78° / 13.2% → ❌ 59° / 1.7% | ❌ 90° / 22.6% → ❌ 50° / 1.3% |
-| `ramp80_s` | ❌ 83° / 17.7% → ❌ 73° / 12.7% | ❌ 90° / 26.1% → ❌ 66° / 12.2% | ❌ 90° / 24.8% → ❌ 58° / 1.5% |
-| `ramp80_xs` | ❌ 84° / 16.8% → ❌ 74° / 11.1% | ❌ 90° / 21.4% → ❌ 66° / 7.0% | ❌ 90° / 21.3% → ❌ 61° / 2.0% |
-| `ramp90_s` | ❌ 90° / 24.9% → ❌ 90° / 23.5% | ❌ 90° / 24.5% → ❌ 89° / 24.0% | — |
-| `ramp90_xs` | ❌ 90° / 19.7% → ❌ 90° / 18.4% | ❌ 90° / 20.4% → ❌ 89° / 18.3% | — |
-| `tshape_s` | ❌ 90° / 24.7% → ❌ 90° / 23.9% | ❌ 90° / 24.4% → ❌ 89° / 23.9% | — |
-| `tshape_xs` | ❌ 90° / 20.9% → ❌ 90° / 21.1% | ❌ 90° / 21.2% → ❌ 89° / 20.4% | — |
+| `ramp45_s` | ✅ 45° / 0.1% → ✅ 43° / 0.2% | ✅ 45° / 0.1% → ✅ 43° / 0.1% | ❌ 51° / 2.9% → ✅ 43° / 0.2% |
+| `ramp45_xs` | ✅ 45° / 0.2% → ✅ 44° / 0.1% | ✅ 45° / 0.0% → ✅ 44° / 0.1% | ❌ 51° / 2.7% → ✅ 44° / 0.5% |
+| `ramp50_s` | ❌ 50° / 4.3% → ❌ 45° / 1.1% | ❌ 50° / 4.4% → ❌ 45° / 1.3% | ❌ 67° / 8.5% → ❌ 45° / 1.3% |
+| `ramp50_xs` | ❌ 50° / 3.3% → ❌ 44° / 3.6% | ❌ 50° / 2.9% → ❌ 44° / 4.5% | ❌ 58° / 4.0% → ❌ 44° / 2.3% |
+| `ramp60_s` | ❌ 60° / 5.2% → ❌ 53° / 2.1% | ❌ 65° / 4.9% → ❌ 46° / 1.5% | ❌ 90° / 26.6% → ❌ 46° / 0.9% |
+| `ramp60_xs` | ❌ 60° / 5.4% → ❌ 53° / 2.1% | ❌ 65° / 7.9% → ❌ 47° / 0.9% | ❌ 89° / 21.2% → ❌ 45° / 1.1% |
+| `ramp70_s` | ❌ 70° / 9.8% → ❌ 64° / 3.6% | ❌ 80° / 17.1% → ❌ 56° / 3.8% | ❌ 90° / 27.2% → ❌ 48° / 1.1% |
+| `ramp70_xs` | ❌ 70° / 8.6% → ❌ 63° / 4.3% | ❌ 78° / 13.2% → ❌ 56° / 2.0% | ❌ 90° / 22.6% → ❌ 48° / 2.0% |
+| `ramp80_s` | ❌ 83° / 17.7% → ❌ 77° / 11.6% | ❌ 90° / 26.1% → ❌ 71° / 11.0% | ❌ 90° / 24.8% → ❌ 58° / 2.4% |
+| `ramp80_xs` | ❌ 84° / 16.8% → ❌ 76° / 12.6% | ❌ 90° / 21.4% → ❌ 70° / 8.4% | ❌ 90° / 21.3% → ❌ 60° / 3.2% |
+| `ramp90_s` | ❌ 90° / 24.9% → ❌ 85° / 23.5% | ❌ 90° / 24.5% → ❌ 78° / 21.2% | ❌ 90° / 25.6% → ❌ 62° / 4.6% |
+| `ramp90_xs` | ❌ 90° / 19.7% → ❌ 84° / 19.5% | ❌ 90° / 20.4% → ❌ 77° / 17.3% | ❌ 90° / 19.7% → ❌ 65° / 4.3% |
+| `tshape_s` | ❌ 90° / 24.7% → ❌ 83° / 23.7% | ❌ 90° / 24.4% → ❌ 78° / 22.8% | ❌ 90° / 24.6% → ❌ 65° / 7.0% |
+| `tshape_xs` | ❌ 90° / 20.9% → ❌ 84° / 20.1% | ❌ 90° / 21.2% → ❌ 77° / 18.9% | ❌ 90° / 21.3% → ❌ 64° / 4.3% |
 | `twin_domes_s` | – no overhang → – no overhang | – no overhang → – no overhang | – no overhang → – no overhang |
 | `twin_domes_xs` | – no overhang → – no overhang | – no overhang → – no overhang | – no overhang → – no overhang |
 
-Printable, over the 44 part and slope pair(s) with both runs: stock 4, overhang-aware 6.
+Printable, over the 48 part and slope pair(s) with both runs: stock 4, overhang-aware 6.
 
 ### Top-surface quality
 
@@ -66,24 +66,24 @@ Each cell is **stock → overhang-aware**: the share of the top layer's depositi
 
 | Part | max_slope 7° | max_slope 15° | max_slope 30° |
 |---|---|---|---|
-| `ramp45_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp45_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp50_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp50_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp60_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp60_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp70_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp70_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp80_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp80_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp90_s` | not scored → not scored | not scored → not scored | — |
-| `ramp90_xs` | not scored → not scored | not scored → not scored | — |
-| `tshape_s` | not scored → not scored | not scored → not scored | — |
-| `tshape_xs` | not scored → not scored | not scored → not scored | — |
-| `twin_domes_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `twin_domes_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp45_s` | not scored → 100% | not scored → 100% | not scored → 100% |
+| `ramp45_xs` | not scored → 100% | not scored → 100% | not scored → 100% |
+| `ramp50_s` | not scored → 100% | not scored → 100% | not scored → 100% |
+| `ramp50_xs` | not scored → 100% | not scored → 100% | not scored → 99% |
+| `ramp60_s` | not scored → 100% | not scored → 100% | not scored → 100% |
+| `ramp60_xs` | not scored → 100% | not scored → 100% | not scored → 97% |
+| `ramp70_s` | not scored → 100% | not scored → 100% | not scored → 100% |
+| `ramp70_xs` | not scored → 100% | not scored → 100% | not scored → 97% |
+| `ramp80_s` | not scored → 100% | not scored → 100% | not scored → 100% |
+| `ramp80_xs` | not scored → 100% | not scored → 100% | not scored → 97% |
+| `ramp90_s` | not scored → 100% | not scored → 100% | not scored → 100% |
+| `ramp90_xs` | not scored → 100% | not scored → 100% | not scored → 97% |
+| `tshape_s` | not scored → 100% | not scored → 100% | not scored → 99% |
+| `tshape_xs` | not scored → 100% | not scored → 100% | not scored → 90% |
+| `twin_domes_s` | not scored → 96% | not scored → 84% | not scored → 61% |
+| `twin_domes_xs` | not scored → 98% | not scored → 57% | not scored → 28% |
 
-Pairs within 5 points of stock or better: 0 of 0. 44 pair(s) not scored yet.
+Pairs within 5 points of stock or better: 0 of 0. 48 pair(s) not scored yet.
 
 ### Tilt rate
 
@@ -91,22 +91,22 @@ Each cell is **stock → overhang-aware**: the largest turn of the tool within a
 
 | Part | max_slope 7° | max_slope 15° | max_slope 30° |
 |---|---|---|---|
-| `ramp45_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp45_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp50_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp50_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp60_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp60_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp70_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp70_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp80_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp80_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp90_s` | not scored → not scored | not scored → not scored | — |
-| `ramp90_xs` | not scored → not scored | not scored → not scored | — |
-| `tshape_s` | not scored → not scored | not scored → not scored | — |
-| `tshape_xs` | not scored → not scored | not scored → not scored | — |
-| `twin_domes_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `twin_domes_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp45_s` | not scored → 1°/mm (0%) | not scored → 1°/mm (0%) | not scored → 1°/mm (0%) |
+| `ramp45_xs` | not scored → 1°/mm (0%) | not scored → 1°/mm (0%) | not scored → 1°/mm (0%) |
+| `ramp50_s` | not scored → 3°/mm (0%) | not scored → 19°/mm (0%) | not scored → 16°/mm (0%) |
+| `ramp50_xs` | not scored → 3°/mm (0%) | not scored → 8°/mm (0%) | not scored → 8°/mm (0%) |
+| `ramp60_s` | not scored → 3°/mm (0%) | not scored → 8°/mm (0%) | not scored → 12°/mm (0%) |
+| `ramp60_xs` | not scored → 4°/mm (0%) | not scored → 16°/mm (0%) | not scored → 12°/mm (0%) |
+| `ramp70_s` | not scored → 2°/mm (0%) | not scored → 5°/mm (0%) | not scored → 15°/mm (0%) |
+| `ramp70_xs` | not scored → 2°/mm (0%) | not scored → 10°/mm (0%) | not scored → 31°/mm (1%) |
+| `ramp80_s` | not scored → 20°/mm (0%) | not scored → 42°/mm (0%) | not scored → 85°/mm (1%) |
+| `ramp80_xs` | not scored → 18°/mm (1%) | not scored → 50°/mm (1%) | not scored → 79°/mm (3%) |
+| `ramp90_s` | not scored → 12°/mm (0%) | not scored → 12°/mm (0%) | not scored → 39°/mm (2%) |
+| `ramp90_xs` | not scored → 13°/mm (0%) | not scored → 23°/mm (2%) | not scored → 35°/mm (7%) |
+| `tshape_s` | not scored → 13°/mm (0%) | not scored → 25°/mm (1%) | not scored → 35°/mm (7%) |
+| `tshape_xs` | not scored → 13°/mm (0%) | not scored → 28°/mm (5%) | not scored → 46°/mm (25%) |
+| `twin_domes_s` | not scored → 2°/mm (0%) | not scored → 5°/mm (0%) | not scored → 8°/mm (3%) |
+| `twin_domes_xs` | not scored → 1°/mm (0%) | not scored → 6°/mm (1%) | not scored → 16°/mm (8%) |
 
 ### Reach and platform
 
@@ -114,22 +114,22 @@ Each cell is **stock → overhang-aware**: the platform `add_platform` prints un
 
 | Part | max_slope 7° | max_slope 15° | max_slope 30° |
 |---|---|---|---|
-| `ramp45_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp45_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp50_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp50_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp60_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp60_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp70_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp70_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp80_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp80_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp90_s` | not scored → not scored | not scored → not scored | — |
-| `ramp90_xs` | not scored → not scored | not scored → not scored | — |
-| `tshape_s` | not scored → not scored | not scored → not scored | — |
-| `tshape_xs` | not scored → not scored | not scored → not scored | — |
-| `twin_domes_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `twin_domes_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp45_s` | not scored → 0 mm | not scored → 0 mm | not scored → 0 mm |
+| `ramp45_xs` | not scored → 0 mm | not scored → 0 mm | not scored → 0 mm |
+| `ramp50_s` | not scored → 0 mm | not scored → 0 mm | not scored → 0 mm |
+| `ramp50_xs` | not scored → 0 mm | not scored → 0 mm | not scored → 0 mm |
+| `ramp60_s` | not scored → 0 mm | not scored → 0 mm | not scored → 0 mm |
+| `ramp60_xs` | not scored → 0 mm | not scored → 0 mm | not scored → 0 mm |
+| `ramp70_s` | not scored → 0 mm | not scored → 0 mm | not scored → 0 mm |
+| `ramp70_xs` | not scored → 0 mm | not scored → 0 mm | not scored → 6 mm |
+| `ramp80_s` | not scored → 0 mm | not scored → 0 mm | not scored → 39 mm |
+| `ramp80_xs` | not scored → 0 mm | not scored → 0 mm | not scored → 47 mm |
+| `ramp90_s` | not scored → 0 mm | not scored → 0 mm | not scored → 41 mm |
+| `ramp90_xs` | not scored → 0 mm | not scored → 0 mm | not scored → 47 mm |
+| `tshape_s` | not scored → 0 mm | not scored → 0 mm | not scored → 34 mm |
+| `tshape_xs` | not scored → 0 mm | not scored → 0 mm | not scored → 43 mm |
+| `twin_domes_s` | not scored → 0 mm | not scored → 0 mm | not scored → 0 mm |
+| `twin_domes_xs` | not scored → 0 mm | not scored → 0 mm | not scored → 0 mm |
 
 Overhang-aware runs with points out of reach: 0.
 
@@ -139,22 +139,22 @@ Each cell is **stock → overhang-aware**: the share of deposition points whose 
 
 | Part | max_slope 7° | max_slope 15° | max_slope 30° |
 |---|---|---|---|
-| `ramp45_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp45_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp50_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp50_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp60_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp60_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp70_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp70_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp80_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp80_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `ramp90_s` | not scored → not scored | not scored → not scored | — |
-| `ramp90_xs` | not scored → not scored | not scored → not scored | — |
-| `tshape_s` | not scored → not scored | not scored → not scored | — |
-| `tshape_xs` | not scored → not scored | not scored → not scored | — |
-| `twin_domes_s` | not scored → not scored | not scored → not scored | not scored → not scored |
-| `twin_domes_xs` | not scored → not scored | not scored → not scored | not scored → not scored |
+| `ramp45_s` | not scored → 0.0% / 0.9% | not scored → 0.0% / 0.9% | not scored → 0.0% / 0.9% |
+| `ramp45_xs` | not scored → 0.0% / 1.2% | not scored → 0.0% / 1.2% | not scored → 0.0% / 1.4% |
+| `ramp50_s` | not scored → 0.0% / 1.0% | not scored → 0.0% / 1.0% | not scored → 0.0% / 1.0% |
+| `ramp50_xs` | not scored → 0.0% / 1.5% | not scored → 0.0% / 1.3% | not scored → 0.0% / 1.4% |
+| `ramp60_s` | not scored → 0.0% / 1.0% | not scored → 0.0% / 1.0% | not scored → 0.0% / 1.0% |
+| `ramp60_xs` | not scored → 0.0% / 1.1% | not scored → 0.0% / 1.4% | not scored → 0.0% / 1.4% |
+| `ramp70_s` | not scored → 0.0% / 1.0% | not scored → 0.0% / 0.9% | not scored → 0.0% / 1.2% |
+| `ramp70_xs` | not scored → 0.0% / 1.1% | not scored → 0.0% / 1.4% | not scored → 0.0% / 1.5% |
+| `ramp80_s` | not scored → 0.0% / 0.9% | not scored → 0.0% / 1.0% | not scored → 0.0% / 1.2% |
+| `ramp80_xs` | not scored → 0.0% / 1.3% | not scored → 0.0% / 1.4% | not scored → 0.1% / 1.7% |
+| `ramp90_s` | not scored → 0.0% / 0.9% | not scored → 0.0% / 1.0% | not scored → 0.0% / 1.2% |
+| `ramp90_xs` | not scored → 0.0% / 1.2% | not scored → 0.0% / 1.4% | not scored → 0.0% / 1.5% |
+| `tshape_s` | not scored → 0.0% / 1.1% | not scored → 0.1% / 1.3% | not scored → 0.1% / 1.7% |
+| `tshape_xs` | not scored → 0.0% / 1.2% | not scored → 0.1% / 1.6% | not scored → 0.1% / 2.4% |
+| `twin_domes_s` | not scored → 0.0% / 0.9% | not scored → 0.0% / 1.1% | not scored → 0.0% / 1.3% |
+| `twin_domes_xs` | not scored → 0.0% / 1.6% | not scored → 0.0% / 1.5% | not scored → 0.0% / 1.7% |
 
 ## Runtime
 

@@ -16,42 +16,95 @@
     ]
   },
   "toolpath": {
-    "point_count": 37790,
-    "deposition_count": 25771
+    "point_count": 37683,
+    "deposition_count": 25692
   },
   "runtime": {
-    "total_s": 559.6209009001032,
+    "total_s": 533.8619551998563,
     "stages": {
-      "Direction computation": 9.5,
-      "Implicit layer computation": 11.0,
-      "Tangent computation": 16.6,
-      "Atoms alignment": 32.0,
+      "Direction computation": 10.4,
+      "Implicit layer computation": 11.1,
+      "Tangent computation": 16.2,
+      "Atoms alignment": 31.8,
       "Extracting explicit atoms": 1.0,
-      "Toolpath planner": 415.7
+      "Toolpath planner": 393.2
     }
   },
   "metrics": {
     "max_tool_tilt_deg": 7.0000000524971275,
-    "unsupported_fraction_overall": 0.005238446315626091,
-    "unsupported_fraction_near_overhangs": 0.05132075471698113,
-    "deposition_points_near_overhangs": 1325,
+    "unsupported_fraction_overall": 0.004787482484820177,
+    "unsupported_fraction_near_overhangs": 0.04344512195121951,
+    "deposition_points_near_overhangs": 1312,
     "surfaces": [
       {
         "geometric_angle_deg": 70.0,
         "area_mm2": 129.29759904189248,
         "face_count": 1024,
-        "sample_count": 3076,
-        "max_effective_deg": 64.56134906413612,
-        "mean_effective_deg": 63.03816790505605,
+        "sample_count": 3070,
+        "max_effective_deg": 63.33167277047893,
+        "mean_effective_deg": 63.022175427875226,
         "max_tilt_used_deg": 7.0000000524971275,
-        "skipped_samples": 639
+        "skipped_samples": 709
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 985,
+      "on_target_count": 985,
+      "mean_deviation_deg": 0.21191522084019057,
+      "max_deviation_deg": 0.6872803147129591,
+      "skipped_samples": 0,
+      "top_max_angle_deg": 7.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 2.4134033576860974,
+      "max_at_mm": [
+        19.225936302514153,
+        13.055931230602729,
+        5.31090900404066
+      ],
+      "fraction_over_limit": 0.0,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 25692
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 37695,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 24094,
+      "thin": 3,
+      "thick": 277,
+      "fraction_thin": 0.00012451232672034532,
+      "fraction_thick": 0.01149663816717855,
+      "nothing_below": 915,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.45593454545591816,
+      "p1_mm": 0.4189206581891116,
+      "p99_mm": 0.8840336180738461,
+      "near_overhangs": {
+        "judged": 1066,
+        "thin": 0,
+        "thick": 14,
+        "fraction_thin": 0.0,
+        "fraction_thick": 0.013133208255159476,
+        "nothing_below": 246
+      }
+    }
   },
   "verdict": {
     "printable": false,
     "assessable": true,
-    "worst_effective_deg": 64.56134906413612,
+    "worst_effective_deg": 63.33167277047893,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
       "max_unsupported_fraction": 0.01,
@@ -82,15 +135,15 @@
       "toolpath_to_gcode": "cuda"
     },
     "machine_profile": "reference",
-    "git_commit": "c22829edb4eb3779e62388a1d95793ae54daddd2",
+    "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
     "code_modified": false,
-    "recorded_utc": "2026-10-01T09:43:03+00:00",
+    "recorded_utc": "2026-10-04T10:50:47+00:00",
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
       "code_modified": false,
-      "utc": "2026-10-01T10:34:30+00:00",
+      "utc": "2026-10-04T10:50:47+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,

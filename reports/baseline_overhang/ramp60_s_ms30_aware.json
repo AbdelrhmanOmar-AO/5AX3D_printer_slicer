@@ -16,42 +16,95 @@
     ]
   },
   "toolpath": {
-    "point_count": 154834,
-    "deposition_count": 103163
+    "point_count": 155009,
+    "deposition_count": 102897
   },
   "runtime": {
-    "total_s": 3825.238286500098,
+    "total_s": 3419.175014599925,
     "stages": {
-      "Direction computation": 56.2,
-      "Implicit layer computation": 60.3,
-      "Tangent computation": 52.0,
-      "Atoms alignment": 169.1,
-      "Extracting explicit atoms": 3.5,
-      "Toolpath planner": 3142.6
+      "Direction computation": 14.4,
+      "Implicit layer computation": 12.0,
+      "Tangent computation": 17.9,
+      "Atoms alignment": 35.0,
+      "Extracting explicit atoms": 1.3,
+      "Toolpath planner": 3199.3
     }
   },
   "metrics": {
-    "max_tool_tilt_deg": 22.119139032715882,
-    "unsupported_fraction_overall": 0.004071227087230887,
-    "unsupported_fraction_near_overhangs": 0.008244994110718492,
-    "deposition_points_near_overhangs": 3396,
+    "max_tool_tilt_deg": 23.706987260014582,
+    "unsupported_fraction_overall": 0.004314994606256742,
+    "unsupported_fraction_near_overhangs": 0.008971291866028708,
+    "deposition_points_near_overhangs": 3344,
     "surfaces": [
       {
         "geometric_angle_deg": 60.0,
         "area_mm2": 389.71142593102627,
         "face_count": 2048,
-        "sample_count": 6724,
-        "max_effective_deg": 48.68227390280674,
-        "mean_effective_deg": 42.70512921757549,
-        "max_tilt_used_deg": 22.119139032715882,
-        "skipped_samples": 860
+        "sample_count": 6554,
+        "max_effective_deg": 45.705842192931804,
+        "mean_effective_deg": 42.72550582568283,
+        "max_tilt_used_deg": 23.706987260014582,
+        "skipped_samples": 817
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 5135,
+      "on_target_count": 5135,
+      "mean_deviation_deg": 0.2590106585140556,
+      "max_deviation_deg": 1.8350436589753847,
+      "skipped_samples": 243,
+      "top_max_angle_deg": 30.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 12.289072409790606,
+      "max_at_mm": [
+        39.02564969461738,
+        0.45853356771552484,
+        10.972619302725738
+      ],
+      "fraction_over_limit": 0.001574389923904487,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 102897
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 155795,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 97853,
+      "thin": 8,
+      "thick": 1015,
+      "fraction_thin": 8.17552859902098e-05,
+      "fraction_thick": 0.01037270191000787,
+      "nothing_below": 3138,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.45039502156826167,
+      "p1_mm": 0.4159535759493291,
+      "p99_mm": 0.8393125487528367,
+      "near_overhangs": {
+        "judged": 2869,
+        "thin": 0,
+        "thick": 51,
+        "fraction_thin": 0.0,
+        "fraction_thick": 0.017776228651097944,
+        "nothing_below": 475
+      }
+    }
   },
   "verdict": {
     "printable": false,
     "assessable": true,
-    "worst_effective_deg": 48.68227390280674,
+    "worst_effective_deg": 45.705842192931804,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
       "max_unsupported_fraction": 0.01,
@@ -82,15 +135,15 @@
       "toolpath_to_gcode": "cuda"
     },
     "machine_profile": "reference",
-    "git_commit": "c22829edb4eb3779e62388a1d95793ae54daddd2",
+    "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
     "code_modified": false,
-    "recorded_utc": "2026-10-01T07:24:31+00:00",
+    "recorded_utc": "2026-10-04T09:33:43+00:00",
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
       "code_modified": false,
-      "utc": "2026-10-01T10:33:37+00:00",
+      "utc": "2026-10-04T09:33:43+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,

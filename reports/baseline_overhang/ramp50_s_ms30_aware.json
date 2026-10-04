@@ -16,42 +16,95 @@
     ]
   },
   "toolpath": {
-    "point_count": 149148,
-    "deposition_count": 101351
+    "point_count": 146866,
+    "deposition_count": 101146
   },
   "runtime": {
-    "total_s": 3767.8796828999184,
+    "total_s": 3414.9526184001006,
     "stages": {
-      "Direction computation": 56.5,
-      "Implicit layer computation": 60.6,
-      "Tangent computation": 52.4,
-      "Atoms alignment": 169.4,
-      "Extracting explicit atoms": 4.1,
-      "Toolpath planner": 3099.5
+      "Direction computation": 14.6,
+      "Implicit layer computation": 43.3,
+      "Tangent computation": 18.3,
+      "Atoms alignment": 35.7,
+      "Extracting explicit atoms": 1.2,
+      "Toolpath planner": 3089.2
     }
   },
   "metrics": {
     "max_tool_tilt_deg": 15.036103089818413,
-    "unsupported_fraction_overall": 0.00504188414519837,
-    "unsupported_fraction_near_overhangs": 0.018233915082052618,
-    "deposition_points_near_overhangs": 3839,
+    "unsupported_fraction_overall": 0.00477527534455144,
+    "unsupported_fraction_near_overhangs": 0.012906556530717605,
+    "deposition_points_near_overhangs": 3874,
     "surfaces": [
       {
         "geometric_angle_deg": 50.0,
         "area_mm2": 440.5749598335117,
         "face_count": 4096,
-        "sample_count": 14617,
-        "max_effective_deg": 45.2152467767714,
-        "mean_effective_deg": 42.52009388781548,
+        "sample_count": 14644,
+        "max_effective_deg": 45.29776570642244,
+        "mean_effective_deg": 42.61528149623191,
         "max_tilt_used_deg": 15.036103089818413,
-        "skipped_samples": 1699
+        "skipped_samples": 1819
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 5126,
+      "on_target_count": 5126,
+      "mean_deviation_deg": 0.1822081051352764,
+      "max_deviation_deg": 1.8402623503882396,
+      "skipped_samples": 287,
+      "top_max_angle_deg": 30.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 16.37238416452979,
+      "max_at_mm": [
+        48.341331481933594,
+        19.47508430480957,
+        19.18244743347168
+      ],
+      "fraction_over_limit": 0.0007415023826943231,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 101146
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 147274,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 96007,
+      "thin": 3,
+      "thick": 960,
+      "fraction_thin": 3.124772152030581e-05,
+      "fraction_thick": 0.009999270886497859,
+      "nothing_below": 3238,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.4521738283676261,
+      "p1_mm": 0.41952692816595194,
+      "p99_mm": 0.6733396008993671,
+      "near_overhangs": {
+        "judged": 3242,
+        "thin": 0,
+        "thick": 37,
+        "fraction_thin": 0.0,
+        "fraction_thick": 0.011412708204811845,
+        "nothing_below": 632
+      }
+    }
   },
   "verdict": {
     "printable": false,
     "assessable": true,
-    "worst_effective_deg": 45.2152467767714,
+    "worst_effective_deg": 45.29776570642244,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
       "max_unsupported_fraction": 0.01,
@@ -82,15 +135,15 @@
       "toolpath_to_gcode": "cuda"
     },
     "machine_profile": "reference",
-    "git_commit": "c22829edb4eb3779e62388a1d95793ae54daddd2",
+    "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
     "code_modified": false,
-    "recorded_utc": "2026-10-01T07:23:34+00:00",
+    "recorded_utc": "2026-10-04T09:38:01+00:00",
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
       "code_modified": false,
-      "utc": "2026-10-01T10:33:03+00:00",
+      "utc": "2026-10-04T09:38:01+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,

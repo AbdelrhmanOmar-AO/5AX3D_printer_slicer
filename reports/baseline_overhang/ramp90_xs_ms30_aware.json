@@ -1,110 +1,110 @@
 {
   "schema_version": 1,
   "metrics_version": 4,
-  "part": "ramp80_s",
+  "part": "ramp90_xs",
   "max_slope_deg": 30.0,
   "overhang_aware": true,
   "deposition_width_mm": 0.9,
   "mesh": {
-    "volume_mm3": 30772.42226600647,
+    "volume_mm3": 6743.25,
     "face_count": 20,
-    "sampled_face_count": 51200,
+    "sampled_face_count": 20480,
     "extents_mm": [
-      50.0,
-      22.5,
-      30.0
+      30.0,
+      13.5,
+      18.0
     ]
   },
   "toolpath": {
-    "point_count": 169990,
-    "deposition_count": 105891
+    "point_count": 42319,
+    "deposition_count": 26183
   },
   "runtime": {
-    "total_s": 3547.8640076001175,
+    "total_s": 654.9300533998758,
     "stages": {
-      "Direction computation": 18.6,
-      "Implicit layer computation": 42.8,
-      "Tangent computation": 18.3,
-      "Atoms alignment": 35.6,
-      "Extracting explicit atoms": 1.2,
-      "Toolpath planner": 3200.9
+      "Direction computation": 11.0,
+      "Implicit layer computation": 42.0,
+      "Tangent computation": 16.6,
+      "Atoms alignment": 31.8,
+      "Extracting explicit atoms": 0.9,
+      "Toolpath planner": 401.3
     }
   },
   "metrics": {
     "max_tool_tilt_deg": 30.00000083482606,
-    "unsupported_fraction_overall": 0.004599068853821382,
-    "unsupported_fraction_near_overhangs": 0.024497487437185928,
-    "deposition_points_near_overhangs": 3184,
+    "unsupported_fraction_overall": 0.004277584692357637,
+    "unsupported_fraction_near_overhangs": 0.04292929292929293,
+    "deposition_points_near_overhangs": 1188,
     "surfaces": [
       {
-        "geometric_angle_deg": 80.0,
-        "area_mm2": 342.7064829949786,
-        "face_count": 2048,
-        "sample_count": 7260,
-        "max_effective_deg": 57.844842717572796,
-        "mean_effective_deg": 50.757358793994484,
+        "geometric_angle_deg": 90.0,
+        "area_mm2": 121.5,
+        "face_count": 1024,
+        "sample_count": 3602,
+        "max_effective_deg": 64.9672388711401,
+        "mean_effective_deg": 60.30235766220904,
         "max_tilt_used_deg": 30.00000083482606,
-        "skipped_samples": 998
+        "skipped_samples": 905
       }
     ],
     "top_surface": {
-      "fraction_on_target": 1.0,
-      "sample_count": 5102,
-      "on_target_count": 5102,
-      "mean_deviation_deg": 0.3104392668457188,
-      "max_deviation_deg": 1.8279914886575155,
-      "skipped_samples": 234,
+      "fraction_on_target": 0.9715736040609138,
+      "sample_count": 985,
+      "on_target_count": 957,
+      "mean_deviation_deg": 0.532679457241717,
+      "max_deviation_deg": 2.4944198761646756,
+      "skipped_samples": 3,
       "top_max_angle_deg": 30.0,
       "tolerance_deg": 2.0
     },
     "tilt_rate": {
-      "max_deg_per_mm": 84.6338662057698,
+      "max_deg_per_mm": 35.14690184541887,
       "max_at_mm": [
-        41.51433563232422,
-        0.42495113611221313,
-        10.079273223876953
+        19.804092407226562,
+        13.040431022644043,
+        5.291767120361328
       ],
-      "fraction_over_limit": 0.007394396124316514,
+      "fraction_over_limit": 0.06553870832219379,
       "limit_deg_per_mm": 3.0,
       "stretch_mm": 1.0,
-      "printing_moves": 105891
+      "printing_moves": 26183
     },
     "machine": {
       "profile": "reference",
-      "points_checked": 176124,
+      "points_checked": 46578,
       "unreachable_points": 0,
-      "platform_mm": 38.69999897480011,
-      "lift_mm": 38.50654602050781,
+      "platform_mm": 47.24999874830246,
+      "lift_mm": 46.98200988769531,
       "unsettled": false,
       "tesselated": true
     },
     "layers": {
-      "judged": 100601,
-      "thin": 48,
-      "thick": 1256,
-      "fraction_thin": 0.0004771324340712319,
-      "fraction_thick": 0.012484965358197235,
-      "nothing_below": 3382,
+      "judged": 24611,
+      "thin": 8,
+      "thick": 374,
+      "fraction_thin": 0.0003250579009386047,
+      "fraction_thick": 0.015196456868879769,
+      "nothing_below": 894,
       "nominal_mm": 0.45,
       "min_fraction": 0.5,
       "max_fraction": 1.5,
-      "median_mm": 0.4493480723343148,
-      "p1_mm": 0.39667618757542206,
-      "p99_mm": 0.8831990447195649,
+      "median_mm": 0.4524216525418293,
+      "p1_mm": 0.37829595181478815,
+      "p99_mm": 0.8859309002883179,
       "near_overhangs": {
-        "judged": 2589,
-        "thin": 23,
-        "thick": 35,
-        "fraction_thin": 0.008883738895326381,
-        "fraction_thick": 0.013518733101583623,
-        "nothing_below": 595
+        "judged": 965,
+        "thin": 7,
+        "thick": 17,
+        "fraction_thin": 0.007253886010362694,
+        "fraction_thick": 0.017616580310880828,
+        "nothing_below": 223
       }
     }
   },
   "verdict": {
     "printable": false,
     "assessable": true,
-    "worst_effective_deg": 57.844842717572796,
+    "worst_effective_deg": 64.9672388711401,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
       "max_unsupported_fraction": 0.01,
@@ -137,13 +137,13 @@
     "machine_profile": "reference",
     "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
     "code_modified": false,
-    "recorded_utc": "2026-10-04T09:44:17+00:00",
+    "recorded_utc": "2026-10-04T10:36:32+00:00",
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
       "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
       "code_modified": false,
-      "utc": "2026-10-04T09:44:17+00:00",
+      "utc": "2026-10-04T10:36:32+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,

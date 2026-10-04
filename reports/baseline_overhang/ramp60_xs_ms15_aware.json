@@ -16,42 +16,95 @@
     ]
   },
   "toolpath": {
-    "point_count": 37037,
-    "deposition_count": 25170
+    "point_count": 37999,
+    "deposition_count": 25147
   },
   "runtime": {
-    "total_s": 626.6970071999822,
+    "total_s": 524.8838470000774,
     "stages": {
-      "Direction computation": 9.5,
-      "Implicit layer computation": 41.9,
-      "Tangent computation": 16.5,
-      "Atoms alignment": 32.4,
+      "Direction computation": 10.8,
+      "Implicit layer computation": 11.1,
+      "Tangent computation": 16.9,
+      "Atoms alignment": 32.1,
       "Extracting explicit atoms": 1.0,
-      "Toolpath planner": 374.3
+      "Toolpath planner": 381.5
     }
   },
   "metrics": {
     "max_tool_tilt_deg": 15.000000417413018,
-    "unsupported_fraction_overall": 0.0031386571315057607,
-    "unsupported_fraction_near_overhangs": 0.008823529411764706,
-    "deposition_points_near_overhangs": 1360,
+    "unsupported_fraction_overall": 0.0030619954666560624,
+    "unsupported_fraction_near_overhangs": 0.008547008547008548,
+    "deposition_points_near_overhangs": 1404,
     "surfaces": [
       {
         "geometric_angle_deg": 60.0,
         "area_mm2": 140.29611719755036,
         "face_count": 1024,
-        "sample_count": 2914,
-        "max_effective_deg": 49.93127335559638,
-        "mean_effective_deg": 45.154959638635134,
+        "sample_count": 3074,
+        "max_effective_deg": 46.57089580057793,
+        "mean_effective_deg": 45.08011486283094,
         "max_tilt_used_deg": 15.000000417413018,
-        "skipped_samples": 665
+        "skipped_samples": 701
       }
-    ]
+    ],
+    "top_surface": {
+      "fraction_on_target": 1.0,
+      "sample_count": 993,
+      "on_target_count": 993,
+      "mean_deviation_deg": 0.34935859111310036,
+      "max_deviation_deg": 1.0398580947636105,
+      "skipped_samples": 18,
+      "top_max_angle_deg": 15.0,
+      "tolerance_deg": 2.0
+    },
+    "tilt_rate": {
+      "max_deg_per_mm": 15.933123714118878,
+      "max_at_mm": [
+        20.459204203312602,
+        1.093001085436015,
+        5.139053171929647
+      ],
+      "fraction_over_limit": 0.0009941543722909293,
+      "limit_deg_per_mm": 3.0,
+      "stretch_mm": 1.0,
+      "printing_moves": 25147
+    },
+    "machine": {
+      "profile": "reference",
+      "points_checked": 38157,
+      "unreachable_points": 0,
+      "platform_mm": 0.0,
+      "lift_mm": 0.0,
+      "unsettled": false,
+      "tesselated": true
+    },
+    "layers": {
+      "judged": 23606,
+      "thin": 4,
+      "thick": 320,
+      "fraction_thin": 0.0001694484453105143,
+      "fraction_thick": 0.013555875624841143,
+      "nothing_below": 861,
+      "nominal_mm": 0.45,
+      "min_fraction": 0.5,
+      "max_fraction": 1.5,
+      "median_mm": 0.4508666715760974,
+      "p1_mm": 0.39942413312041675,
+      "p99_mm": 0.8846580846337896,
+      "near_overhangs": {
+        "judged": 1196,
+        "thin": 0,
+        "thick": 20,
+        "fraction_thin": 0.0,
+        "fraction_thick": 0.016722408026755852,
+        "nothing_below": 208
+      }
+    }
   },
   "verdict": {
     "printable": false,
     "assessable": true,
-    "worst_effective_deg": 49.93127335559638,
+    "worst_effective_deg": 46.57089580057793,
     "thresholds": {
       "max_effective_overhang_deg": 45.0,
       "max_unsupported_fraction": 0.01,
@@ -82,15 +135,15 @@
       "toolpath_to_gcode": "cuda"
     },
     "machine_profile": "reference",
-    "git_commit": "c22829edb4eb3779e62388a1d95793ae54daddd2",
+    "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
     "code_modified": false,
-    "recorded_utc": "2026-10-01T09:40:43+00:00",
+    "recorded_utc": "2026-10-04T10:48:06+00:00",
     "metrics_version": 4,
     "scored": {
       "machine": "cad-p07-2065-9",
-      "git_commit": "1b54a7c61d8d0f2454c66c5b29079648f1dac209",
+      "git_commit": "e3f3e4fe0b167c51d3dca4dad34d113fa59b76cc",
       "code_modified": false,
-      "utc": "2026-10-01T10:33:51+00:00",
+      "utc": "2026-10-04T10:48:06+00:00",
       "metrics_version": 4
     },
     "parallel_workers": 8,
